@@ -86,7 +86,9 @@ func privateKeyRule() rule {
 	// including spaces (single-line logging often joins PEM lines with spaces),
 	// up to and including an END trailer. A key spread over several log lines
 	// is handled by PEMGuard, which blanks the continuation lines.
-	re := regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\sA-Za-z0-9+/=:,.\-]*`)
+	// Also PGP blocks ("PRIVATE KEY BLOCK") and keys inside JSON strings, where
+	// line breaks appear as the two characters \n, \r or \t.
+	re := regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----(?:\\[nrt]|[\sA-Za-z0-9+/=:,.\-])*`)
 	token := "[REDACTED:private-key]" //nolint:gosec // G101: a placeholder, not a credential
 	return rule{
 		name: "private-key",

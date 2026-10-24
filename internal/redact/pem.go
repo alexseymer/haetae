@@ -24,14 +24,15 @@ type PEMGuard struct {
 func (g *PEMGuard) Filter(line string) string {
 	if g.inBlock {
 		g.lines++
-		if (strings.Contains(line, "-----END ") && strings.Contains(line, "PRIVATE KEY-----")) || g.lines > maxPEMLines {
+		if (strings.Contains(line, "-----END ") && strings.Contains(line, "PRIVATE KEY")) || g.lines > maxPEMLines {
 			g.inBlock = false
 		}
 		return pemPlaceholder
 	}
 	if i := strings.Index(line, "-----BEGIN "); i >= 0 {
 		rest := line[i:]
-		if strings.Contains(rest, "PRIVATE KEY-----") && !strings.Contains(rest, "-----END ") {
+		// "PRIVATE KEY-----" (PEM) and "PRIVATE KEY BLOCK-----" (PGP).
+		if strings.Contains(rest, "PRIVATE KEY") && !strings.Contains(rest, "-----END ") {
 			g.inBlock, g.lines = true, 0
 		}
 	}

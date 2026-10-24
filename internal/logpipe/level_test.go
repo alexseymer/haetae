@@ -175,3 +175,48 @@ func TestDetectLevelHTTPServerErrors(t *testing.T) {
 		}
 	}
 }
+
+// Spoofing across formats: the level word of one format must not outvote the
+// real level written in another.
+func TestDetectLevelAcrossFormats(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want Level
+	}{
+		{`ERROR: login failed for user [INFO]`, LevelError},
+		{`ERROR: payment failed level=info`, LevelError},
+		{`[INFO] processing; ERROR: boom`, LevelError},
+		{`INFO start [DEBUG] exception thrown`, LevelInfo}, // no stronger structural signal than INFO
+		{`WARNING:root:something level=debug`, LevelWarn},
+		{`level=info msg="[ERROR] in message"`, LevelError}, // over-send, never under-send
+	} {
+		if got := DetectLevel(tc.line); got != tc.want {
+			t.Errorf("DetectLevel(%q) = %v, want %v", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestDetectLevelHTTPServerErrorForms(t *testing.T) {
+	for _, line := range []string{
+		`{"level":"info","msg":"done","statusCode":500}`,
+		`{"level":"info","response_code":503}`,
+		`{"level":"info","http_status_code":"502"}`,
+		`INFO GET /x 500 12ms`,
+		`level=info POST /api/orders 504 3000ms`,
+		`level=info status:500`,
+	} {
+		if got := DetectLevel(line); got < LevelError {
+			t.Errorf("DetectLevel(%q) = %v, want error", line, got)
+		}
+	}
+	for _, line := range []string{
+		`INFO GET /x 200 12ms`,
+		`level=info GET /x 404 12ms`,
+		`level=info msg="processed 500 rows"`,
+		`{"level":"info","statusCode":200}`,
+	} {
+		if got := DetectLevel(line); got >= LevelError {
+			t.Errorf("DetectLevel(%q) = %v, want below error", line, got)
+		}
+	}
+}

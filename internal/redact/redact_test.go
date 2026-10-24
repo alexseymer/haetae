@@ -386,20 +386,41 @@ func TestRedactBatchOK(t *testing.T) {
 	}
 }
 
+// TestRedactAdversarialLinear shows redaction time grows linearly with input
+// size on inputs built to hurt backtracking engines. An absolute time limit
+// would depend on the machine; the ratio between 16 KiB and 64 KiB inputs does
+// not: linear is about 4x, a quadratic scanner would be about 16x.
 func TestRedactAdversarialLinear(t *testing.T) {
 	r := New()
-	cases := []string{
-		strings.Repeat("a", MaxLineBytes),
-		strings.Repeat("1-", MaxLineBytes/2)[:MaxLineBytes],
-		strings.Repeat("a@", MaxLineBytes/2)[:MaxLineBytes],
+	shapes := map[string]func(n int) string{
+		"a-run":       func(n int) string { return strings.Repeat("a", n) },
+		"digits-dash": func(n int) string { return strings.Repeat("1-", n/2) },
+		"at-signs":    func(n int) string { return strings.Repeat("a@", n/2) },
+		"dots-digits": func(n int) string { return strings.Repeat("1.", n/2) },
+		"key-values":  func(n int) string { return strings.Repeat("password=", n/9) },
 	}
-	for i, line := range cases {
-		start := time.Now()
-		if _, err := r.Redact(line); err != nil {
-			t.Fatalf("case %d: %v", i, err)
+	best := func(line string) time.Duration {
+		min := time.Hour
+		for range 5 {
+			start := time.Now()
+			if _, err := r.Redact(line); err != nil {
+				t.Fatal(err)
+			}
+			if d := time.Since(start); d < min {
+				min = d
+			}
 		}
-		if d := time.Since(start); d > 2*time.Second {
-			t.Fatalf("case %d took %v, want <2s", i, d)
+		return min
+	}
+	for name, mk := range shapes {
+		small, large := best(mk(16<<10)), best(mk(64<<10))
+		ratio := float64(large) / float64(max(small, time.Microsecond))
+		t.Logf("%-12s 16 KiB %-10v 64 KiB %-10v ratio %.1f", name, small, large, ratio)
+		if large > 20*time.Second {
+			t.Errorf("%s: 64 KiB took %v", name, large)
+		}
+		if small > 20*time.Millisecond && ratio > 10 {
+			t.Errorf("%s: time grew %.1fx for 4x input; expected about 4x (linear), 16x would be quadratic", name, ratio)
 		}
 	}
 }

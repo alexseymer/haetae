@@ -66,7 +66,7 @@ func (l Level) AlwaysSend() bool {
 // `... HTTP/1.1" 502 ...` or `status=503`, `"status":500`, `code=500`.
 // Template extraction masks all numbers, so a 500 and a 200 would otherwise
 // share one template and be judged routine together.
-var httpServerError = regexp.MustCompile(`(?i)(?:HTTP/\d(?:\.\d)?"?\s+5\d\d\b|\b(?:status|status_code|http_status|code)["']?\s*[=:]\s*"?5\d\d\b)`)
+var httpServerError = regexp.MustCompile(`(?i)(?:HTTP/\d(?:\.\d)?"?\s+5\d\d\b|\b(?:status|status_?code|response_?code|http_?status(?:_?code)?|code)["']?\s*[=:]\s*"?5\d\d\b|\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+\s+5\d\d\b)`)
 
 // DetectLevel finds the level of one log line. It never panics on arbitrary
 // bytes. A line that reports an HTTP 5xx is at least an error.
@@ -91,49 +91,29 @@ func detectLevel(line string) Level {
 	// Trim a leading syslog-like timestamp or whitespace for token scanning.
 	s := strings.TrimLeftFunc(line, unicode.IsSpace)
 
-	// JSON object line.
-	if len(s) > 0 && s[0] == '{' {
-		if lv, ok := detectJSONLevel(s); ok {
-			return lv
+	// Run every detector and keep the MOST SEVERE result. Stopping at the first
+	// detector that matches would let text in one format (a "[INFO]" inside the
+	// message, say) outvote the real level in another ("ERROR:" at the start).
+	best, found := LevelUnknown, false
+	add := func(lv Level, ok bool) {
+		if ok {
+			best, found = maxLevel(best, lv), true
 		}
 	}
-
-	// glog: I/W/E/F followed by MMDD then space and time.
-	if lv, ok := detectGlog(s); ok {
-		return lv
+	if len(s) > 0 && s[0] == '{' {
+		add(detectJSONLevel(s))
 	}
-
-	// Bracketed level: [ERROR], [WARN], etc.
-	if lv, ok := detectBracketLevel(s); ok {
-		return lv
+	add(detectGlog(s))         // I/W/E/F followed by MMDD
+	add(detectBracketLevel(s)) // [ERROR], [WARN], ...
+	add(detectLogfmtLevel(s))  // level=...
+	add(detectPythonLevel(s))  // ERROR:root: msg
+	add(detectLeadingToken(s)) // LEVEL: or LEVEL  at the start
+	add(detectJavaToken(s))    // SEVERE / WARNING / INFO / FINE early in the line
+	add(detectLooseToken(s))   // bare WARN / ERROR / INFO near the start
+	if !found {
+		return LevelUnknown
 	}
-
-	// logfmt / key=value level=...
-	if lv, ok := detectLogfmtLevel(s); ok {
-		return lv
-	}
-
-	// Python-style ERROR:root: or WARNING:pkg:
-	if lv, ok := detectPythonLevel(s); ok {
-		return lv
-	}
-
-	// Leading LEVEL: or LEVEL  (word boundary).
-	if lv, ok := detectLeadingToken(s); ok {
-		return lv
-	}
-
-	// Java SEVERE / WARNING / INFO / FINE as whole words anywhere early in the line.
-	if lv, ok := detectJavaToken(s); ok {
-		return lv
-	}
-
-	// Bare WARN / ERROR / INFO etc. as a token near the start (first ~80 bytes).
-	if lv, ok := detectLooseToken(s); ok {
-		return lv
-	}
-
-	return LevelUnknown
+	return best
 }
 
 func specialError(line string) bool {
@@ -348,6 +328,7 @@ func detectLooseToken(s string) (Level, bool) {
 	if n > 100 {
 		n = 100
 	}
+	best, found := LevelUnknown, false
 	i := 0
 	for i < n {
 		// Skip non-letters.
@@ -369,12 +350,12 @@ func detectLooseToken(s string) (Level, bool) {
 		}
 		if start < i {
 			if lv, ok := parseLevelToken(s[start:i]); ok {
-				return lv, true
+				best, found = maxLevel(best, lv), true
 			}
 		}
 		i++
 	}
-	return 0, false
+	return best, found
 }
 
 // maxLevel returns the more severe of two levels. LevelUnknown counts as the

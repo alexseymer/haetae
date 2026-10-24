@@ -72,6 +72,9 @@ type LogManager struct {
 	redact *redact.Redactor
 	log    *slog.Logger
 
+	// redactBatch is redact.RedactBatch; tests replace it to inject failures.
+	redactBatch func(ctx context.Context, lines []string, budget time.Duration) (redact.Result, error)
+
 	green atomic.Pointer[logpipe.GreenSet]
 
 	mu         sync.Mutex
@@ -102,7 +105,7 @@ type follower struct {
 // NewLogManager returns a manager writing to out.
 func NewLogManager(cfg LogConfig, docker *dockerapi.Client, out *Outbox, log *slog.Logger) *LogManager {
 	cfg = cfg.withDefaults()
-	return &LogManager{
+	m := &LogManager{
 		cfg:       cfg,
 		docker:    docker,
 		out:       out,
@@ -110,6 +113,8 @@ func NewLogManager(cfg LogConfig, docker *dockerapi.Client, out *Outbox, log *sl
 		log:       log,
 		followers: make(map[string]*follower),
 	}
+	m.redactBatch = m.redact.RedactBatch
+	return m
 }
 
 // SetGreen installs the server's green set.
@@ -164,6 +169,9 @@ func (m *LogManager) startFollower(ctx context.Context, id, name string) {
 			// Template and template ID come from redacted text, so neither the
 			// template nor its hash can be used to recover a secret.
 			Canon: m.canonTemplate,
+			// The sample is redacted before it is cut, so a secret straddling
+			// the cut cannot leave a recognisable-looking prefix behind.
+			SampleCanon: m.canonTemplate,
 		}),
 		ring: logpipe.NewRing(m.cfg.RingLines, m.cfg.RingBytes),
 	}
@@ -263,11 +271,39 @@ func (m *LogManager) flush(ctx context.Context) {
 		return
 	}
 
+	// Bound the work of one tick so the redaction budget is enough even after a
+	// backlog built up: severe events first, the rest waits for the next tick.
+	items, cands = m.limitTick(items, cands)
 	ri, rc, ok := m.redactFlush(ctx, items, cands)
 	if !ok {
 		return // kept for the next tick, or dropped and counted
 	}
 	m.send(ri, rc, stats)
+}
+
+// maxItemsPerTick bounds how many events one flush redacts.
+const maxItemsPerTick = 500
+
+// limitTick keeps at most maxItemsPerTick events for this tick, severe ones
+// first, and puts the rest back in the pending queue (bounded).
+func (m *LogManager) limitTick(items []logItem, cands []logpipe.TemplateInfo) ([]logItem, []logpipe.TemplateInfo) {
+	if len(items) <= maxItemsPerTick {
+		return items, cands
+	}
+	var now, later []logItem
+	for _, it := range items {
+		if it.ev.Level.AlwaysSend() && len(now) < maxItemsPerTick {
+			now = append(now, it)
+		} else {
+			later = append(later, it)
+		}
+	}
+	for len(now) < maxItemsPerTick && len(later) > 0 {
+		now = append(now, later[0])
+		later = later[1:]
+	}
+	m.keepPending(later, nil)
+	return now, cands
 }
 
 // redactedItem is a log item whose template and sample were redacted.
@@ -298,7 +334,7 @@ func (m *LogManager) redactFlush(ctx context.Context, items []logItem, cands []l
 	for _, c := range cands {
 		texts = append(texts, c.Template, c.Sample)
 	}
-	res, err := m.redact.RedactBatch(ctx, texts, m.cfg.RedactionBudget)
+	res, err := m.redactBatch(ctx, texts, m.cfg.RedactionBudget)
 	if err == nil {
 		ri := make([]redactedItem, len(items))
 		for i, it := range items {
@@ -322,7 +358,7 @@ func (m *LogManager) redactFlush(ctx context.Context, items []logItem, cands []l
 	m.log.Warn("redaction failed; retrying event by event", "err", err, "events", len(items))
 	var ri []redactedItem
 	for _, it := range items {
-		r, err := m.redact.RedactBatch(ctx, []string{it.ev.Template, it.ev.Sample}, m.cfg.RedactionBudget)
+		r, err := m.redactBatch(ctx, []string{it.ev.Template, it.ev.Sample}, m.cfg.RedactionBudget)
 		if err != nil {
 			m.redactFail.Add(1)
 			m.dropped.Add(uint64(it.ev.Count)) //nolint:gosec // G115: Count is positive
@@ -332,7 +368,7 @@ func (m *LogManager) redactFlush(ctx context.Context, items []logItem, cands []l
 	}
 	var rc []redactedCand
 	for _, c := range cands {
-		r, err := m.redact.RedactBatch(ctx, []string{c.Template, c.Sample}, m.cfg.RedactionBudget)
+		r, err := m.redactBatch(ctx, []string{c.Template, c.Sample}, m.cfg.RedactionBudget)
 		if err != nil {
 			m.redactFail.Add(1)
 			continue
@@ -345,6 +381,10 @@ func (m *LogManager) redactFlush(ctx context.Context, items []logItem, cands []l
 // keepPending stores unsent work for the next tick within fixed bounds. When
 // over the bound, routine events are dropped first, then the oldest.
 func (m *LogManager) keepPending(items []logItem, cands []logpipe.TemplateInfo) {
+	// Merge with what is already waiting (for example the overflow limitTick
+	// parked); the newly failed work goes first so it is retried first.
+	items = append(items[:len(items):len(items)], m.pendingItems...)
+	cands = append(cands[:len(cands):len(cands)], m.pendingCands...)
 	if len(items) > maxPendingItems {
 		kept := make([]logItem, 0, maxPendingItems)
 		for _, it := range items { // severe first
@@ -456,7 +496,7 @@ func (m *LogManager) QueryLogs(ctx context.Context, q *agentv1.QueryLogs) *agent
 	for i, e := range entries {
 		texts[i] = e.Line
 	}
-	res, err := m.redact.RedactBatch(ctx, texts, m.cfg.RedactionBudget)
+	res, err := m.redactBatch(ctx, texts, m.cfg.RedactionBudget)
 	if err != nil {
 		m.redactFail.Add(1)
 		return &agentv1.CommandResult{Error: "redaction failed; no lines returned"}

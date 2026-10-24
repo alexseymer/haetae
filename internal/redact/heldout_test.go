@@ -72,6 +72,10 @@ func TestHeldOutReviewVectors(t *testing.T) {
 		{`login password=admin ok`, "admin"},
 		{`connect pwd=root host=db`, "root"},
 		{`{'token': 'secret123'}`, "secret123"},
+		// Keys inside JSON strings carry their line breaks as the characters \n.
+		{`{"key":"-----BEGIN RSA ` + `PRIVATE KEY-----\nMIIEowIBAAKCAQEA7\nabcdefghij==\n-----END RSA ` + `PRIVATE KEY-----\n","user":"u"}`, "MIIEowIBAAKCAQEA7"},
+		{`{"key":"-----BEGIN RSA ` + `PRIVATE KEY-----\nMIIEowIBAAKCAQEA7\nabcdefghij==\n-----END RSA ` + `PRIVATE KEY-----\n","user":"u"}`, "abcdefghij"},
+		{"-----BEGIN PGP " + "PRIVATE KEY BLOCK----- lQcYBGPjxxxxBEAC9abcdefgh", "lQcYBGPjxxxxBEAC9abcdefgh"},
 		{`{'db_password': 'p4ss word'}`, "p4ss word"},
 	}
 	for _, tc := range secrets {
@@ -100,6 +104,12 @@ func TestPEMGuardBlanksMultilineKeys(t *testing.T) {
 		out = append(out, g.Filter(l))
 	}
 	want := []bool{false, false, true, true, true, false} // true: replaced by the placeholder
+	// PGP blocks end with "PRIVATE KEY BLOCK-----" and must be guarded too.
+	var pgp PEMGuard
+	pgp.Filter("-----BEGIN PGP " + "PRIVATE KEY BLOCK-----")
+	if pgp.Filter("lQcYBGPjxxxxBEAC9abcdefgh") != pemPlaceholder {
+		t.Error("PGP private key continuation line was not blanked")
+	}
 	for i, l := range out {
 		if replaced := l == pemPlaceholder; replaced != want[i] {
 			t.Errorf("line %d (%q): replaced=%v, want %v", i, lines[i], replaced, want[i])

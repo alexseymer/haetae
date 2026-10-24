@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/logpipe"
+	"github.com/alexseymer/haetae/internal/redact"
 )
 
 // newTestLogManager returns a manager with one pre-populated follower, no Docker.
@@ -257,5 +259,101 @@ func TestSetGreenIsCapped(t *testing.T) {
 	m.SetGreen(ids)
 	if got := m.green.Load().Len(); got != maxGreenIDs {
 		t.Fatalf("green set holds %d ids, want %d", got, maxGreenIDs)
+	}
+}
+
+// A secret that straddles the sample's size limit must not leave a prefix
+// behind: the line is redacted first, then cut.
+func TestSampleIsRedactedBeforeItIsCut(t *testing.T) {
+	out := NewOutbox(4)
+	m := NewLogManager(LogConfig{}, nil, out, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	agg := logpipe.NewAggregator(logpipe.Config{
+		MergeWindow: time.Millisecond, MaxSampleLen: 64,
+		Canon: m.canonTemplate, SampleCanon: m.canonTemplate,
+	})
+	secret := "gh" + "p_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+	// Place the token so the 64-byte cut falls in the middle of it.
+	line := "level=error msg=push failed " + strings.Repeat("x", 64-len("level=error msg=push failed ")-8) + " token=" + secret + " end"
+	agg.Add(line, time.Now().Add(-time.Minute))
+	ev := agg.Flush(true)[0]
+	if strings.Contains(ev.Sample, "ghp_") || strings.Contains(ev.Sample, secret[:10]) {
+		t.Fatalf("a prefix of the secret survived the cut: %q", ev.Sample)
+	}
+	if !strings.Contains(ev.Sample, "[REDACTED:") && len(ev.Sample) > 64 {
+		t.Fatalf("unexpected sample: %q", ev.Sample)
+	}
+}
+
+// If redaction fails for one event for a reason other than time, the others
+// still go out and the failing one is dropped and counted: fail-closed per event.
+func TestFlushIsolatesEventsThatCannotBeRedacted(t *testing.T) {
+	m, out, f := newTestLogManager(LogConfig{})
+	addLines(f,
+		"level=error first disk is full",
+		"level=error POISON network down",
+		"level=error third queue stuck",
+	)
+	real := m.redactBatch
+	m.redactBatch = func(ctx context.Context, lines []string, b time.Duration) (redact.Result, error) {
+		for _, l := range lines {
+			if strings.Contains(l, "POISON") {
+				return redact.Result{}, errors.New("rule panicked")
+			}
+		}
+		return real(ctx, lines, b)
+	}
+	m.flush(context.Background())
+
+	msg, err := out.Next(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples []string
+	for _, e := range msg.GetLogs().GetEvents() {
+		samples = append(samples, e.GetSample())
+	}
+	joined := strings.Join(samples, "|")
+	if len(samples) != 2 || strings.Contains(joined, "POISON") || !strings.Contains(joined, "disk") || !strings.Contains(joined, "queue") {
+		t.Fatalf("want the two healthy events and not the poisoned one, got %q", samples)
+	}
+	if m.redactFail.Load() == 0 || m.dropped.Load() == 0 {
+		t.Fatalf("the dropped event was not counted: fail=%d dropped=%d", m.redactFail.Load(), m.dropped.Load())
+	}
+}
+
+func TestTickWorkIsBoundedAndSevereFirst(t *testing.T) {
+	m, _, _ := newTestLogManager(LogConfig{})
+	var items []logItem
+	for i := range 1500 {
+		lvl := logpipe.LevelInfo
+		if i >= 1400 { // the errors arrive last
+			lvl = logpipe.LevelError
+		}
+		items = append(items, logItem{"c1", logpipe.Event{TemplateID: fmt.Sprint(i), Level: lvl, Count: 1, First: time.Unix(int64(i), 0)}})
+	}
+	now, _ := m.limitTick(items, nil)
+	if len(now) != maxItemsPerTick {
+		t.Fatalf("this tick redacts %d events, want %d", len(now), maxItemsPerTick)
+	}
+	errs := 0
+	for _, it := range now {
+		if it.ev.Level == logpipe.LevelError {
+			errs++
+		}
+	}
+	if errs != 100 {
+		t.Fatalf("only %d of the 100 error events are in this tick", errs)
+	}
+	if len(m.pendingItems) != 1000 {
+		t.Fatalf("pending = %d, want the other 1000 waiting", len(m.pendingItems))
+	}
+}
+
+func TestKeepPendingMergesWithWaitingWork(t *testing.T) {
+	m, _, _ := newTestLogManager(LogConfig{})
+	m.pendingItems = []logItem{{"c1", logpipe.Event{TemplateID: "parked", Level: logpipe.LevelInfo, Count: 1}}}
+	m.keepPending([]logItem{{"c1", logpipe.Event{TemplateID: "failed", Level: logpipe.LevelError, Count: 1}}}, nil)
+	if len(m.pendingItems) != 2 || m.pendingItems[0].ev.TemplateID != "failed" {
+		t.Fatalf("pending = %+v, want the failed work first and the parked work kept", m.pendingItems)
 	}
 }

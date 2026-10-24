@@ -28,6 +28,10 @@ type Config struct {
 	// template nor its hash is derived from text that was not redacted. Results
 	// are cached per raw template (at most canonCacheSize entries).
 	Canon func(template string) string
+	// SampleCanon, if set, rewrites the raw line BEFORE it is cut to
+	// MaxSampleLen (the agent passes the redactor). Cutting first could leave a
+	// prefix of a secret that straddles the cut, which no rule would recognise.
+	SampleCanon func(line string) string
 	// MaxPendingEvents bounds events waiting for the next Flush because of
 	// MaxTemplates pressure; default 500. When exceeded, the least severe
 	// event is dropped and counted in Stats.
@@ -35,7 +39,7 @@ type Config struct {
 }
 
 const (
-	canonCacheSize        = 4096
+	canonCacheSize        = 256 // per aggregator; templates are at most 256 bytes
 	defaultMaxPendingEvts = 500
 )
 
@@ -175,7 +179,7 @@ func (a *Aggregator) Add(line string, t time.Time) (skipped bool) {
 		a.earlyFlushOne()
 	}
 
-	sample := truncateRunes(line, a.cfg.MaxSampleLen)
+	sample := a.sample(line)
 	a.open[id] = &openEntry{
 		id:       id,
 		level:    level,
@@ -187,6 +191,15 @@ func (a *Aggregator) Add(line string, t time.Time) (skipped bool) {
 	}
 	a.order = append(a.order, id)
 	return false
+}
+
+// sample returns the evidence excerpt for a raw line: canonicalised first,
+// then cut to size.
+func (a *Aggregator) sample(line string) string {
+	if a.cfg.SampleCanon != nil {
+		line = a.cfg.SampleCanon(line)
+	}
+	return truncateRunes(line, a.cfg.MaxSampleLen)
 }
 
 // canon applies Config.Canon with a bounded cache. The cache is reset when it
@@ -289,7 +302,7 @@ func (a *Aggregator) noteSeen(id string, level Level, tmpl, line string) {
 		ID:       id,
 		Level:    level,
 		Template: tmpl,
-		Sample:   truncateRunes(line, a.cfg.MaxSampleLen),
+		Sample:   a.sample(line),
 	})
 }
 
