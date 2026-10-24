@@ -1,0 +1,36 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local agent state
+.claude/settings.local.json
+
+# Logs and temp
+*.log
+tmp/
+.cache/
+
+# Common build output and dependencies (refine once the stack is chosen)
+build/
+dist/
+out/
+coverage/
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+target/
