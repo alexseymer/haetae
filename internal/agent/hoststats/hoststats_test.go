@@ -184,4 +184,15 @@ func TestPhysicalInterface(t *testing.T) {
 	if !c.physicalInterface("eth0") || c.physicalInterface("veth9") || c.physicalInterface("ens5") {
 		t.Error("sysfs: want only eth0 counted")
 	}
+
+	// Inside a container sysfs lists only virtual NICs; fall back to names so
+	// the host does not read as zero traffic.
+	guest := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(guest, "sys/class/net/eth0"), 0o755); err != nil { // no device link
+		t.Fatal(err)
+	}
+	c = NewCollector(filepath.Join(guest, "proc"), "/")
+	if !c.physicalInterface("eth0") || c.physicalInterface("veth9") {
+		t.Error("guest sysfs without device links: want the name rule (eth0 counted, veth9 not)")
+	}
 }

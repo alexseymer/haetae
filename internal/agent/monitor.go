@@ -52,6 +52,7 @@ type Monitor struct {
 	// seen in the last sample are kept, so the map stays bounded.
 	prev    map[string]containerCounters
 	running []string // ids of running containers from the last snapshot
+	rotate  int      // rotates the starting container of each stats round
 }
 
 type containerCounters struct {
@@ -275,14 +276,25 @@ func (m *Monitor) sample(ctx context.Context) {
 	round, cancel := context.WithTimeout(ctx, m.cfg.Interval)
 	defer cancel()
 	seen := make(map[string]bool, len(m.running))
-	for _, id := range m.running {
+	// Start at a different container each round, so one that always hangs
+	// cannot starve the ones after it.
+	start := 0
+	if n := len(m.running); n > 0 {
+		start = m.rotate % n
+		m.rotate++
+	}
+	for i := range m.running {
+		id := m.running[(start+i)%len(m.running)]
 		if round.Err() != nil {
 			// Keep baselines of skipped containers.
 			seen[id] = true
 			continue
 		}
-		st, err := m.docker.Stats(round, id)
+		cctx, ccancel := context.WithTimeout(round, 2*time.Second)
+		st, err := m.docker.Stats(cctx, id)
+		ccancel()
 		if err != nil {
+			seen[id] = true // transient; keep its baseline
 			continue
 		}
 		seen[id] = true

@@ -34,6 +34,9 @@ type Collector struct {
 	prevCPU cpuTimes
 	prevRx  uint64
 	prevTx  uint64
+
+	sysfsChecked  bool
+	sysfsPhysical bool
 }
 
 type cpuTimes struct {
@@ -242,9 +245,8 @@ var virtualPrefixes = []string{"lo", "veth", "docker", "br-", "virbr", "cni", "f
 // falls back to name prefixes when sysfs is not available, as in tests.
 // Bonds count as virtual here because their members are counted already.
 func (c *Collector) physicalInterface(name string) bool {
-	sysNet := filepath.Join(filepath.Dir(c.procRoot), "sys", "class", "net")
-	if _, err := os.Stat(sysNet); err == nil {
-		_, err := os.Stat(filepath.Join(sysNet, name, "device"))
+	if c.sysfsHasPhysical() {
+		_, err := os.Stat(filepath.Join(c.sysNet(), name, "device"))
 		return err == nil
 	}
 	for _, p := range virtualPrefixes {
@@ -253,6 +255,32 @@ func (c *Collector) physicalInterface(name string) bool {
 		}
 	}
 	return true
+}
+
+func (c *Collector) sysNet() string {
+	return filepath.Join(filepath.Dir(c.procRoot), "sys", "class", "net")
+}
+
+// sysfsHasPhysical reports whether sysfs lists at least one interface with a
+// device link. Inside a container or LXC guest every NIC is virtual and none
+// has one; the name rule is used then, so the host does not read as 0 traffic.
+// Cached after the first call that finds an answer.
+func (c *Collector) sysfsHasPhysical() bool {
+	if c.sysfsChecked {
+		return c.sysfsPhysical
+	}
+	entries, err := os.ReadDir(c.sysNet())
+	if err != nil {
+		return false // not cached: sysfs may appear later
+	}
+	for _, e := range entries {
+		if _, err := os.Stat(filepath.Join(c.sysNet(), e.Name(), "device")); err == nil {
+			c.sysfsPhysical = true
+			break
+		}
+	}
+	c.sysfsChecked = true
+	return c.sysfsPhysical
 }
 
 func (c *Collector) readNet() (rx, tx uint64, err error) {

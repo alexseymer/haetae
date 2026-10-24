@@ -95,4 +95,19 @@ func TestIngestMetricsDropsBadSamples(t *testing.T) {
 	if len(f.ctr) != 1 || f.ctr[0].ContainerID != "a" {
 		t.Fatalf("container samples = %+v", f.ctr)
 	}
+
+	g.ingestMetrics(context.Background(), s, &agentv1.MetricsBatch{
+		Containers: []*agentv1.ContainerMetricSample{{ContainerId: "p", TsUnixMs: now, Pids: math.MaxUint32}},
+	})
+	if len(f.ctr) != 1 || f.ctr[0].Pids != math.MaxInt32 {
+		t.Fatalf("pids not clamped to int4: %+v", f.ctr)
+	}
+}
+
+func TestUnixMsRejectsImplausibleTimestamps(t *testing.T) {
+	for ms, wantNil := range map[int64]bool{0: true, -5: true, 1700000000000: false, 9e15: true} {
+		if got := unixMs(ms); (got == nil) != wantNil {
+			t.Errorf("unixMs(%d) = %v, want nil=%v", ms, got, wantNil)
+		}
+	}
 }

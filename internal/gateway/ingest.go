@@ -86,8 +86,11 @@ func toContainer(c *agentv1.ContainerState) store.Container {
 	}
 }
 
+// unixMs converts an agent timestamp, returning nil for unset or implausible
+// values: one outside PostgreSQL's range would fail the whole transaction.
 func unixMs(ms int64) *time.Time {
-	if ms <= 0 {
+	const maxMs = 7258118400000 // year 2200
+	if ms <= 0 || ms > maxMs {
 		return nil
 	}
 	t := time.UnixMilli(ms).UTC()
@@ -145,7 +148,7 @@ func (g *Gateway) ingestMetrics(ctx context.Context, s *session, b *agentv1.Metr
 			NetTxBps:    gauge(c.GetNetTxBps()),
 			BlkReadBps:  gauge(c.GetBlkReadBps()),
 			BlkWriteBps: gauge(c.GetBlkWriteBps()),
-			Pids:        int(c.GetPids()),
+			Pids:        int(min(c.GetPids(), math.MaxInt32)),
 		})
 	}
 
