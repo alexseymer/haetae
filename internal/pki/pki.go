@@ -80,7 +80,7 @@ func fileExists(path string) (bool, error) {
 }
 
 func loadCA(certPath, keyPath string) (*CA, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // G304: path comes from the operator's data dir
 	if err != nil {
 		return nil, fmt.Errorf("pki: read ca.crt: %w", err)
 	}
@@ -93,7 +93,7 @@ func loadCA(certPath, keyPath string) (*CA, error) {
 		return nil, fmt.Errorf("pki: parse ca.crt: %w", err)
 	}
 
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := os.ReadFile(keyPath) //nolint:gosec // G304: path comes from the operator's data dir
 	if err != nil {
 		return nil, fmt.Errorf("pki: read ca.key: %w", err)
 	}
@@ -142,7 +142,7 @@ func createCA(dir, certPath, keyPath string) (*CA, error) {
 	}
 
 	certPEM := EncodeCertPEM(der)
-	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
+	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil { //nolint:gosec // G306: the CA certificate is public
 		return nil, fmt.Errorf("pki: write ca.crt: %w", err)
 	}
 
@@ -361,7 +361,8 @@ func NewKeyAndCSR() (*ecdsa.PrivateKey, []byte, error) {
 // ExtKeyUsageServerAuth. MinVersion TLS 1.3, NextProtos ["h2"].
 func PinnedTLSConfig(caPin, serverName string) *tls.Config {
 	return &tls.Config{
-		InsecureSkipVerify: true,
+		// Chain verification is replaced, not skipped: VerifyConnection pins the CA.
+		InsecureSkipVerify: true, //nolint:gosec // G402: see VerifyConnection
 		MinVersion:         tls.VersionTLS13,
 		NextProtos:         []string{"h2"},
 		ServerName:         serverName,

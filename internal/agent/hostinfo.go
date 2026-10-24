@@ -25,11 +25,11 @@ func collectHostInfo() *agentv1.HostInfo {
 }
 
 func osPrettyName(path string) string {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is a fixed system file, not user input
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -50,7 +50,7 @@ func kernelRelease() string {
 		if c == 0 {
 			break
 		}
-		b = append(b, byte(c))
+		b = append(b, byte(c)) //nolint:gosec // G115: utsname bytes are int8 or uint8 by arch; ASCII either way
 	}
 	return string(b)
 }

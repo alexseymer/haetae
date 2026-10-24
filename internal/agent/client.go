@@ -127,7 +127,7 @@ func Run(ctx context.Context, id *Identity, log *slog.Logger) error {
 			backoff = backoffMin
 		}
 		// Full jitter: wait a random time in [backoff/2, backoff].
-		wait := backoff/2 + rand.N(backoff/2+1)
+		wait := backoff/2 + rand.N(backoff/2+1) //nolint:gosec // G404: jitter needs no cryptographic randomness
 		log.Warn("session ended, reconnecting", "err", err, "in", wait.Round(time.Millisecond))
 
 		select {

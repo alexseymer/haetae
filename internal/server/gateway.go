@@ -46,7 +46,7 @@ func ListenGateway(addr string, gw *gateway.Gateway, ca *pki.CA, names []string)
 		},
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	ln, err := new(net.ListenConfig).Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("server: listen gateway: %w", err)
 	}

@@ -37,7 +37,7 @@ const (
 // LoadIdentity reads the identity from dir. It returns ErrNotEnrolled when
 // dir has none.
 func LoadIdentity(dir string) (*Identity, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, identityFile))
+	raw, err := os.ReadFile(filepath.Join(dir, identityFile)) //nolint:gosec // G304: the agent's own state dir
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotEnrolled
 	}
@@ -51,7 +51,7 @@ func LoadIdentity(dir string) (*Identity, error) {
 	}
 
 	read := func(name string) ([]byte, error) {
-		b, err := os.ReadFile(filepath.Join(dir, name))
+		b, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // G304: the agent's own state dir
 		if err != nil {
 			return nil, fmt.Errorf("agent: read %s: %w", name, err)
 		}

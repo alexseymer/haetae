@@ -359,7 +359,7 @@ func TestPEMHelpersRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("decoded key type %T, want *ecdsa.PrivateKey", gotKey)
 	}
-	if gotECDSA.D.Cmp(key.D) != 0 {
+	if !gotECDSA.Equal(key) {
 		t.Fatal("key round-trip mismatch")
 	}
 	block, _ = pem.Decode(keyPEM)

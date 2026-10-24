@@ -49,6 +49,7 @@ func (c Config) withDefaults() Config {
 	if c.Heartbeat <= 0 {
 		c.Heartbeat = 10 * time.Second
 	}
+	c.Heartbeat = min(c.Heartbeat, time.Hour)
 	if c.ClientCertTTL <= 0 {
 		c.ClientCertTTL = 365 * 24 * time.Hour
 	}
@@ -174,7 +175,7 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	g.log.Info("agent connected", "host_id", hostID)
 
 	welcome := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Welcome{Welcome: &agentv1.Welcome{
-		HeartbeatSeconds: uint32(g.cfg.Heartbeat / time.Second),
+		HeartbeatSeconds: uint32(g.cfg.Heartbeat / time.Second), //nolint:gosec // G115: capped at one hour in withDefaults
 	}}}
 	if err := stream.Send(welcome); err != nil {
 		return err
