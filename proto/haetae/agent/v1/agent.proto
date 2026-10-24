@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+// Package haetae.agent.v1 is the contract between the host agent and the
+// control plane's agent gateway.
+//
+// The agent always dials out. Enroll is the only call made without a client
+// certificate; it trades a single-use token for one. Every later call is a
+// single long-lived Connect stream authenticated by that certificate. The
+// server sends commands down the same stream, so the host needs no inbound
+// port.
+package haetae.agent.v1;
+
+option go_package = "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1;agentv1";
+
+service AgentGatewayService {
+  // Enroll exchanges a single-use token and a certificate signing request
+  // for a client certificate. Called once per host, without a client cert.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+
+  // Connect is the agent's session. The first agent message must be Hello.
+  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+}
+
+message EnrollRequest {
+  string token = 1;
+  // PKCS#10 certificate signing request, DER encoded. The server ignores
+  // the subject and issues the certificate for the new host's id.
+  bytes csr_der = 2;
+  HostInfo host = 3;
+}
+
+message EnrollResponse {
+  string host_id = 1;
+  // Client certificate, DER encoded.
+  bytes certificate_der = 2;
+  // CA certificate that signs both the gateway and client certificates.
+  bytes ca_certificate_der = 3;
+}
+
+message HostInfo {
+  string hostname = 1;
+  string os = 2;             // e.g. "Debian GNU/Linux 13 (trixie)"
+  string kernel = 3;         // uname -r
+  string arch = 4;           // GOARCH
+  string docker_version = 5; // empty if Docker is unreachable
+  string agent_version = 6;
+}
+
+message ConnectRequest {
+  oneof msg {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    CommandResult result = 3;
+  }
+}
+
+message ConnectResponse {
+  oneof msg {
+    Welcome welcome = 1;
+    Command command = 2;
+  }
+}
+
+message Hello {
+  HostInfo host = 1;
+}
+
+message Welcome {
+  // Interval at which the agent must send heartbeats. The server treats a
+  // host as offline after three missed intervals.
+  uint32 heartbeat_seconds = 1;
+}
+
+message Heartbeat {
+  // Unix time in milliseconds on the agent, for clock-skew reporting.
+  int64 sent_unix_ms = 1;
+}
+
+// Command is a request from the server. The agent executes only command
+// kinds it knows and that its local autonomy policy allows; anything else
+// is answered with an error result.
+message Command {
+  string id = 1;
+  oneof kind {
+    Ping ping = 2;
+  }
+}
+
+message Ping {}
+
+message CommandResult {
+  string command_id = 1;
+  // Empty on success.
+  string error = 2;
+}
