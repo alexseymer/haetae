@@ -178,7 +178,7 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 	go func() { hbErr <- heartbeat(ctx, interval, send) }()
 
 	recvErr := make(chan error, 1)
-	go func() { recvErr <- receiveCommands(ctx, stream, send) }()
+	go func() { recvErr <- receiveCommands(ctx, cancel, stream, send) }()
 
 	select {
 	case err := <-hbErr:
@@ -210,10 +210,14 @@ func heartbeat(ctx context.Context, interval time.Duration, send func(*agentv1.C
 // commands wait, which also applies backpressure to the stream.
 const maxRunningCommands = 4
 
-func receiveCommands(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.ConnectRequest, agentv1.ConnectResponse], send func(*agentv1.ConnectRequest) error) error {
+func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *connect.BidiStreamForClient[agentv1.ConnectRequest, agentv1.ConnectResponse], send func(*agentv1.ConnectRequest) error) error {
 	slots := make(chan struct{}, maxRunningCommands)
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	// Cancel first so a command blocked in send unblocks before we wait.
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
 
 	for {
 		msg, err := stream.Receive()

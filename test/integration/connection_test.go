@@ -305,10 +305,12 @@ func TestReconnectAfterSilentNetworkLoss(t *testing.T) {
 	e.runAgent(id)
 	e.waitConnected(id.HostID, true, 30*time.Second)
 
+	// The enrollment connection closes asynchronously; wait for exactly the
+	// session connection to remain.
+	waitFor(t, 10*time.Second, "only the session connection open", func() bool {
+		return len(px.agentSideConns()) == 1
+	})
 	before := px.agentSideConns()
-	if len(before) != 1 {
-		t.Fatalf("expected one agent connection before the outage, got %d", len(before))
-	}
 	px.blackhole(true)
 	start := time.Now()
 	e.waitConnected(id.HostID, false, 20*time.Second) // server: 3 missed heartbeats

@@ -24,7 +24,20 @@ func TestCallReturnsWhenSessionClosesWithFullOutbox(t *testing.T) {
 		_, err := s.call(context.Background(), &agentv1.Command{})
 		done <- err
 	}()
-	time.Sleep(50 * time.Millisecond) // let call block on the outbox
+	// Wait until call has registered and is blocked on the outbox.
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		s.mu.Lock()
+		n := len(s.pending)
+		s.mu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("call never registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond) // from registration to the outbox select
 	s.close()
 
 	select {
