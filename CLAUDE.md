@@ -30,11 +30,20 @@ Decided in `docs/adr/0001-stack.md` (accepted). Read it before changing anything
 
 ## How to build and test
 
-TODO: no code yet. Fill in once the first module exists (Go toolchain via `devbox-setup-stack`, `go test ./...`, web UI `npm ci && npm test`).
+```bash
+make build   # bin/haetae-agent, bin/haetae-server (static, CGO_ENABLED=0)
+make test    # go test -race ./...
+make lint    # golangci-lint (pinned in Makefile)
+make vuln    # govulncheck
+```
 
 ## Conventions
 
-TODO: fill in. Naming, layout, commit style, and anything a worker must not change.
+- Layout: `cmd/<binary>` for entry points, `internal/<package>` for everything else, `proto/` for the agent contract, `web/` for the UI, `test/` for harnesses and corpora.
+- Work follows `docs/roadmap.md`: one GitHub issue per step, PRs with the template in `.github/pull_request_template.md`. A PR merges only with its acceptance criteria evidenced, CI green, and an independent review (agy or a review-only agent) with blocking findings resolved. Squash-merge.
+- Commit messages: imperative subject under 72 characters, body explains why.
+- Tests sit next to the code (`_test.go`). Integration tests that need Docker or Postgres use the `integration` build tag.
+- Never weaken the hard constraints listed above to make a test pass; fix the code or record the miss.
 
 ## Personas in this project
 
