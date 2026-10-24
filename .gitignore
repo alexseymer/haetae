@@ -21,16 +21,21 @@ Thumbs.db
 # Logs and temp
 *.log
 tmp/
-.cache/
 
-# Common build output and dependencies (refine once the stack is chosen)
-build/
-dist/
-out/
-coverage/
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+go.work
+go.work.sum
+
+# Web UI (React + Vite)
 node_modules/
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-target/
+web/dist/
+web/.vite/
+coverage/
+
+# Local compose data
+/data/

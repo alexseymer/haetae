@@ -17,11 +17,20 @@ Hard constraints from the spec that every change must respect:
 
 ## Stack
 
-TODO: not decided yet. Languages, package managers, and services. Match what `devbox-detect-stack` reports, plus anything it cannot see (databases, queues, SaaS).
+Decided in `docs/adr/0001-stack.md` (accepted). Read it before changing anything structural.
+
+- **Host agent:** Go. `GOMEMLIMIT` and bounded buffers; resident RSS under 50 MB. Inventory helper (Go + Syft library) runs in its own memory-limited cgroup. Outbound monitoring via conntrack netlink events.
+- **Control plane:** Go, Connect-RPC / gRPC; vulnerability matching with Grype as a library.
+- **Web UI:** React + Vite + TypeScript SPA, embedded in the server binary.
+- **Storage:** PostgreSQL only (relational data and time-partitioned metrics; `tenant_id` + Row-Level Security). No TimescaleDB (licensing).
+- **Contract:** protobuf schemas in `proto/`.
+- **On hosts:** Caddy container for HTTPS ingress, managed by the agent.
+- **Self-hosted:** `docker compose` with server + Postgres; Signal (`signal-cli`) is an optional add-on.
+- **Regex:** Go standard `regexp` only (RE2). No backtracking regex engines anywhere in the redaction path.
 
 ## How to build and test
 
-TODO: fill in. Exact commands to install dependencies, run the app, and run the test suite. Prefer copy-pasteable lines.
+TODO: no code yet. Fill in once the first module exists (Go toolchain via `devbox-setup-stack`, `go test ./...`, web UI `npm ci && npm test`).
 
 ## Conventions
 
