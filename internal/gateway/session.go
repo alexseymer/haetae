@@ -23,7 +23,8 @@ type session struct {
 	orgID    uuid.UUID
 	cancel   context.CancelCauseFunc
 	outbox   chan *agentv1.Command
-	lastSeen atomic.Int64 // unix nanoseconds
+	green    chan []string // latest green set; a newer one replaces an unsent one
+	lastSeen atomic.Int64  // unix nanoseconds
 
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.CommandResult
@@ -35,10 +36,26 @@ func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 		hostID:  hostID,
 		cancel:  cancel,
 		outbox:  make(chan *agentv1.Command, 16),
+		green:   make(chan []string, 1),
 		pending: make(map[string]chan *agentv1.CommandResult),
 	}
 	s.touch()
 	return s
+}
+
+// setGreen queues a green set, replacing one that has not been sent yet.
+func (s *session) setGreen(ids []string) {
+	for {
+		select {
+		case s.green <- ids:
+			return
+		default:
+		}
+		select {
+		case <-s.green:
+		default:
+		}
+	}
 }
 
 func (s *session) touch() { s.lastSeen.Store(time.Now().UnixNano()) }

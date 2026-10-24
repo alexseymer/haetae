@@ -1,0 +1,192 @@
+{"line": "level=info msg=aws_call access_key_id=AKI⟦AIOSFODNN7EXAMPLE request=n0", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "AKI⟦AIOSFODNN7EXAMPLE"}]}
+{"line": "level=info msg=aws_call access_key_id=AKI⟦AJGHTUYRFMDISPLOK request=n1", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "AKI⟦AJGHTUYRFMDISPLOK"}]}
+{"line": "level=info msg=aws_call access_key_id=AKI⟦A000000000000000A request=n2", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "AKI⟦A000000000000000A"}]}
+{"line": "level=info msg=aws_call access_key_id=AKI⟦A111111111111111B request=n3", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "AKI⟦A111111111111111B"}]}
+{"line": "level=info msg=aws_call access_key_id=AKI⟦A222222222222222C request=n4", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "AKI⟦A222222222222222C"}]}
+{"line": "level=info msg=aws_call access_key_id=ASI⟦AIOSFODNN7EXAMPLE request=n5", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "ASI⟦AIOSFODNN7EXAMPLE"}]}
+{"line": "level=info msg=aws_call access_key_id=ASI⟦AABCDEFGHIJKLMNOP request=n6", "spans": [{"kind": "secret", "rule": "aws-access-key", "text": "ASI⟦AABCDEFGHIJKLMNOP"}]}
+{"line": "cfg aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY region=us-east-1", "spans": [{"kind": "secret", "rule": "aws-secret-key", "text": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}]}
+{"line": "cfg AWS_SECRET_ACCESS_KEY: abcdefghijklmnopqrstuvwxyz0123456789ABCD region=us-east-1", "spans": [{"kind": "secret", "rule": "aws-secret-key", "text": "abcdefghijklmnopqrstuvwxyz0123456789ABCD"}]}
+{"line": "cfg aws_secret_access_key=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd region=us-east-1", "spans": [{"kind": "secret", "rule": "aws-secret-key", "text": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd"}]}
+{"line": "cfg AWS_SECRET_ACCESS_KEY: 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd region=us-east-1", "spans": [{"kind": "secret", "rule": "aws-secret-key", "text": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd"}]}
+{"line": "cfg aws_secret_access_key=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz region=us-east-1", "spans": [{"kind": "secret", "rule": "aws-secret-key", "text": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}]}
+{"line": "tls dump -----BEGIN ⟦RSA PRIVATE KEY-----MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygJiYmI=-----END RSA PRIVATE KEY----- req=0", "spans": [{"kind": "secret", "rule": "private-key", "text": "-----BEGIN ⟦RSA PRIVATE KEY-----MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygJiYmI=-----END RSA PRIVATE KEY-----"}]}
+{"line": "tls dump -----BEGIN ⟦EC PRIVATE KEY----- req=1", "spans": [{"kind": "secret", "rule": "private-key", "text": "-----BEGIN ⟦EC PRIVATE KEY-----"}]}
+{"line": "tls dump -----BEGIN ⟦PRIVATE KEY-----YGJiYmJiYmJiYmJiYmJiYmJiYmI= req=2", "spans": [{"kind": "secret", "rule": "private-key", "text": "-----BEGIN ⟦PRIVATE KEY-----YGJiYmJiYmJiYmJiYmJiYmJiYmI="}]}
+{"line": "tls dump -----BEGIN ⟦OPENSSH PRIVATE KEY-----b3BlbnNzaC1rZXktdjEAAAAA-----END OPENSSH PRIVATE KEY----- req=3", "spans": [{"kind": "secret", "rule": "private-key", "text": "-----BEGIN ⟦OPENSSH PRIVATE KEY-----b3BlbnNzaC1rZXktdjEAAAAA-----END OPENSSH PRIVATE KEY-----"}]}
+{"line": "tls dump -----BEGIN ⟦RSA PRIVATE KEY----- req=4", "spans": [{"kind": "secret", "rule": "private-key", "text": "-----BEGIN ⟦RSA PRIVATE KEY-----"}]}
+{"line": "git clone https://x-access-token:ghp⟦_abcdefghijklmnopqrstuvwxyz0123456789@github.com/org/repo.git", "spans": [{"kind": "secret", "rule": "github-token", "text": "ghp⟦_abcdefghijklmnopqrstuvwxyz0123456789"}]}
+{"line": "git clone https://x-access-token:gho⟦_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab@github.com/org/repo.git", "spans": [{"kind": "secret", "rule": "github-token", "text": "gho⟦_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"}]}
+{"line": "git clone https://x-access-token:ghu⟦_cccccccccccccccccccccccccccccccccccc@github.com/org/repo.git", "spans": [{"kind": "secret", "rule": "github-token", "text": "ghu⟦_cccccccccccccccccccccccccccccccccccc"}]}
+{"line": "git clone https://x-access-token:ghs⟦_dddddddddddddddddddddddddddddddddddddddd@github.com/org/repo.git", "spans": [{"kind": "secret", "rule": "github-token", "text": "ghs⟦_dddddddddddddddddddddddddddddddddddddddd"}]}
+{"line": "git clone https://x-access-token:ghr⟦_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee@github.com/org/repo.git", "spans": [{"kind": "secret", "rule": "github-token", "text": "ghr⟦_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}]}
+{"line": "slack api token=xox⟦b-123456789012-abcdefghijklmnop channel=C00", "spans": [{"kind": "secret", "rule": "slack-token", "text": "xox⟦b-123456789012-abcdefghijklmnop"}]}
+{"line": "slack api token=xox⟦p-111111111111-222222222222-abcdefghij channel=C01", "spans": [{"kind": "secret", "rule": "slack-token", "text": "xox⟦p-111111111111-222222222222-abcdefghij"}]}
+{"line": "slack api token=xox⟦a-2-123456789012-abcdefghijklmn channel=C02", "spans": [{"kind": "secret", "rule": "slack-token", "text": "xox⟦a-2-123456789012-abcdefghijklmn"}]}
+{"line": "slack api token=xox⟦r-refresh-token-value-xx channel=C03", "spans": [{"kind": "secret", "rule": "slack-token", "text": "xox⟦r-refresh-token-value-xx"}]}
+{"line": "slack api token=xox⟦s-session-token-abcdefghi channel=C04", "spans": [{"kind": "secret", "rule": "slack-token", "text": "xox⟦s-session-token-abcdefghi"}]}
+{"line": "payments stripe_key=sk_⟦live_aaaaaaaaaaaaaaaaaaaaaaaa order=0", "spans": [{"kind": "secret", "rule": "stripe-key", "text": "sk_⟦live_aaaaaaaaaaaaaaaaaaaaaaaa"}]}
+{"line": "payments stripe_key=sk_⟦live_bbbbbbbbbbbbbbbbbbbb order=1", "spans": [{"kind": "secret", "rule": "stripe-key", "text": "sk_⟦live_bbbbbbbbbbbbbbbbbbbb"}]}
+{"line": "payments stripe_key=rk_⟦live_cccccccccccccccccccccc order=2", "spans": [{"kind": "secret", "rule": "stripe-key", "text": "rk_⟦live_cccccccccccccccccccccc"}]}
+{"line": "payments stripe_key=sk_⟦live_dddddddddddddddddddddddddddddd order=3", "spans": [{"kind": "secret", "rule": "stripe-key", "text": "sk_⟦live_dddddddddddddddddddddddddddddd"}]}
+{"line": "payments stripe_key=rk_⟦live_eeeeeeeeeeeeeeeeeeee order=4", "spans": [{"kind": "secret", "rule": "stripe-key", "text": "rk_⟦live_eeeeeeeeeeeeeeeeeeee"}]}
+{"line": "maps key=AIz⟦aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA used", "spans": [{"kind": "secret", "rule": "google-api-key", "text": "AIz⟦aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}
+{"line": "maps key=AIz⟦aSyDev111111111111111111111111111111 used", "spans": [{"kind": "secret", "rule": "google-api-key", "text": "AIz⟦aSyDev111111111111111111111111111111"}]}
+{"line": "maps key=AIz⟦a-----xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx used", "spans": [{"kind": "secret", "rule": "google-api-key", "text": "AIz⟦a-----xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"line": "maps key=AIz⟦a_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz used", "spans": [{"kind": "secret", "rule": "google-api-key", "text": "AIz⟦a_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}]}
+{"line": "maps key=AIz⟦a99999999999999999999999999999999999 used", "spans": [{"kind": "secret", "rule": "google-api-key", "text": "AIz⟦a99999999999999999999999999999999999"}]}
+{"line": "session jwt=eyJ⟦hbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMSJ9.sigAAA111BBB222CCC path=/api", "spans": [{"kind": "secret", "rule": "jwt", "text": "eyJ⟦hbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMSJ9.sigAAA111BBB222CCC"}]}
+{"line": "session jwt=eyJ⟦hbGciOiJSUzI1NiJ9.eyJmb28iOiJiYXIifQ.dGVzdHNpZ25hdHVyZQ path=/api", "spans": [{"kind": "secret", "rule": "jwt", "text": "eyJ⟦hbGciOiJSUzI1NiJ9.eyJmb28iOiJiYXIifQ.dGVzdHNpZ25hdHVyZQ"}]}
+{"line": "session jwt=eyJ⟦0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhIjoiYiJ9.zzzzzzzzzzzz path=/api", "spans": [{"kind": "secret", "rule": "jwt", "text": "eyJ⟦0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhIjoiYiJ9.zzzzzzzzzzzz"}]}
+{"line": "session jwt=eyJ⟦hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1IjoiMiJ9.aabbccddeeff0011 path=/api", "spans": [{"kind": "secret", "rule": "jwt", "text": "eyJ⟦hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1IjoiMiJ9.aabbccddeeff0011"}]}
+{"line": "session jwt=eyJ⟦tc2ciOiJ0ZXN0In0.eyJkYXRhIjoxMjN9.c2lnbmF0dXJlMTIzNDU path=/api", "spans": [{"kind": "secret", "rule": "jwt", "text": "eyJ⟦tc2ciOiJ0ZXN0In0.eyJkYXRhIjoxMjN9.c2lnbmF0dXJlMTIzNDU"}]}
+{"line": "Authorization: Bearer aaaaaaaaaaaaaaaaaaaa", "spans": [{"kind": "secret", "rule": "bearer-token", "text": "Bearer aaaaaaaaaaaaaaaaaaaa"}]}
+{"line": "Authorization: Bearer tok_xxxxxxxxxxxxxxxxxxxx", "spans": [{"kind": "secret", "rule": "bearer-token", "text": "Bearer tok_xxxxxxxxxxxxxxxxxxxx"}]}
+{"line": "Authorization: bearer ZZZZZZZZZZZZZZZZ", "spans": [{"kind": "secret", "rule": "bearer-token", "text": "bearer ZZZZZZZZZZZZZZZZ"}]}
+{"line": "Authorization: Bearer abcdefghijklmnopqr", "spans": [{"kind": "secret", "rule": "bearer-token", "text": "Bearer abcdefghijklmnopqr"}]}
+{"line": "Authorization: Bearer nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn", "spans": [{"kind": "secret", "rule": "bearer-token", "text": "Bearer nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"}]}
+{"line": "proxy Authorization: Basic dXNlcjpwYXNzd29yZA== ok", "spans": [{"kind": "secret", "rule": "basic-auth-header", "text": "Authorization: Basic dXNlcjpwYXNzd29yZA=="}]}
+{"line": "proxy Authorization: Basic YWRtaW46c2VjcmV0MTIz ok", "spans": [{"kind": "secret", "rule": "basic-auth-header", "text": "Authorization: Basic YWRtaW46c2VjcmV0MTIz"}]}
+{"line": "proxy authorization: basic abcdefghijklmnop ok", "spans": [{"kind": "secret", "rule": "basic-auth-header", "text": "authorization: basic abcdefghijklmnop"}]}
+{"line": "proxy Authorization:  Basic  dGVzdDp0ZXN0 ok", "spans": [{"kind": "secret", "rule": "basic-auth-header", "text": "Authorization:  Basic  dGVzdDp0ZXN0"}]}
+{"line": "proxy Authorization: Basic qqwertyuiopasdfghjkl ok", "spans": [{"kind": "secret", "rule": "basic-auth-header", "text": "Authorization: Basic qqwertyuiopasdfghjkl"}]}
+{"line": "fetch https://user:s3cretpass@example.com/x", "spans": [{"kind": "secret", "rule": "url-credentials", "text": "user:s3cretpass"}]}
+{"line": "fetch http://alice:hunter2x@db.internal:5432/app", "spans": [{"kind": "secret", "rule": "url-credentials", "text": "alice:hunter2x"}]}
+{"line": "fetch wss://svc:tokensecret@stream.local/ws", "spans": [{"kind": "secret", "rule": "url-credentials", "text": "svc:tokensecret"}]}
+{"line": "fetch ftp://deploy:deploy123@files.example.net/", "spans": [{"kind": "secret", "rule": "url-credentials", "text": "deploy:deploy123"}]}
+{"line": "fetch https://ci:ghtokenvalue1@github.com/org/repo.git", "spans": [{"kind": "secret", "rule": "url-credentials", "text": "ci:ghtokenvalue1"}]}
+{"line": "config password=s3cretValue env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "s3cretValue"}]}
+{"line": "config passwd: hunter22 env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "hunter22"}]}
+{"line": "config api_key=abcdef123456 env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "abcdef123456"}]}
+{"line": "config \"client_secret\":\"supersecret99\" env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "supersecret99"}]}
+{"line": "config token=zzzzzz999999 env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "zzzzzz999999"}]}
+{"line": "config access_key = myaccess99 env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "myaccess99"}]}
+{"line": "config apikey: qwertyuiop env=dev", "spans": [{"kind": "secret", "rule": "generic-secret", "text": "qwertyuiop"}]}
+{"line": "notify to=alice@example.com template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "alice@example.com"}]}
+{"line": "notify to=bob.smith+tag@mail.co.uk template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "bob.smith+tag@mail.co.uk"}]}
+{"line": "notify to=noreply@haetae.dev template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "noreply@haetae.dev"}]}
+{"line": "notify to=ops-oncall@company.example template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "ops-oncall@company.example"}]}
+{"line": "notify to=user.name@sub.domain.io template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "user.name@sub.domain.io"}]}
+{"line": "notify to=admin@localhost.localdomain template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "admin@localhost.localdomain"}]}
+{"line": "notify to=jane.doe@example.org template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "jane.doe@example.org"}]}
+{"line": "notify to=support+ticket42@helpdesk.test template=welcome", "spans": [{"kind": "pii", "rule": "email", "text": "support+ticket42@helpdesk.test"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=203.0.113.10", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "203.0.113.10"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=198.51.100.1", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "198.51.100.1"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=8.8.8.8", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "8.8.8.8"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=1.1.1.1", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "1.1.1.1"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=192.0.2.55", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "192.0.2.55"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=203.0.113.200", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "203.0.113.200"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=198.51.100.99", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "198.51.100.99"}]}
+{"line": "127.0.0.1 - - [24/Oct/2024:12:00:00 +0000] \"GET / HTTP/1.1\" 200 1234 \"-\" \"curl\" upstream=10.0.0.42", "spans": [{"kind": "pii", "rule": "ipv4", "text": "127.0.0.1"}, {"kind": "pii", "rule": "ipv4", "text": "10.0.0.42"}]}
+{"line": "peer connected from 172.16.5.9", "spans": [{"kind": "pii", "rule": "ipv4", "text": "172.16.5.9"}]}
+{"line": "peer connected from 100.64.1.2", "spans": [{"kind": "pii", "rule": "ipv4", "text": "100.64.1.2"}]}
+{"line": "listen [2001:db8:85a3::8a2e:370:7334]:443 ok", "spans": [{"kind": "pii", "rule": "ipv6", "text": "2001:db8:85a3::8a2e:370:7334"}]}
+{"line": "listen [2001:db8::1]:443 ok", "spans": [{"kind": "pii", "rule": "ipv6", "text": "2001:db8::1"}]}
+{"line": "listen [fe80:0:0:0:0:0:0:1]:443 ok", "spans": [{"kind": "pii", "rule": "ipv6", "text": "fe80:0:0:0:0:0:0:1"}]}
+{"line": "listen [2001:0db8:0000:0000:0000:ff00:0042:8329]:443 ok", "spans": [{"kind": "pii", "rule": "ipv6", "text": "2001:0db8:0000:0000:0000:ff00:0042:8329"}]}
+{"line": "listen [fd12:3456:789a:1::1]:443 ok", "spans": [{"kind": "pii", "rule": "ipv6", "text": "fd12:3456:789a:1::1"}]}
+{"line": "listen [2001:db8:1:2:3:4:5:6]:443 ok", "spans": [{"kind": "pii", "rule": "ipv6", "text": "2001:db8:1:2:3:4:5:6"}]}
+{"line": "sms to +1-415-555-2671 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "+1-415-555-2671"}]}
+{"line": "sms to +44 20 7946 0958 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "+44 20 7946 0958"}]}
+{"line": "sms to (415) 555-2671 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "(415) 555-2671"}]}
+{"line": "sms to +33 1 42 68 53 00 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "+33 1 42 68 53 00"}]}
+{"line": "sms to +61 2 9876 5432 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "+61 2 9876 5432"}]}
+{"line": "sms to 415-555-0182 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "415-555-0182"}]}
+{"line": "sms to +49 30 12345678 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "+49 30 12345678"}]}
+{"line": "sms to +81 3-1234-5678 body=hello", "spans": [{"kind": "pii", "rule": "phone", "text": "+81 3-1234-5678"}]}
+{"line": "payment pan=4111111111111111 currency=USD", "spans": [{"kind": "pii", "rule": "credit-card", "text": "4111111111111111"}]}
+{"line": "payment pan=5500-0000-0000-0004 currency=USD", "spans": [{"kind": "pii", "rule": "credit-card", "text": "5500-0000-0000-0004"}]}
+{"line": "payment pan=3400 0000 0000 009 currency=USD", "spans": [{"kind": "pii", "rule": "credit-card", "text": "3400 0000 0000 009"}]}
+{"line": "payment pan=6011000000000004 currency=USD", "spans": [{"kind": "pii", "rule": "credit-card", "text": "6011000000000004"}]}
+{"line": "payment pan=3530111333300000 currency=USD", "spans": [{"kind": "pii", "rule": "credit-card", "text": "3530111333300000"}]}
+{"line": "payment pan=4111 1111 1111 1111 currency=USD", "spans": [{"kind": "pii", "rule": "credit-card", "text": "4111 1111 1111 1111"}]}
+{"line": "2024-10-24T12:00:00Z level=info msg=\"server started\" version=v1.2.3.4", "spans": []}
+{"line": "2024-10-24T12:00:01Z level=info msg=\"listening\" addr=:8080", "spans": []}
+{"line": "level=debug req_id=550e8400-e29b-41d4-a716-446655440000 path=/healthz", "spans": []}
+{"line": "level=info msg=\"handled request\" req_id=req-abc-123 duration_ms=42 status=200", "spans": []}
+{"line": "level=warn msg=\"slow query\" duration_ms=512 table=users", "spans": []}
+{"line": "level=error msg=\"upstream timeout\" service=billing attempt=3", "spans": []}
+{"line": "INFO app starting build=20241024.1 git_sha=abcdef0123456789", "spans": []}
+{"line": "DEBUG cache hit key=user:42 ttl=60s", "spans": []}
+{"line": "TRACE span=http.server name=GET /api/v1/items", "spans": []}
+{"line": "metrics scrape ok series=1284", "spans": []}
+{"line": "goroutine 1 [running]: | main.main() | \t/app/cmd/server/main.go:42 +0x1a", "spans": []}
+{"line": "panic recovered: nil pointer path=/internal/foo", "spans": []}
+{"line": "sql: SELECT id, name FROM projects WHERE tenant_id=$1", "spans": []}
+{"line": "migrate version=14 applied in 32ms", "spans": []}
+{"line": "container web-1 healthy restart_count=0", "spans": []}
+{"line": "docker event type=die container=abc123xyz", "spans": []}
+{"line": "compose project=demo service=api image=demo/api:1.4.2", "spans": []}
+{"line": "caddy reload config=/etc/caddy/Caddyfile", "spans": []}
+{"line": "tls handshake ok cipher=TLS_AES_128_GCM_SHA256", "spans": []}
+{"line": "rate limit remaining=99 bucket=api", "spans": []}
+{"line": "queue depth=12 worker=3", "spans": []}
+{"line": "job completed id=job_998877 name=scan-nightly", "spans": []}
+{"line": "inventory packages=842 duration=1.2s", "spans": []}
+{"line": "grype db updated age=2h", "spans": []}
+{"line": "agent heartbeat ok rss_mb=18", "spans": []}
+{"line": "conntrack events=40 drops=0", "spans": []}
+{"line": "redaction skipped reason=local-ai", "spans": []}
+{"line": "feature flag enable_x=true", "spans": []}
+{"line": "config loaded path=/etc/haetae/config.yaml", "spans": []}
+{"line": "fsnotify write /var/log/app/app.log", "spans": []}
+{"line": "rotation compressed app.log.1.gz size=2.1MB", "spans": []}
+{"line": "backup finished bytes=1048576 checksum=sha256:deadbeefcafebabe", "spans": []}
+{"line": "cron tick schedule=\"0 * * * *\"", "spans": []}
+{"line": "http access method=GET path=/metrics status=200 bytes=2048", "spans": []}
+{"line": "http access method=POST path=/api/v1/deploy status=202 bytes=32", "spans": []}
+{"line": "grpc method=/haetae.agent.v1.AgentService/Hello code=OK", "spans": []}
+{"line": "retry backoff=250ms attempt=2/5", "spans": []}
+{"line": "circuit breaker state=closed failures=0", "spans": []}
+{"line": "cache purge pattern=tenant:*", "spans": []}
+{"line": "websocket connected clients=3", "spans": []}
+{"line": "pubsub message topic=events size=128", "spans": []}
+{"line": "kafka offset=998877 partition=0", "spans": []}
+{"line": "redis GET session:abc result=miss", "spans": []}
+{"line": "postgres pool acquired=4 idle=6", "spans": []}
+{"line": "disk usage path=/var/lib/docker used_pct=62", "spans": []}
+{"line": "cpu load1=0.42 load5=0.55", "spans": []}
+{"line": "oom killer skipped process=none", "spans": []}
+{"line": "seccomp profile=default", "spans": []}
+{"line": "apparmor status=enforce", "spans": []}
+{"line": "nftables ruleset loaded chains=12", "spans": []}
+{"line": "iptables -L INPUT policy ACCEPT", "spans": []}
+{"line": "sysctl net.core.somaxconn=4096", "spans": []}
+{"line": "ulimit nofile=65535", "spans": []}
+{"line": "timezone=UTC offset=+00:00", "spans": []}
+{"line": "locale=en_US.UTF-8", "spans": []}
+{"line": "build go=1.22.5 os=linux arch=amd64", "spans": []}
+{"line": "module github.com/alexseymer/haetae", "spans": []}
+{"line": "proto generated package=agent.v1", "spans": []}
+{"line": "test passed package=internal/store count=12", "spans": []}
+{"line": "coverage total=78.4%", "spans": []}
+{"line": "lint clean issues=0", "spans": []}
+{"line": "vulncheck findings=0", "spans": []}
+{"line": "release tagged v0.1.0", "spans": []}
+{"line": "changelog entry added", "spans": []}
+{"line": "docs rendered pages=24", "spans": []}
+{"line": "ui bundle size=312KiB", "spans": []}
+{"line": "embed fs ready", "spans": []}
+{"line": "signal-cli optional addon disabled", "spans": []}
+{"line": "enrollment token minted ttl=15m", "spans": []}
+{"line": "host registered id=host-demo-01", "spans": []}
+{"line": "tenant created id=ten_01 name=acme", "spans": []}
+{"line": "role assigned user=ops role=admin", "spans": []}
+{"line": "audit event action=login result=ok", "spans": []}
+{"line": "session revoked id=sess_99", "spans": []}
+{"line": "api key rotated label=ci", "spans": []}
+{"line": "webhook delivered status=204 latency_ms=90", "spans": []}
+{"line": "email provider=local skipped", "spans": []}
+{"line": "slack channel=#ops dry_run=true", "spans": []}
+{"line": "telegram bot idle", "spans": []}
+{"line": "briefing scheduled at=07:00", "spans": []}
+{"line": "incident opened severity=low title=disk-warning", "spans": []}
+{"line": "incident closed id=inc_01", "spans": []}
+{"line": "finding triage status=open cve=CVE-2024-0000", "spans": []}
+{"line": "policy allow action=restart autonomy=suggest", "spans": []}
+{"line": "autonomy level=observe", "spans": []}
+{"line": "log line template green fingerprint=abc123", "spans": []}
+{"line": "dedup merged count=5 window=2m", "spans": []}
+{"line": "filter drop reason=debug-level", "spans": []}
+{"line": "evidence excerpt len=240", "spans": []}
+{"line": "tool call name=list_hosts duration_ms=15", "spans": []}

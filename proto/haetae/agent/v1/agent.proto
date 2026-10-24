@@ -53,6 +53,7 @@ message ConnectRequest {
     CommandResult result = 3;
     StateSnapshot state = 4;
     MetricsBatch metrics = 5;
+    LogBatch logs = 6;
   }
 }
 
@@ -60,6 +61,7 @@ message ConnectResponse {
   oneof msg {
     Welcome welcome = 1;
     Command command = 2;
+    GreenSet green = 3;
   }
 }
 
@@ -85,15 +87,38 @@ message Command {
   string id = 1;
   oneof kind {
     Ping ping = 2;
+    QueryLogs query_logs = 3;
   }
 }
 
 message Ping {}
 
+// QueryLogs asks for recent log lines of one container from the agent's
+// ring buffer. Lines are redacted on the host before they are returned.
+message QueryLogs {
+  string container_id = 1;
+  int64 from_unix_ms = 2;
+  int64 to_unix_ms = 3;
+  uint32 max_lines = 4; // the agent caps this at 1000
+}
+
 message CommandResult {
   string command_id = 1;
   // Empty on success.
   string error = 2;
+  oneof payload {
+    LogLines log_lines = 3;
+  }
+}
+
+message LogLines {
+  repeated LogLine lines = 1;
+  bool truncated = 2; // more lines matched than were returned
+}
+
+message LogLine {
+  int64 ts_unix_ms = 1;
+  string line = 2; // redacted
 }
 
 // StateSnapshot is the complete set of containers on the host. The agent
@@ -163,4 +188,61 @@ message ContainerMetricSample {
   double blk_read_bps = 8;
   double blk_write_bps = 9;
   uint32 pids = 10;
+}
+
+// LogBatch carries merged, redacted log events. A template is a line with
+// numbers, ids, addresses and quoted text replaced by placeholders; lines
+// with the same template inside a window are merged into one event with a
+// count. Raw lines never leave the host except as the redacted sample.
+message LogBatch {
+  repeated LogEvent events = 1;
+  // Templates first seen on this host that are not green yet: the server
+  // judges them and may answer with a GreenSet.
+  repeated TemplateCandidate candidates = 2;
+  // Cumulative counters since the agent started, for the "95% of lines never
+  // sent" measurement and for spotting dropped data.
+  LogStats stats = 3;
+}
+
+message LogEvent {
+  string container_id = 1;
+  string template_id = 2; // 16 hex chars
+  LogLevel level = 3;
+  string template = 4;    // redacted
+  string sample = 5;      // first raw line of the window, redacted
+  uint32 count = 6;       // lines merged into this event
+  int64 first_unix_ms = 7;
+  int64 last_unix_ms = 8;
+}
+
+message TemplateCandidate {
+  string template_id = 1;
+  LogLevel level = 2;
+  string template = 3; // redacted
+  string sample = 4;   // redacted
+}
+
+message LogStats {
+  uint64 lines_in = 1;
+  uint64 lines_skipped = 2;
+  uint64 events_out = 3;
+  uint64 redaction_failures = 4; // batches dropped because redaction failed
+  uint64 lines_dropped = 5;      // lines lost to size limits or backpressure
+}
+
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_TRACE = 1;
+  LOG_LEVEL_DEBUG = 2;
+  LOG_LEVEL_INFO = 3;
+  LOG_LEVEL_WARN = 4;
+  LOG_LEVEL_ERROR = 5;
+  LOG_LEVEL_FATAL = 6;
+}
+
+// GreenSet replaces the set of template ids whose lines the agent may skip.
+// Only info, debug and trace templates can be green; the agent ignores the
+// set for warn, error, fatal and unknown lines.
+message GreenSet {
+  repeated string template_ids = 1;
 }

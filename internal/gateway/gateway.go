@@ -38,6 +38,7 @@ type Store interface {
 	MarkSeen(ctx context.Context, id uuid.UUID, at time.Time) error
 	MarkDisconnected(ctx context.Context, id uuid.UUID) error
 	ingestStore
+	logStore
 }
 
 // Config tunes the gateway. Zero values get defaults.
@@ -52,6 +53,9 @@ type Config struct {
 	// SeenWriteEvery limits how often last_seen_at is written per host.
 	// Default 30 s.
 	SeenWriteEvery time.Duration
+	// JudgeEvery limits how often an org's new log templates are judged.
+	// Default 10 s.
+	JudgeEvery time.Duration
 	// Tap, if set, sees every message received from an agent. For tests.
 	Tap func(hostID uuid.UUID, msg *agentv1.ConnectRequest)
 }
@@ -71,6 +75,9 @@ func (c Config) withDefaults() Config {
 	if c.SeenWriteEvery <= 0 {
 		c.SeenWriteEvery = 30 * time.Second
 	}
+	if c.JudgeEvery <= 0 {
+		c.JudgeEvery = 10 * time.Second
+	}
 	return c
 }
 
@@ -83,6 +90,9 @@ type Gateway struct {
 
 	mu       sync.Mutex
 	sessions map[uuid.UUID]*session
+
+	judgeMu sync.Mutex
+	judge   judgeThrottle
 }
 
 var _ agentv1connect.AgentGatewayServiceHandler = (*Gateway)(nil)
@@ -95,6 +105,7 @@ func New(st Store, ca *pki.CA, cfg Config, log *slog.Logger) *Gateway {
 		cfg:      cfg.withDefaults(),
 		log:      log,
 		sessions: make(map[uuid.UUID]*session),
+		judge:    judgeThrottle{every: cfg.withDefaults().JudgeEvery},
 	}
 }
 
@@ -211,6 +222,13 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	if err := stream.Send(welcome); err != nil {
 		return err
 	}
+	// Tell the agent which templates are already green for this host, so it
+	// skips them from its first line.
+	if ids, err := g.store.GreenTemplateIDs(ctx, host.OrgID, hostID, maxGreenIDs); err != nil {
+		g.log.Warn("load green set", "host_id", hostID, "err", err)
+	} else if len(ids) > 0 {
+		s.setGreen(ids)
+	}
 
 	recvErr := make(chan error, 1)
 	go func() { recvErr <- g.receiveLoop(ctx, stream, s) }()
@@ -307,6 +325,8 @@ func (g *Gateway) receiveLoop(ctx context.Context, stream *connect.BidiStream[ag
 			g.ingestState(ctx, s, m.State)
 		case *agentv1.ConnectRequest_Metrics:
 			g.ingestMetrics(ctx, s, m.Metrics)
+		case *agentv1.ConnectRequest_Logs:
+			g.ingestLogs(ctx, s, m.Logs)
 		case *agentv1.ConnectRequest_Result:
 			s.deliver(m.Result)
 		case *agentv1.ConnectRequest_Hello:
@@ -331,6 +351,11 @@ func (g *Gateway) sendLoop(ctx context.Context, stream *connect.BidiStream[agent
 		case <-check.C:
 			if s.idle() > idleLimit {
 				return fmt.Errorf("no message for %s", idleLimit)
+			}
+		case ids := <-s.green:
+			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Green{Green: &agentv1.GreenSet{TemplateIds: ids}}}
+			if err := stream.Send(msg); err != nil {
+				return err
 			}
 		case cmd := <-s.outbox:
 			if err := stream.Send(&agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Command{Command: cmd}}); err != nil {
@@ -368,6 +393,16 @@ func (g *Gateway) unregister(s *session) {
 	if err := g.store.MarkDisconnected(ctx, s.hostID); err != nil {
 		g.log.Error("mark disconnected", "host_id", s.hostID, "err", err)
 	}
+}
+
+// pushGreen sends the host's green set to the host's own session.
+func (g *Gateway) pushGreen(ctx context.Context, s *session) {
+	ids, err := g.store.GreenTemplateIDs(ctx, s.orgID, s.hostID, maxGreenIDs)
+	if err != nil {
+		g.log.Warn("load green set", "host_id", s.hostID, "err", err)
+		return
+	}
+	s.setGreen(ids)
 }
 
 // Connected reports whether the host has a live session on this gateway.

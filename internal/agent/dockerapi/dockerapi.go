@@ -120,6 +120,10 @@ type ContainerDetail struct {
 			FailingStreak int    `json:"FailingStreak"`
 		} `json:"Health"`
 	} `json:"State"`
+	Config struct {
+		// Tty decides whether the log stream is multiplexed.
+		Tty bool `json:"Tty"`
+	} `json:"Config"`
 }
 
 // InspectContainer returns container details (GET /containers/{id}/json).

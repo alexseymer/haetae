@@ -52,7 +52,11 @@ type Monitor struct {
 	// seen in the last sample are kept, so the map stays bounded.
 	prev    map[string]containerCounters
 	running []string // ids of running containers from the last snapshot
-	rotate  int      // rotates the starting container of each stats round
+
+	// OnRunning, if set, is called after each snapshot with the running
+	// containers (id to name). It must not block.
+	OnRunning func(map[string]string)
+	rotate    int // rotates the starting container of each stats round
 }
 
 type containerCounters struct {
@@ -83,6 +87,9 @@ func (m *Monitor) Resync() {
 	default:
 	}
 }
+
+// Docker returns the monitor's Docker client, for components that share it.
+func (m *Monitor) Docker() *dockerapi.Client { return m.docker }
 
 // DockerVersion returns the daemon version, or "" if Docker is unreachable.
 func (m *Monitor) DockerVersion(ctx context.Context) string {
@@ -181,6 +188,9 @@ func (m *Monitor) snapshot(ctx context.Context) {
 	if err != nil {
 		snap.DockerError = err.Error()
 		m.running = nil
+		if m.OnRunning != nil {
+			m.OnRunning(map[string]string{})
+		}
 		m.out.PutSnapshot(snap)
 		return
 	}
@@ -196,6 +206,7 @@ func (m *Monitor) snapshot(ctx context.Context) {
 	}
 
 	running := make([]string, 0, len(list))
+	names := make(map[string]string, len(list))
 	for _, c := range list {
 		cs := containerState(c)
 		// Inspect adds restart count, health, OOM and exit code. A container
@@ -206,9 +217,13 @@ func (m *Monitor) snapshot(ctx context.Context) {
 		snap.Containers = append(snap.Containers, cs)
 		if c.State == "running" {
 			running = append(running, c.ID)
+			names[c.ID] = cs.Name
 		}
 	}
 	m.running = running
+	if m.OnRunning != nil {
+		m.OnRunning(names)
+	}
 	m.out.PutSnapshot(snap)
 }
 

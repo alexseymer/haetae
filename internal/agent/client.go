@@ -120,6 +120,11 @@ type RunOptions struct {
 	OnConnected func()
 	// DockerVersion is reported in Hello.
 	DockerVersion func(context.Context) string
+	// OnGreen receives the server's set of routine log templates.
+	OnGreen func(ids []string)
+	// Handler runs commands other than Ping, e.g. QueryLogs. It returns nil
+	// for kinds it does not know, which the agent then refuses.
+	Handler func(ctx context.Context, cmd *agentv1.Command) *agentv1.CommandResult
 }
 
 // Run keeps a session to the control plane until ctx is cancelled,
@@ -194,7 +199,7 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 	go func() { hbErr <- heartbeat(ctx, interval, send) }()
 
 	recvErr := make(chan error, 1)
-	go func() { recvErr <- receiveCommands(ctx, cancel, stream, send) }()
+	go func() { recvErr <- receiveCommands(ctx, cancel, stream, send, opts) }()
 
 	fwdErr := make(chan error, 1)
 	if opts.Outbox != nil {
@@ -251,7 +256,7 @@ func heartbeat(ctx context.Context, interval time.Duration, send func(*agentv1.C
 // commands wait, which also applies backpressure to the stream.
 const maxRunningCommands = 4
 
-func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *connect.BidiStreamForClient[agentv1.ConnectRequest, agentv1.ConnectResponse], send func(*agentv1.ConnectRequest) error) error {
+func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *connect.BidiStreamForClient[agentv1.ConnectRequest, agentv1.ConnectResponse], send func(*agentv1.ConnectRequest) error, opts RunOptions) error {
 	slots := make(chan struct{}, maxRunningCommands)
 	var wg sync.WaitGroup
 	// Cancel first so a command blocked in send unblocks before we wait.
@@ -264,6 +269,12 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 		msg, err := stream.Receive()
 		if err != nil {
 			return fmt.Errorf("receive: %w", err)
+		}
+		if g := msg.GetGreen(); g != nil {
+			if opts.OnGreen != nil {
+				opts.OnGreen(g.GetTemplateIds())
+			}
+			continue
 		}
 		cmd := msg.GetCommand()
 		if cmd == nil {
@@ -278,11 +289,23 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			res := execute(cmd)
+			res := dispatch(ctx, cmd, opts.Handler)
 			// A failed send means the session is ending; Receive reports it.
 			_ = send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Result{Result: res}})
 		}()
 	}
+}
+
+// dispatch runs a command: Ping itself, the rest through the handler. Kinds
+// neither knows are refused, so this stays the agent's command allowlist.
+func dispatch(ctx context.Context, cmd *agentv1.Command, h func(context.Context, *agentv1.Command) *agentv1.CommandResult) *agentv1.CommandResult {
+	if _, ok := cmd.GetKind().(*agentv1.Command_Ping); !ok && h != nil {
+		if res := h(ctx, cmd); res != nil {
+			res.CommandId = cmd.GetId()
+			return res
+		}
+	}
+	return execute(cmd)
 }
 
 // execute runs one command. Only kinds listed here exist; anything else is
