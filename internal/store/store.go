@@ -17,7 +17,9 @@ var migrationFS embed.FS
 
 // Store is a PostgreSQL-backed persistence layer for the control plane.
 type Store struct {
-	pool *pgxpool.Pool
+	pool   dbPool        // where queries run: the pool, or a tenant-scoped view of it
+	raw    *pgxpool.Pool // the real pool
+	scoped bool          // a view made by ForOrg; Close does not close the pool
 }
 
 // Open connects to PostgreSQL, pings, and applies pending migrations.
@@ -30,7 +32,7 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
-	s := &Store{pool: pool}
+	s := &Store{pool: pool, raw: pool}
 	if err := s.migrate(ctx); err != nil {
 		pool.Close()
 		return nil, err
@@ -40,15 +42,15 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 
 // Close closes the underlying connection pool.
 func (s *Store) Close() {
-	if s == nil || s.pool == nil {
+	if s == nil || s.raw == nil || s.scoped {
 		return
 	}
-	s.pool.Close()
+	s.raw.Close()
 }
 
-// Pool returns the underlying connection pool.
+// Pool returns the underlying connection pool. It is not tenant-scoped.
 func (s *Store) Pool() *pgxpool.Pool {
-	return s.pool
+	return s.raw
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -127,4 +129,12 @@ func (s *Store) applyMigration(ctx context.Context, version int, sql string) err
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// Ping checks the database connection.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.raw.Ping(ctx); err != nil {
+		return fmt.Errorf("store: ping: %w", err)
+	}
+	return nil
 }

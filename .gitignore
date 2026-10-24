@@ -37,6 +37,9 @@ node_modules/
 web/dist/
 web/.vite/
 coverage/
+# The built interface embedded in the server (see make web)
+internal/webui/app/*
+!internal/webui/app/.gitkeep
 
 # Local compose data
 /data/

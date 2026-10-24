@@ -3,21 +3,26 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/alexseymer/haetae/internal/api"
+	"github.com/alexseymer/haetae/internal/auth"
 	"github.com/alexseymer/haetae/internal/gateway"
 	"github.com/alexseymer/haetae/internal/pki"
 	"github.com/alexseymer/haetae/internal/server"
 	"github.com/alexseymer/haetae/internal/store"
 	"github.com/alexseymer/haetae/internal/version"
+	"github.com/alexseymer/haetae/internal/webui"
 )
 
 const usage = `usage:
@@ -30,7 +35,12 @@ Configuration (environment):
   HAETAE_DATA_DIR        state directory, holds the agent CA (default /var/lib/haetae)
   HAETAE_GATEWAY_ADDR    agent gateway listen address (default :8443)
   HAETAE_GATEWAY_URL     URL agents dial (default https://<hostname>:8443)
-  HAETAE_GATEWAY_NAMES   extra comma-separated names for the gateway certificate
+  HAETAE_GATEWAY_NAMES   extra comma-separated names for the gateway and web certificates
+  HAETAE_WEB_ADDR        web interface listen address (default :8080)
+  HAETAE_WEB_URL         URL users open (default https://<hostname>:8080)
+  HAETAE_WEB_TLS_CERT    certificate file for the web interface (with HAETAE_WEB_TLS_KEY);
+                         default: one issued by the server's own CA
+  HAETAE_TRUST_PROXY     set to 1 behind a reverse proxy that sets X-Forwarded-For
 `
 
 type config struct {
@@ -39,6 +49,11 @@ type config struct {
 	gatewayAddr  string
 	gatewayURL   string
 	gatewayNames []string
+	webAddr      string
+	webURL       string
+	webCertFile  string
+	webKeyFile   string
+	trustProxy   bool
 }
 
 func loadConfig() (config, error) {
@@ -48,6 +63,14 @@ func loadConfig() (config, error) {
 		dataDir:     envOr("HAETAE_DATA_DIR", "/var/lib/haetae"),
 		gatewayAddr: envOr("HAETAE_GATEWAY_ADDR", ":8443"),
 		gatewayURL:  envOr("HAETAE_GATEWAY_URL", "https://"+hostname+":8443"),
+		webAddr:     envOr("HAETAE_WEB_ADDR", ":8080"),
+		webURL:      envOr("HAETAE_WEB_URL", "https://"+hostname+":8080"),
+		webCertFile: os.Getenv("HAETAE_WEB_TLS_CERT"),
+		webKeyFile:  os.Getenv("HAETAE_WEB_TLS_KEY"),
+		trustProxy:  os.Getenv("HAETAE_TRUST_PROXY") == "1",
+	}
+	if (c.webCertFile == "") != (c.webKeyFile == "") {
+		return c, errors.New("HAETAE_WEB_TLS_CERT and HAETAE_WEB_TLS_KEY must be set together")
 	}
 	if c.databaseURL == "" {
 		return c, errors.New("HAETAE_DATABASE_URL is required")
@@ -57,6 +80,9 @@ func loadConfig() (config, error) {
 		names = append(names, hostname)
 	}
 	if h := urlHost(c.gatewayURL); h != "" {
+		names = append(names, h)
+	}
+	if h := urlHost(c.webURL); h != "" {
 		names = append(names, h)
 	}
 	for _, n := range strings.Split(os.Getenv("HAETAE_GATEWAY_NAMES"), ",") {
@@ -149,13 +175,88 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 	log.Info("agent gateway listening", "addr", gs.Addr(), "url", cfg.gatewayURL, "ca_pin", pki.Fingerprint(ca.DER))
 
+	ws, err := startWeb(ctx, cfg, st, ca, log)
+	if err != nil {
+		_ = gs.Close()
+		return err
+	}
+
 	select {
 	case <-ctx.Done():
 		log.Info("shutting down")
-		return gs.Close()
+		return errors.Join(ws.Close(), gs.Close())
 	case err := <-gs.Done():
+		_ = ws.Close()
+		return err
+	case err := <-ws.Done():
+		_ = gs.Close()
 		return err
 	}
+}
+
+// startWeb starts the web interface and API. While no account exists it
+// creates a one-time setup code, logs it and keeps it in DATA_DIR/setup-code
+// (readable only by the server's user), so only someone with access to the
+// server can create the first administrator.
+func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger) (*server.WebServer, error) {
+	var (
+		cert   tls.Certificate
+		webPin string
+		err    error
+	)
+	if cfg.webCertFile != "" {
+		if cert, err = tls.LoadX509KeyPair(cfg.webCertFile, cfg.webKeyFile); err != nil {
+			return nil, fmt.Errorf("load web certificate: %w", err)
+		}
+	} else {
+		if cert, err = server.LoadOrCreateWebCert(cfg.dataDir, ca, cfg.gatewayNames); err != nil {
+			return nil, err
+		}
+		// Our own CA is not trusted by browsers or curl, so install commands
+		// pin the key instead.
+		if webPin, err = server.PublicKeyPin(cert); err != nil {
+			return nil, err
+		}
+	}
+
+	codeFile := filepath.Join(cfg.dataDir, "setup-code")
+	var setupCode string
+	required, err := st.SetupRequired(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if required {
+		if setupCode, err = auth.NewCode(12); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(codeFile, []byte(setupCode+"\n"), 0o600); err != nil {
+			return nil, fmt.Errorf("write setup code: %w", err)
+		}
+		log.Info("SETUP REQUIRED: open the web interface and enter this setup code", "url", cfg.webURL, "setup_code", setupCode)
+	} else {
+		_ = os.Remove(codeFile)
+	}
+
+	a := api.New(api.Config{
+		Store:      st,
+		Log:        log.With("component", "api"),
+		Version:    version.Version,
+		SetupCode:  setupCode,
+		WebURL:     cfg.webURL,
+		GatewayURL: cfg.gatewayURL,
+		CAPin:      pki.Fingerprint(ca.DER),
+		WebPin:     webPin,
+		TrustProxy: cfg.trustProxy,
+		OnSetupDone: func() {
+			_ = os.Remove(codeFile)
+		},
+	})
+	ws, err := server.ListenWeb(cfg.webAddr, server.Routes(a.Handler(), nil, webui.Handler()), cert)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("web interface listening", "addr", ws.Addr(), "url", cfg.webURL)
+	return ws, nil
 }
 
 func tokenCreate(ctx context.Context, args []string) error {
