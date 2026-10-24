@@ -250,6 +250,14 @@ func TestListHostsOrgIsolation(t *testing.T) {
 			t.Fatalf("org A list leaked: %+v", h)
 		}
 	}
+
+	// GetHost is scoped too: org B cannot read org A's host by id.
+	if _, err := s.GetHost(ctx, orgB.ID, listA[0].ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetHost across orgs: err = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetHost(ctx, orgA.ID, listA[0].ID); err != nil {
+		t.Fatalf("GetHost in own org: %v", err)
+	}
 }
 
 func TestConnectionLifecycle(t *testing.T) {
@@ -275,7 +283,7 @@ func TestConnectionLifecycle(t *testing.T) {
 	if err := s.MarkConnected(ctx, h.ID, info, at); err != nil {
 		t.Fatalf("MarkConnected: %v", err)
 	}
-	got, err := s.GetHost(ctx, h.ID)
+	got, err := s.GetHost(ctx, h.OrgID, h.ID)
 	if err != nil {
 		t.Fatalf("GetHost: %v", err)
 	}
@@ -293,7 +301,7 @@ func TestConnectionLifecycle(t *testing.T) {
 	if err := s.MarkSeen(ctx, h.ID, seenAt); err != nil {
 		t.Fatalf("MarkSeen: %v", err)
 	}
-	got, err = s.GetHost(ctx, h.ID)
+	got, err = s.GetHost(ctx, h.OrgID, h.ID)
 	if err != nil {
 		t.Fatalf("GetHost after seen: %v", err)
 	}
@@ -304,7 +312,7 @@ func TestConnectionLifecycle(t *testing.T) {
 	if err := s.MarkDisconnected(ctx, h.ID); err != nil {
 		t.Fatalf("MarkDisconnected: %v", err)
 	}
-	got, err = s.GetHost(ctx, h.ID)
+	got, err = s.GetHost(ctx, h.OrgID, h.ID)
 	if err != nil {
 		t.Fatalf("GetHost after disconnect: %v", err)
 	}
@@ -318,7 +326,7 @@ func TestConnectionLifecycle(t *testing.T) {
 	if err := s.ResetConnections(ctx); err != nil {
 		t.Fatalf("ResetConnections: %v", err)
 	}
-	got, err = s.GetHost(ctx, h.ID)
+	got, err = s.GetHost(ctx, h.OrgID, h.ID)
 	if err != nil {
 		t.Fatalf("GetHost after reset: %v", err)
 	}

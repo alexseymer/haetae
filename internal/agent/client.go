@@ -76,7 +76,10 @@ func Enroll(ctx context.Context, serverURL, token, caPin, dir string) (*Identity
 	if err != nil {
 		return nil, err
 	}
-	client := agentv1connect.NewAgentGatewayServiceClient(httpClient(pki.PinnedTLSConfig(caPin, name)), serverURL)
+	hc := httpClient(pki.PinnedTLSConfig(caPin, name))
+	// Enrollment is one call; do not keep its connection around.
+	defer hc.CloseIdleConnections()
+	client := agentv1connect.NewAgentGatewayServiceClient(hc, serverURL)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -175,7 +178,7 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 	go func() { hbErr <- heartbeat(ctx, interval, send) }()
 
 	recvErr := make(chan error, 1)
-	go func() { recvErr <- receiveCommands(stream, send) }()
+	go func() { recvErr <- receiveCommands(ctx, stream, send) }()
 
 	select {
 	case err := <-hbErr:
@@ -203,7 +206,15 @@ func heartbeat(ctx context.Context, interval time.Duration, send func(*agentv1.C
 	}
 }
 
-func receiveCommands(stream *connect.BidiStreamForClient[agentv1.ConnectRequest, agentv1.ConnectResponse], send func(*agentv1.ConnectRequest) error) error {
+// maxRunningCommands bounds concurrently executing commands; further
+// commands wait, which also applies backpressure to the stream.
+const maxRunningCommands = 4
+
+func receiveCommands(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.ConnectRequest, agentv1.ConnectResponse], send func(*agentv1.ConnectRequest) error) error {
+	slots := make(chan struct{}, maxRunningCommands)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
 	for {
 		msg, err := stream.Receive()
 		if err != nil {
@@ -213,10 +224,19 @@ func receiveCommands(stream *connect.BidiStreamForClient[agentv1.ConnectRequest,
 		if cmd == nil {
 			continue
 		}
-		res := execute(cmd)
-		if err := send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Result{Result: res}}); err != nil {
-			return fmt.Errorf("send result: %w", err)
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			return nil
 		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			res := execute(cmd)
+			// A failed send means the session is ending; Receive reports it.
+			_ = send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Result{Result: res}})
+		}()
 	}
 }
 

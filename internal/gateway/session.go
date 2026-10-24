@@ -71,6 +71,8 @@ func (s *session) call(ctx context.Context, cmd *agentv1.Command) (*agentv1.Comm
 
 	select {
 	case s.outbox <- cmd:
+	case <-ch: // closed by close(): the session ended while the outbox was full
+		return nil, errSessionClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

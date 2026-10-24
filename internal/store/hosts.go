@@ -220,14 +220,30 @@ func (s *Store) EnrollHost(ctx context.Context, token string, info HostInfo, iss
 	return h, nil
 }
 
-// GetHost returns the host with the given id, or ErrNotFound.
-func (s *Store) GetHost(ctx context.Context, id uuid.UUID) (Host, error) {
-	h, err := scanHost(s.pool.QueryRow(ctx, hostSelect+` WHERE id = $1`, id))
+// GetHost returns the host with the given id in orgID, or ErrNotFound
+// (also when the host belongs to another org).
+func (s *Store) GetHost(ctx context.Context, orgID, id uuid.UUID) (Host, error) {
+	h, err := scanHost(s.pool.QueryRow(ctx, hostSelect+` WHERE org_id = $1 AND id = $2`, orgID, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Host{}, fmt.Errorf("store: GetHost: %w", ErrNotFound)
 		}
 		return Host{}, fmt.Errorf("store: GetHost: %w", err)
+	}
+	return h, nil
+}
+
+// HostForAgent looks a host up by id alone. It is not tenant-scoped and
+// exists only for the gateway, which authenticates an agent by the host id
+// in its verified client certificate before any org is known. Everything
+// acting on behalf of a user must use GetHost.
+func (s *Store) HostForAgent(ctx context.Context, id uuid.UUID) (Host, error) {
+	h, err := scanHost(s.pool.QueryRow(ctx, hostSelect+` WHERE id = $1`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Host{}, fmt.Errorf("store: HostForAgent: %w", ErrNotFound)
+		}
+		return Host{}, fmt.Errorf("store: HostForAgent: %w", err)
 	}
 	return h, nil
 }

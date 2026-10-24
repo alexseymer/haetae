@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -28,7 +29,7 @@ var ErrNotConnected = errors.New("gateway: host not connected")
 // Store is the persistence the gateway needs. *store.Store implements it.
 type Store interface {
 	EnrollHost(ctx context.Context, token string, info store.HostInfo, issue func(hostID uuid.UUID) (string, error)) (store.Host, error)
-	GetHost(ctx context.Context, id uuid.UUID) (store.Host, error)
+	HostForAgent(ctx context.Context, id uuid.UUID) (store.Host, error)
 	MarkConnected(ctx context.Context, id uuid.UUID, info store.HostInfo, at time.Time) error
 	MarkSeen(ctx context.Context, id uuid.UUID, at time.Time) error
 	MarkDisconnected(ctx context.Context, id uuid.UUID) error
@@ -49,7 +50,8 @@ func (c Config) withDefaults() Config {
 	if c.Heartbeat <= 0 {
 		c.Heartbeat = 10 * time.Second
 	}
-	c.Heartbeat = min(c.Heartbeat, time.Hour)
+	// Sent to agents in whole seconds, so keep it between 1 s and 1 h.
+	c.Heartbeat = min(max(c.Heartbeat, time.Second), time.Hour)
 	if c.ClientCertTTL <= 0 {
 		c.ClientCertTTL = 365 * 24 * time.Hour
 	}
@@ -96,8 +98,13 @@ const maxInfoLen = 256
 
 func hostInfo(h *agentv1.HostInfo) store.HostInfo {
 	clip := func(s string) string {
-		if len(s) > maxInfoLen {
-			return s[:maxInfoLen]
+		if len(s) <= maxInfoLen {
+			return s
+		}
+		// Cut on a rune boundary: PostgreSQL rejects invalid UTF-8.
+		s = s[:maxInfoLen]
+		for len(s) > 0 && !utf8.ValidString(s) {
+			s = s[:len(s)-1]
 		}
 		return s
 	}
@@ -203,7 +210,7 @@ func (g *Gateway) authenticate(ctx context.Context) (uuid.UUID, error) {
 		return uuid.Nil, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has an invalid host id"))
 	}
 
-	host, err := g.store.GetHost(ctx, hostID)
+	host, err := g.store.HostForAgent(ctx, hostID)
 	if errors.Is(err, store.ErrNotFound) {
 		return uuid.Nil, connect.NewError(connect.CodePermissionDenied, errors.New("unknown host"))
 	}

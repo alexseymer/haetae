@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"crypto/tls"
+	"errors"
 	"net"
 	"net/http"
 	"sync"
@@ -14,7 +16,11 @@ import (
 
 // httpClientNoCert talks to the gateway with TLS but no client certificate.
 func httpClientNoCert(pin string) *http.Client {
-	tr := &http.Transport{TLSClientConfig: pki.PinnedTLSConfig(pin, "127.0.0.1"), ForceAttemptHTTP2: true}
+	return httpClientTLS(pki.PinnedTLSConfig(pin, "127.0.0.1"))
+}
+
+func httpClientTLS(cfg *tls.Config) *http.Client {
+	tr := &http.Transport{TLSClientConfig: cfg, ForceAttemptHTTP2: true}
 	tr.Protocols = new(http.Protocols)
 	tr.Protocols.SetHTTP2(true)
 	return &http.Client{Transport: tr, Timeout: 10 * time.Second}
@@ -31,11 +37,17 @@ type proxy struct {
 	ln     net.Listener
 	conns  map[net.Conn]struct{}
 	silent bool // blackhole: swallow bytes, never close
+
+	// Agent-side connections, and those the agent itself closed (we read
+	// EOF or a reset from it, rather than closing it ourselves).
+	agentConns  map[net.Conn]bool
+	agentClosed map[net.Conn]bool
 }
 
 func newProxy(t *testing.T, target string) *proxy {
 	t.Helper()
-	p := &proxy{t: t, addr: freeAddr(t), target: target, conns: map[net.Conn]struct{}{}}
+	p := &proxy{t: t, addr: freeAddr(t), target: target, conns: map[net.Conn]struct{}{},
+		agentConns: map[net.Conn]bool{}, agentClosed: map[net.Conn]bool{}}
 	p.restore()
 	t.Cleanup(p.cut)
 	return p
@@ -88,6 +100,7 @@ func (p *proxy) accept(ln net.Listener) {
 		}
 		p.conns[in] = struct{}{}
 		p.conns[out] = struct{}{}
+		p.agentConns[in] = true
 		p.mu.Unlock()
 		go p.relay(in, out)
 		go p.relay(out, in)
@@ -108,6 +121,27 @@ func (p *proxy) dropping() bool {
 	return p.silent
 }
 
+// agentSideConns returns the agent-side connections open right now.
+func (p *proxy) agentSideConns() []net.Conn {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []net.Conn
+	for c := range p.agentConns {
+		if !p.agentClosed[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// closedByAgent reports whether the agent closed c (as opposed to the proxy
+// or the server side tearing it down).
+func (p *proxy) closedByAgent(c net.Conn) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.agentClosed[c]
+}
+
 func (p *proxy) relay(dst, src net.Conn) {
 	defer dst.Close()
 	defer src.Close()
@@ -120,6 +154,13 @@ func (p *proxy) relay(dst, src net.Conn) {
 			}
 		}
 		if err != nil {
+			if !errors.Is(err, net.ErrClosed) {
+				p.mu.Lock()
+				if p.agentConns[src] {
+					p.agentClosed[src] = true
+				}
+				p.mu.Unlock()
+			}
 			return
 		}
 	}

@@ -261,7 +261,7 @@ func (ca *CA) SignClientCSR(csrDER []byte, hostID string, ttl time.Duration) (ce
 		return nil, "", fmt.Errorf("pki: create client certificate: %w", err)
 	}
 
-	return der, hex.EncodeToString(serialNum.Bytes()), nil
+	return der, serialNum.Text(16), nil
 }
 
 func checkAllowedPublicKey(pub any) error {

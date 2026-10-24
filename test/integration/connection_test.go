@@ -103,7 +103,7 @@ func (e *env) pin() string { return pki.Fingerprint(e.ca.DER) }
 
 func (e *env) host(id string) store.Host {
 	e.t.Helper()
-	h, err := e.st.GetHost(context.Background(), uuid.MustParse(id))
+	h, err := e.st.GetHost(context.Background(), e.org.ID, uuid.MustParse(id))
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -305,13 +305,77 @@ func TestReconnectAfterSilentNetworkLoss(t *testing.T) {
 	e.runAgent(id)
 	e.waitConnected(id.HostID, true, 30*time.Second)
 
+	before := px.agentSideConns()
+	if len(before) != 1 {
+		t.Fatalf("expected one agent connection before the outage, got %d", len(before))
+	}
 	px.blackhole(true)
+	start := time.Now()
 	e.waitConnected(id.HostID, false, 20*time.Second) // server: 3 missed heartbeats
-	time.Sleep(30 * time.Second)                      // long enough for the agent's ping timeout
+
+	// The agent itself must notice the dead path (HTTP/2 ping timeout) and
+	// close its connection while traffic is still being dropped; otherwise it
+	// would only recover thanks to a reset after the network returns.
+	waitFor(t, 40*time.Second, "agent closes its dead connection during the outage", func() bool {
+		return px.closedByAgent(before[0])
+	})
+	t.Logf("MEASURE S10 agent detected silent loss after: %s", time.Since(start).Round(time.Millisecond))
 	px.blackhole(false)
 
 	took := e.waitConnected(id.HostID, true, 60*time.Second)
 	t.Logf("MEASURE S10 reconnect after silent loss ends: %s", took.Round(time.Millisecond))
+}
+
+func TestEnrollRejectsDuplicateHostName(t *testing.T) {
+	e := newEnv(t)
+	first, second := e.token("same-name"), e.token("same-name")
+	if _, err := agent.Enroll(context.Background(), "https://"+e.addr, first, e.pin(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	_, err := agent.Enroll(context.Background(), "https://"+e.addr, second, e.pin(), t.TempDir())
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("duplicate host name: err=%v, want already_exists", err)
+	}
+}
+
+// A certificate stops working once the host's stored serial changes
+// (re-issued) or the host is revoked.
+func TestSupersededOrRevokedCertificateIsRejected(t *testing.T) {
+	e := newEnv(t)
+	id, err := agent.Enroll(context.Background(), "https://"+e.addr, e.token("f"), e.pin(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	connectOnce := func() error {
+		cfg, err := pki.ClientTLSConfig(id.CADER, id.CertDER, id.Key, "127.0.0.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := agentv1connect.NewAgentGatewayServiceClient(httpClientTLS(cfg), "https://"+e.addr)
+		stream := client.Connect(ctx)
+		defer stream.CloseRequest()
+		_ = stream.Send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{}}})
+		_, err = stream.Receive()
+		return err
+	}
+	if err := connectOnce(); err != nil {
+		t.Fatalf("valid certificate rejected: %v", err)
+	}
+
+	if _, err := e.st.Pool().Exec(ctx, `UPDATE hosts SET cert_serial = 'ffff' WHERE id = $1`, id.HostID); err != nil {
+		t.Fatal(err)
+	}
+	if err := connectOnce(); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("superseded certificate: err=%v, want permission_denied", err)
+	}
+
+	if _, err := e.st.Pool().Exec(ctx, `UPDATE hosts SET cert_serial = $2, revoked_at = now() WHERE id = $1`, id.HostID, e.host(id.HostID).CertSerial); err != nil {
+		t.Fatal(err)
+	}
+	if err := connectOnce(); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("revoked host: err=%v, want permission_denied", err)
+	}
 }
 
 // S1: the agent process opens no listening socket.
