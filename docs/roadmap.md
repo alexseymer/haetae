@@ -36,42 +36,44 @@ Spec criteria are referred to as **S1** to **S11** ("Done correctly", in order).
 - Protobuf contract in `proto/`, generated code committed.
 - Server: Postgres schema and migrations, single-use enrollment tokens, client certificate issued at enrollment (internal CA), bidirectional stream gateway, host online/offline state.
 - Agent: enroll with token, store identity, connect outbound only, heartbeat, reconnect with jittered backoff after network loss or reboot.
-- **Accept:** integration test enrolls an agent and sees it online in under 30 s; a second use of the same token is rejected; killing the server and restarting it brings the agent back without intervention; the agent opens no listening port (checked in test).
+- **Accept:** integration test enrolls an agent and sees it online in under 30 s; a second use of the same token is rejected; the agent reconnects without intervention after (a) a server restart, (b) an agent process restart (stored identity, no re-enrollment), and (c) a network cut and restore; the agent opens no listening port (checked in test).
 
 ### M2 State and metrics (S1, S10)
-- Agent: Docker state (stacks from compose labels, containers, image versions, ports, restarts, health), host and container CPU, memory, disk and network every 10 s.
+- Agent: Docker state (stacks from compose labels, containers, image versions, ports, restarts, health), host and container CPU, memory, disk and network every 10 s. Container environment values and command lines are never sent (names only, for misconfiguration checks later).
 - Server: time-partitioned metrics tables with rollups (10 s / 1 min / 1 h), retention job, query API.
 - Memory harness: `test/load` starts 20 noisy containers in a Docker-in-Docker host and records agent RSS.
-- **Accept:** metrics for a newly enrolled host are queryable within 2 minutes; agent RSS stays under 50 MB in the harness (number recorded in the PR).
+- **Accept:** metrics for a newly enrolled host are queryable within 2 minutes; agent RSS stays under 50 MB in the harness (number recorded in the PR); a test proves environment values never reach the server. The RSS harness is re-run and recorded in M3, M7 and M9.
 
 ### M3 Log pipeline and redaction (S5, S6)
 - Agent: follows container logs, detects level (text and JSON), turns lines into templates, merges identical lines with counts, keeps a ring buffer for on-demand queries, skips templates marked green.
 - Redaction package: secrets (gitleaks rules) and personal data (email, IP, phone, card number with Luhn, JWT, URL credentials), RE2 only, per-batch time budget, fail-closed.
 - Server: stores events, judges new info/debug templates (rule heuristic now, AI in M8), pushes green labels back to agents.
-- **Accept:** on the recorded corpus in `test/corpus`, every warning, error and fatal line reaches the server; at least 95% of lines are never sent after warm-up; a forced redaction failure sends nothing (test); redaction recall measured on a labelled sample and recorded.
+- **Accept:** on the recorded corpus in `test/corpus`, every warning, error and fatal line reaches the server; N identical lines inside the merge window arrive as one event with count N; after a template is marked green its lines are no longer sent; at least 95% of lines are never sent after warm-up (warm-up = the first 10% of the corpus); a forced redaction failure sends nothing (test); redaction recall on the labelled sample is at least 0.95 for secrets (recorded; personal-data recall recorded as measured); the server's event store contains no raw lines, only filtered events, counts and evidence excerpts (test, S11 hosted); agent RSS re-measured.
 
 ### M4 Control plane basics and self-hosted install (S11)
 - Accounts, organisations (tenant id on every row, Row-Level Security), sessions, first-run setup.
 - Web UI: login, setup, hosts and enrollment command, host and stack views with charts.
 - `install.sh` for agents (systemd unit, binary download from the server) and `install-server.sh` for self-hosting (writes compose file, starts server and Postgres).
-- **Accept:** on a clean Docker host, one command gives a working login in under 5 minutes (timed in CI or recorded); the server makes no outbound calls except those configured by the user (test with network isolation); tenant isolation test: one organisation cannot read another's rows even with a crafted query.
+- **Accept:** on a clean Docker host, one command gives a working login in under 5 minutes (timed in CI or recorded); the server makes no outbound calls except those configured by the user (test with network isolation); tenant isolation test: one organisation cannot read another's rows even with a crafted query; no feature is gated by edition (self-hosted ships everything).
 
 ### M5 Deploys (S2)
 - Agent: Caddy ingress container, deploy from a pasted `compose.yaml` or Git repo and branch, build log streaming, health check, automatic rollback on failure, one-click rollback to any previous deploy, branch polling for push-to-deploy.
 - Server and UI: deploy form, deploy history, build log, rollback button, result with HTTPS address or failing step and raw error.
-- **Accept:** e2e test deploys a sample app and gets an HTTPS response (internal CA in tests); a broken deploy leaves the previous version serving; a push to the branch is deployed within 30 s for a cached build (measured); deploy result is reported within 60 s.
+- Build logs pass through the redaction package (fail-closed) before they leave the host.
+- **Accept:** e2e test deploys a sample app and gets an HTTPS response (internal CA in tests); a broken deploy leaves the previous version serving; a push to the branch is deployed within 30 s for a cached build (measured; cold builds recorded separately, since 30 s is only reachable with cached layers); deploy result is reported within 60 s; a secret printed during a build never reaches the server (test); rollback never removes volumes (test).
 
 ### M6 Alerts, incidents, chat and briefing (S3, S9)
-- Rule engine: crash and restart loops, OOM kills, unhealthy containers, host offline, CPU, memory and disk thresholds, deploy failures, new critical CVEs.
+- Rule engine: crash and restart loops, OOM kills, unhealthy containers, host offline, CPU, memory and disk thresholds, deploy failures. (The new-CVE rule lands with M7.)
 - Incidents (grouped alerts), notifier, daily briefing at 08:00 in the organisation's time zone.
 - Chat: web chat in the UI; Telegram (long polling), Slack (Socket Mode), email (SMTP), Signal (`signal-cli` add-on). Account linking with a one-time code; action buttons accepted only from linked, verified accounts.
-- **Accept:** a high-severity event reaches the web chat and a fake Telegram endpoint within 60 s (measured); a quiet day produces exactly one short briefing; with the AI disabled every rule alert still fires; a button press from an unlinked account is rejected.
+- **Accept:** a high-severity event reaches the web chat and a fake Telegram endpoint within 60 s (measured); a quiet day produces exactly one briefing of at most 3 lines and 300 characters; with the AI disabled every rule alert still fires; a button press from an unlinked account is rejected.
 
 ### M7 Security scanning (S8)
 - `haetae-inventory` helper (Syft) in a memory-limited cgroup; inventory on deploy and container start, daily rescan.
 - Server: Grype database refresh, matching of stored SBOMs, re-matching after each database update, findings with CVE, severity and fixed version.
 - Agent: misconfiguration checks (published ports, mounted Docker socket, root user, privileged mode, expiring certificates), conntrack-based outbound connection watch with fallback and a visible "degraded" state, image update policy (48 h wait unless a verified critical fix).
-- **Accept:** a known vulnerable image produces the expected CVE with fixed version; a failing scan shows "scan failed"; a newly added advisory alerts within 15 minutes (test with a crafted database update); misconfigurations in a test stack are all reported; an image published less than 48 h ago is not auto-pulled unless it fixes a critical CVE present in the running image.
+- Rule: new critical or high CVE in a running container, working without the AI.
+- **Accept:** a known vulnerable image produces the expected CVE with fixed version; a failing scan shows "scan failed"; deploy and container start each produce an inventory, and a forced daily-rescan run produces a new one; a newly added advisory alerts within 15 minutes, also with the AI disabled (test with a crafted database update); misconfigurations in a test stack are all reported; an outbound connection from a test container is attributed to that container, conntrack unavailable shows "degraded", and a `network_mode: host` container shows "not monitored"; an image published less than 48 h ago is not auto-pulled unless it fixes a critical CVE present in the running image; Syft peak memory on a large image and Grype-vs-Trivy agreement on four reference images are recorded (ADR risks 2 and 3); agent RSS re-measured with conntrack running.
 
 ### M8 AI operator (S4, S6, S7, S9)
 - Provider interface: Anthropic, OpenAI-compatible endpoint, local endpoint, deterministic fake for tests. Usage cap per organisation.
@@ -79,11 +81,11 @@ Spec criteria are referred to as **S1** to **S11** ("Done correctly", in order).
 - Answer format is structured: each statement must cite evidence ids, otherwise it is dropped; no supported statement means "cause not found".
 - Autonomy levels enforced on the server and the agent (report only by default, suggest with approval buttons, act on safe actions). The agent's command allowlist contains no data-deleting command. Log text is passed as quoted, untrusted data.
 - AI-written incident reports, daily briefing text and log-template judging.
-- **Accept:** test suite with the fake provider proves: statements without evidence are removed; "cause not found" when evidence is empty; a prompt injection in a log line cannot trigger an action; actions above the autonomy level are refused; a deleting command is refused by the agent even if requested; with the AI unreachable or capped, rule alerts keep working (S9). Recorded run with a real provider when an API key is available.
+- **Accept:** test suite with the fake provider proves: statements without evidence are removed; "cause not found" when evidence is empty; a prompt injection in a log line cannot trigger an action; actions above the autonomy level are refused by the server, and separately by the agent when an over-level command is injected directly onto its stream; the agent's command allowlist is enumerated in a test and contains no data-deleting operation; with the AI unreachable or capped, rule alerts keep working (S9). Recorded run with a real provider when an API key is available.
 
 ### M9 Acceptance and release
 - End-to-end acceptance suite covering S1 to S11 with measured numbers, release builds for linux/amd64 and linux/arm64, container images, user documentation (install, enroll, deploy, chat setup).
-- **Accept:** the acceptance report `docs/acceptance.md` lists every spec criterion with its test, the measured value and pass/fail.
+- **Accept:** the acceptance report `docs/acceptance.md` lists every spec criterion with its test, the measured value and pass/fail, states every narrowing (for example S2's 30 s applies to cached builds) and every part verified only against fakes; agent RSS re-measured on the release build.
 
 ## Known limits of the build environment
 
