@@ -47,7 +47,16 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newEnvWith lets a test adjust the gateway config before it starts.
+func newEnvWith(t *testing.T, configure func(*gateway.Config)) *env {
+	t.Helper()
 	st := storetest.New(t)
+	if err := st.EnsurePartitions(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	ca, err := pki.LoadOrCreateCA(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +76,9 @@ func newEnv(t *testing.T) *env {
 	}
 	if testing.Verbose() {
 		e.log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
+	if configure != nil {
+		configure(&e.gwCfg)
 	}
 	e.startGateway()
 	t.Cleanup(func() { e.stopGateway() })
@@ -121,11 +133,19 @@ func (e *env) waitConnected(id string, want bool, timeout time.Duration) time.Du
 
 // runAgent runs the agent in-process until the returned stop function is called.
 func (e *env) runAgent(id *agent.Identity) (stop func()) {
+	return e.runAgentWith(id, agent.RunOptions{}, nil)
+}
+
+// runAgentWith also runs mon, if given, for the lifetime of the agent.
+func (e *env) runAgentWith(id *agent.Identity, opts agent.RunOptions, mon *agent.Monitor) (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	if mon != nil {
+		go mon.Run(ctx)
+	}
 	go func() {
 		defer close(done)
-		_ = agent.Run(ctx, id, e.log.With("component", "agent"))
+		_ = agent.Run(ctx, id, e.log.With("component", "agent"), opts)
 	}()
 	var once sync.Once
 	stop = func() {
@@ -377,6 +397,46 @@ func TestSupersededOrRevokedCertificateIsRejected(t *testing.T) {
 	}
 	if err := connectOnce(); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("revoked host: err=%v, want permission_denied", err)
+	}
+}
+
+// A single agent message is size-limited before it is decoded, so one
+// enrolled host cannot make the server buffer arbitrary amounts.
+func TestOversizedAgentMessageIsRejected(t *testing.T) {
+	e := newEnv(t)
+	id, err := agent.Enroll(context.Background(), "https://"+e.addr, e.token("big"), e.pin(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := pki.ClientTLSConfig(id.CADER, id.CertDER, id.Key, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := agentv1connect.NewAgentGatewayServiceClient(httpClientTLS(cfg), "https://"+e.addr)
+	stream := client.Connect(context.Background())
+	defer stream.CloseRequest()
+	if err := stream.Send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Receive(); err != nil { // welcome
+		t.Fatal(err)
+	}
+	big := &agentv1.StateSnapshot{DockerReachable: true}
+	for range 3 {
+		big.Containers = append(big.Containers, &agentv1.ContainerState{Id: "x", Status: strings.Repeat("a", 2<<20)})
+	}
+	_ = stream.Send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_State{State: big}})
+	if _, err := stream.Receive(); err == nil {
+		t.Fatal("stream survived an oversized message")
+	}
+	// The server ended the session and stored nothing from the message.
+	e.waitConnected(id.HostID, false, 10*time.Second)
+	cs, err := e.st.ListContainers(context.Background(), e.org.ID, uuid.MustParse(id.HostID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 0 {
+		t.Fatalf("oversized snapshot was stored: %d containers", len(cs))
 	}
 }
 

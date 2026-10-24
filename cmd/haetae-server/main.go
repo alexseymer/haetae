@@ -136,6 +136,11 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if _, err := st.DefaultOrg(ctx); err != nil {
 		return err
 	}
+	// Partitions must exist before the first agent sends metrics.
+	if err := st.EnsurePartitions(ctx, time.Now()); err != nil {
+		return err
+	}
+	go server.MaintainMetrics(ctx, st, time.Minute, log.With("component", "metrics"))
 
 	gw := gateway.New(st, ca, gateway.Config{}, log)
 	gs, err := server.ListenGateway(cfg.gatewayAddr, gw, ca, cfg.gatewayNames)

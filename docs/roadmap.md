@@ -41,7 +41,7 @@ Spec criteria are referred to as **S1** to **S11** ("Done correctly", in order).
 ### M2 State and metrics (S1, S10)
 - Agent: Docker state (stacks from compose labels, containers, image versions, ports, restarts, health), host and container CPU, memory, disk and network every 10 s. Container environment values and command lines are never sent (names only, for misconfiguration checks later).
 - Server: time-partitioned metrics tables with rollups (10 s / 1 min / 1 h), retention job, query API.
-- Memory harness: `test/load` starts 20 noisy containers in a Docker-in-Docker host and records agent RSS.
+- Memory harness (`make test-load`, also a CI job): runs the real agent binary against 20 noisy containers on the local Docker daemon and records its RSS. Docker-in-Docker is used for the multi-host simulation in M9.
 - **Accept:** metrics for a newly enrolled host are queryable within 2 minutes; agent RSS stays under 50 MB in the harness (number recorded in the PR); a test proves environment values never reach the server. The RSS harness is re-run and recorded in M3, M7 and M9.
 
 ### M3 Log pipeline and redaction (S5, S6)

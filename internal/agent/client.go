@@ -110,9 +110,21 @@ func Enroll(ctx context.Context, serverURL, token, caPin, dir string) (*Identity
 	return id, nil
 }
 
+// RunOptions connects the session to the rest of the agent. All fields are
+// optional.
+type RunOptions struct {
+	// Outbox is drained into the stream while a session is up.
+	Outbox *Outbox
+	// OnConnected runs after each successful connect, e.g. to request a
+	// fresh state snapshot.
+	OnConnected func()
+	// DockerVersion is reported in Hello.
+	DockerVersion func(context.Context) string
+}
+
 // Run keeps a session to the control plane until ctx is cancelled,
 // reconnecting with jittered exponential backoff.
-func Run(ctx context.Context, id *Identity, log *slog.Logger) error {
+func Run(ctx context.Context, id *Identity, log *slog.Logger, opts RunOptions) error {
 	tlsCfg, err := pki.ClientTLSConfig(id.CADER, id.CertDER, id.Key, id.ServerName)
 	if err != nil {
 		return err
@@ -122,7 +134,7 @@ func Run(ctx context.Context, id *Identity, log *slog.Logger) error {
 	backoff := backoffMin
 	for {
 		started := time.Now()
-		err := session(ctx, client, log)
+		err := session(ctx, client, log, opts)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -142,7 +154,7 @@ func Run(ctx context.Context, id *Identity, log *slog.Logger) error {
 	}
 }
 
-func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClient, log *slog.Logger) error {
+func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClient, log *slog.Logger, opts RunOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -157,7 +169,11 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 		return stream.Send(msg)
 	}
 
-	if err := send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{Host: collectHostInfo()}}}); err != nil {
+	info := collectHostInfo()
+	if opts.DockerVersion != nil {
+		info.DockerVersion = opts.DockerVersion(ctx)
+	}
+	if err := send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{Host: info}}}); err != nil {
 		return fmt.Errorf("send hello: %w", err)
 	}
 	first, err := stream.Receive()
@@ -180,13 +196,38 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 	recvErr := make(chan error, 1)
 	go func() { recvErr <- receiveCommands(ctx, cancel, stream, send) }()
 
+	fwdErr := make(chan error, 1)
+	if opts.Outbox != nil {
+		go func() { fwdErr <- forward(ctx, opts.Outbox, send) }()
+	}
+	if opts.OnConnected != nil {
+		opts.OnConnected()
+	}
+
 	select {
 	case err := <-hbErr:
 		return err
 	case err := <-recvErr:
 		return err
+	case err := <-fwdErr:
+		return err
 	case <-ctx.Done():
 		return nil
+	}
+}
+
+// forward sends queued state and metrics until the session ends. A message
+// whose send fails is lost; the next snapshot after reconnecting restores the
+// full state, and a metrics gap is acceptable.
+func forward(ctx context.Context, out *Outbox, send func(*agentv1.ConnectRequest) error) error {
+	for {
+		msg, err := out.Next(ctx)
+		if err != nil {
+			return nil
+		}
+		if err := send(msg); err != nil {
+			return fmt.Errorf("send queued message: %w", err)
+		}
 	}
 }
 

@@ -20,6 +20,7 @@ var errSessionClosed = errors.New("gateway: session closed")
 
 type session struct {
 	hostID   uuid.UUID
+	orgID    uuid.UUID
 	cancel   context.CancelCauseFunc
 	outbox   chan *agentv1.Command
 	lastSeen atomic.Int64 // unix nanoseconds

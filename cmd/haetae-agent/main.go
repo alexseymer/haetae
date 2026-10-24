@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/alexseymer/haetae/internal/agent"
 	"github.com/alexseymer/haetae/internal/version"
@@ -23,7 +25,15 @@ const usage = `usage:
 
 const defaultStateDir = "/var/lib/haetae-agent"
 
+// defaultMemoryLimit is the Go heap target, below the 50 MB RSS budget
+// (spec S10) so the GC works harder before the agent gets close to it.
+// GOMEMLIMIT in the environment overrides it.
+const defaultMemoryLimit = 40 << 20
+
 func main() {
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(defaultMemoryLimit)
+	}
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -81,6 +91,10 @@ func enroll(ctx context.Context, args []string) error {
 func run(ctx context.Context, args []string, log *slog.Logger) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	stateDir := fs.String("state-dir", defaultStateDir, "where the agent keeps its identity")
+	dockerSocket := fs.String("docker-socket", "/var/run/docker.sock", "Docker Engine API socket")
+	procRoot := fs.String("proc-root", "/proc", "proc filesystem to read host metrics from")
+	diskPath := fs.String("disk-path", "/", "filesystem whose usage is reported")
+	interval := fs.Duration("interval", 10*time.Second, "metrics sampling interval")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -90,5 +104,21 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	}
 	log = log.With("host_id", id.HostID)
 	log.Info("agent starting", "server", id.ServerURL, "version", version.Version)
-	return agent.Run(ctx, id, log)
+
+	// 30 batches at the default interval keep five minutes of metrics while
+	// the control plane is unreachable.
+	out := agent.NewOutbox(30)
+	mon := agent.NewMonitor(agent.MonitorConfig{
+		DockerSocket: *dockerSocket,
+		ProcRoot:     *procRoot,
+		DiskPath:     *diskPath,
+		Interval:     *interval,
+	}, out, log.With("component", "monitor"))
+	go mon.Run(ctx)
+
+	return agent.Run(ctx, id, log, agent.RunOptions{
+		Outbox:        out,
+		OnConnected:   mon.Resync,
+		DockerVersion: mon.DockerVersion,
+	})
 }

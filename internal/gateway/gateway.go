@@ -23,6 +23,10 @@ import (
 	"github.com/alexseymer/haetae/internal/store"
 )
 
+// MaxMessageBytes is the largest agent message the gateway accepts. The
+// biggest legitimate message (5000 container samples) is about 0.5 MB.
+const MaxMessageBytes = 4 << 20
+
 // ErrNotConnected is returned by Send when the host has no live session.
 var ErrNotConnected = errors.New("gateway: host not connected")
 
@@ -33,6 +37,7 @@ type Store interface {
 	MarkConnected(ctx context.Context, id uuid.UUID, info store.HostInfo, at time.Time) error
 	MarkSeen(ctx context.Context, id uuid.UUID, at time.Time) error
 	MarkDisconnected(ctx context.Context, id uuid.UUID) error
+	ingestStore
 }
 
 // Config tunes the gateway. Zero values get defaults.
@@ -44,6 +49,11 @@ type Config struct {
 	ClientCertTTL time.Duration
 	// HelloTimeout bounds the wait for the agent's first message. Default 10 s.
 	HelloTimeout time.Duration
+	// SeenWriteEvery limits how often last_seen_at is written per host.
+	// Default 30 s.
+	SeenWriteEvery time.Duration
+	// Tap, if set, sees every message received from an agent. For tests.
+	Tap func(hostID uuid.UUID, msg *agentv1.ConnectRequest)
 }
 
 func (c Config) withDefaults() Config {
@@ -57,6 +67,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.HelloTimeout <= 0 {
 		c.HelloTimeout = 10 * time.Second
+	}
+	if c.SeenWriteEvery <= 0 {
+		c.SeenWriteEvery = 30 * time.Second
 	}
 	return c
 }
@@ -89,25 +102,31 @@ func New(st Store, ca *pki.CA, cfg Config, log *slog.Logger) *Gateway {
 // served over TLS configured with the CA's ServerTLSConfig, so verified client
 // certificates reach Connect.
 func (g *Gateway) Handler() (string, http.Handler) {
-	path, h := agentv1connect.NewAgentGatewayServiceHandler(g)
+	path, h := agentv1connect.NewAgentGatewayServiceHandler(g,
+		// Bound every message before it is decoded; the caps in ingest.go
+		// only apply afterwards.
+		connect.WithReadMaxBytes(MaxMessageBytes),
+	)
 	return path, peerIdentity(h)
 }
 
 // maxInfoLen caps host-reported strings; the agent is not trusted to be sane.
 const maxInfoLen = 256
 
-func hostInfo(h *agentv1.HostInfo) store.HostInfo {
-	clip := func(s string) string {
-		if len(s) <= maxInfoLen {
-			return s
-		}
-		// Cut on a rune boundary: PostgreSQL rejects invalid UTF-8.
-		s = s[:maxInfoLen]
-		for len(s) > 0 && !utf8.ValidString(s) {
-			s = s[:len(s)-1]
-		}
+// clip cuts agent-supplied strings to maxInfoLen bytes on a rune boundary
+// (PostgreSQL rejects invalid UTF-8).
+func clip(s string) string {
+	if len(s) <= maxInfoLen {
 		return s
 	}
+	s = s[:maxInfoLen]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func hostInfo(h *agentv1.HostInfo) store.HostInfo {
 	return store.HostInfo{
 		Hostname:      clip(h.GetHostname()),
 		OS:            clip(h.GetOs()),
@@ -158,10 +177,11 @@ func (g *Gateway) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 // Connect runs one agent session until the agent leaves, goes quiet, or a
 // newer session for the same host replaces it.
 func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv1.ConnectRequest, agentv1.ConnectResponse]) error {
-	hostID, err := g.authenticate(ctx)
+	host, err := g.authenticate(ctx)
 	if err != nil {
 		return err
 	}
+	hostID := host.ID
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -170,8 +190,12 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	if err != nil {
 		return err
 	}
+	if g.cfg.Tap != nil {
+		g.cfg.Tap(host.ID, &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: hello}})
+	}
 
 	s := newSession(hostID, cancel)
+	s.orgID = host.OrgID
 	g.register(s)
 	defer g.unregister(s)
 
@@ -196,36 +220,36 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	return nil
 }
 
-func (g *Gateway) authenticate(ctx context.Context) (uuid.UUID, error) {
+func (g *Gateway) authenticate(ctx context.Context) (store.Host, error) {
 	cert, ok := ctx.Value(peerCertKey{}).(*x509.Certificate)
 	if !ok {
-		return uuid.Nil, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate required"))
+		return store.Host{}, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate required"))
 	}
 	raw, err := pki.HostIDFromCert(cert)
 	if err != nil {
-		return uuid.Nil, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has no host identity"))
+		return store.Host{}, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has no host identity"))
 	}
 	hostID, err := uuid.Parse(raw)
 	if err != nil {
-		return uuid.Nil, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has an invalid host id"))
+		return store.Host{}, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has an invalid host id"))
 	}
 
 	host, err := g.store.HostForAgent(ctx, hostID)
 	if errors.Is(err, store.ErrNotFound) {
-		return uuid.Nil, connect.NewError(connect.CodePermissionDenied, errors.New("unknown host"))
+		return store.Host{}, connect.NewError(connect.CodePermissionDenied, errors.New("unknown host"))
 	}
 	if err != nil {
 		g.log.Error("get host", "host_id", hostID, "err", err)
-		return uuid.Nil, connect.NewError(connect.CodeUnavailable, errors.New("server busy, retry"))
+		return store.Host{}, connect.NewError(connect.CodeUnavailable, errors.New("server busy, retry"))
 	}
 	if host.RevokedAt != nil {
-		return uuid.Nil, connect.NewError(connect.CodePermissionDenied, errors.New("host revoked"))
+		return store.Host{}, connect.NewError(connect.CodePermissionDenied, errors.New("host revoked"))
 	}
 	// Only the most recently issued certificate is valid for a host.
 	if normalizeSerial(host.CertSerial) != normalizeSerial(cert.SerialNumber.Text(16)) {
-		return uuid.Nil, connect.NewError(connect.CodePermissionDenied, errors.New("certificate superseded"))
+		return store.Host{}, connect.NewError(connect.CodePermissionDenied, errors.New("certificate superseded"))
 	}
-	return hostID, nil
+	return host, nil
 }
 
 func normalizeSerial(s string) string {
@@ -261,17 +285,28 @@ func receiveHello(ctx context.Context, stream *connect.BidiStream[agentv1.Connec
 }
 
 func (g *Gateway) receiveLoop(ctx context.Context, stream *connect.BidiStream[agentv1.ConnectRequest, agentv1.ConnectResponse], s *session) error {
+	lastSeenWrite := time.Now() // MarkConnected just wrote it
 	for {
 		msg, err := stream.Receive()
 		if err != nil {
 			return err
 		}
 		s.touch()
+		if g.cfg.Tap != nil {
+			g.cfg.Tap(s.hostID, msg)
+		}
 		switch m := msg.GetMsg().(type) {
 		case *agentv1.ConnectRequest_Heartbeat:
-			if err := g.store.MarkSeen(ctx, s.hostID, time.Now()); err != nil {
-				g.log.Warn("mark seen", "host_id", s.hostID, "err", err)
+			if time.Since(lastSeenWrite) >= g.cfg.SeenWriteEvery {
+				if err := g.store.MarkSeen(ctx, s.hostID, time.Now()); err != nil {
+					g.log.Warn("mark seen", "host_id", s.hostID, "err", err)
+				}
+				lastSeenWrite = time.Now()
 			}
+		case *agentv1.ConnectRequest_State:
+			g.ingestState(ctx, s, m.State)
+		case *agentv1.ConnectRequest_Metrics:
+			g.ingestMetrics(ctx, s, m.Metrics)
 		case *agentv1.ConnectRequest_Result:
 			s.deliver(m.Result)
 		case *agentv1.ConnectRequest_Hello:
