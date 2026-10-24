@@ -18,8 +18,13 @@ type Outbox struct {
 	mu       sync.Mutex
 	snapshot *agentv1.StateSnapshot
 	batches  []*agentv1.MetricsBatch
+	logs     []*agentv1.LogBatch
 	dropped  uint64
 }
+
+// maxLogBatches bounds queued log batches while disconnected. Older batches
+// are dropped first and counted; the agent reports the count in LogStats.
+const maxLogBatches = 20
 
 // NewOutbox returns an outbox keeping at most maxBatches metrics batches.
 func NewOutbox(maxBatches int) *Outbox {
@@ -47,6 +52,22 @@ func (o *Outbox) PutMetrics(b *agentv1.MetricsBatch) {
 	o.wake()
 }
 
+// PutLogs queues a log batch, dropping the oldest when full. It returns how
+// many events were dropped to make room.
+func (o *Outbox) PutLogs(b *agentv1.LogBatch) (droppedEvents int) {
+	o.mu.Lock()
+	if len(o.logs) >= maxLogBatches {
+		droppedEvents = len(o.logs[0].GetEvents())
+		o.logs[0] = nil
+		o.logs = o.logs[1:]
+		o.dropped++
+	}
+	o.logs = append(o.logs, b)
+	o.mu.Unlock()
+	o.wake()
+	return droppedEvents
+}
+
 // Dropped reports how many metrics batches were discarded because the
 // outbox was full.
 func (o *Outbox) Dropped() uint64 {
@@ -59,7 +80,7 @@ func (o *Outbox) Dropped() uint64 {
 func (o *Outbox) Len() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	n := len(o.batches)
+	n := len(o.batches) + len(o.logs)
 	if o.snapshot != nil {
 		n++
 	}
@@ -94,6 +115,12 @@ func (o *Outbox) take() *agentv1.ConnectRequest {
 	if s := o.snapshot; s != nil {
 		o.snapshot = nil
 		return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_State{State: s}}
+	}
+	if len(o.logs) > 0 { // problems first: log events can carry errors
+		b := o.logs[0]
+		o.logs[0] = nil
+		o.logs = o.logs[1:]
+		return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Logs{Logs: b}}
 	}
 	if len(o.batches) > 0 {
 		b := o.batches[0]

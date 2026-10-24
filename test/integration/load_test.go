@@ -106,9 +106,19 @@ func TestAgentMemoryUnderLoad(t *testing.T) {
 		t.Fatalf("only %d of %d containers have metrics", withMetrics, loadContainers)
 	}
 
+	// The log pipeline must have been running under this load, or the RSS
+	// number would not cover it: 20 containers at ~50 lines/s each.
+	ls, err := e.st.GetLogStats(context.Background(), e.org.ID, uuid.MustParse(id.HostID))
+	if err != nil {
+		t.Fatalf("no log stats from the agent: %v", err)
+	}
+	if ls.LinesIn < 20*50*30 {
+		t.Fatalf("agent processed only %d log lines in %s, want at least %d", ls.LinesIn, duration, 20*50*30)
+	}
+
 	mib := func(b uint64) string { return fmt.Sprintf("%.1f MiB", float64(b)/(1<<20)) }
-	t.Logf("MEASURE S10 agent RSS over %s with %d containers (%d with metrics): max %s, mean %s, peak (VmHWM) %s, budget %s",
-		duration, loadContainers, withMetrics, mib(maxRSS), mib(sum/max(n, 1)), mib(hwm), mib(rssBudget))
+	t.Logf("MEASURE S10 agent RSS over %s with %d containers (%d with metrics), %d log lines in, %d withheld: max %s, mean %s, peak (VmHWM) %s, budget %s",
+		duration, loadContainers, withMetrics, ls.LinesIn, ls.LinesSkipped, mib(maxRSS), mib(sum/max(n, 1)), mib(hwm), mib(rssBudget))
 	if hwm >= rssBudget {
 		t.Fatalf("agent peak RSS %s exceeds the %s budget", mib(hwm), mib(rssBudget))
 	}

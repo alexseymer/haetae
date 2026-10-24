@@ -114,11 +114,16 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		DiskPath:     *diskPath,
 		Interval:     *interval,
 	}, out, log.With("component", "monitor"))
+	logs := agent.NewLogManager(agent.LogConfig{}, mon.Docker(), out, log.With("component", "logs"))
+	mon.OnRunning = func(running map[string]string) { logs.Sync(ctx, running) }
 	go mon.Run(ctx)
+	go logs.Run(ctx)
 
 	return agent.Run(ctx, id, log, agent.RunOptions{
 		Outbox:        out,
 		OnConnected:   mon.Resync,
 		DockerVersion: mon.DockerVersion,
+		OnGreen:       logs.SetGreen,
+		Handler:       logs.Handle,
 	})
 }

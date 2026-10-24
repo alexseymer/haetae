@@ -12,12 +12,20 @@ import (
 // rollups remain.
 const RawMetricsRetention = store.RawRetention
 
-// MetricsMaintainer is the store work done on a schedule.
+// Retention of stored log events (merged and redacted) and of the template
+// judgements agents rely on.
+const (
+	LogEventRetention    = 30 * 24 * time.Hour
+	LogTemplateRetention = 90 * 24 * time.Hour
+)
+
+// MetricsMaintainer is the store work done on a schedule (metrics and logs).
 type MetricsMaintainer interface {
 	EnsurePartitions(ctx context.Context, now time.Time) error
 	DropExpiredPartitions(ctx context.Context, now time.Time, rawRetention time.Duration) (int, error)
 	Rollup(ctx context.Context, now time.Time) error
 	PruneRollups(ctx context.Context, now time.Time) error
+	PruneLogs(ctx context.Context, now time.Time, eventRetention, templateRetention time.Duration) error
 }
 
 // MaintainMetrics runs partition management, rollups and retention once, then
@@ -50,5 +58,8 @@ func maintainOnce(ctx context.Context, m MetricsMaintainer, log *slog.Logger) {
 	}
 	if err := m.PruneRollups(ctx, now); err != nil {
 		log.Error("prune metric rollups", "err", err)
+	}
+	if err := m.PruneLogs(ctx, now, LogEventRetention, LogTemplateRetention); err != nil {
+		log.Error("prune logs", "err", err)
 	}
 }
