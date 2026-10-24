@@ -34,6 +34,7 @@ jobs:
       - name: Build
         run: make build
       - name: Binaries report their version
+        shell: bash
         run: |
           ./bin/haetae-agent --version | grep -q '^haetae-agent '
           ./bin/haetae-server --version | grep -q '^haetae-server '
