@@ -4,11 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/alexseymer/haetae/internal/store"
 )
 
 // RawMetricsRetention is how long 10 s samples are kept before only the
-// rollups remain (ADR 0001: raw 48 h, 1 min for 30 days, 1 h for 13 months).
-const RawMetricsRetention = 48 * time.Hour
+// rollups remain.
+const RawMetricsRetention = store.RawRetention
 
 // MetricsMaintainer is the store work done on a schedule.
 type MetricsMaintainer interface {

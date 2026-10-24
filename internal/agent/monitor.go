@@ -39,13 +39,6 @@ func (c MonitorConfig) withDefaults() MonitorConfig {
 	return c
 }
 
-// Compose labels identifying a container's stack and service.
-const (
-	labelProject = "com.docker.compose.project"
-	labelService = "com.docker.compose.service"
-	labelVersion = "org.opencontainers.image.version"
-)
-
 // Monitor samples Docker state and host and container metrics into an Outbox.
 type Monitor struct {
 	cfg    MonitorConfig
@@ -139,8 +132,13 @@ func (m *Monitor) Run(ctx context.Context) {
 // reconnects to the event stream with backoff.
 func (m *Monitor) watchEvents(ctx context.Context) {
 	backoff := time.Second
-	for ctx.Err() == nil {
+	for first := true; ctx.Err() == nil; first = false {
 		started := time.Now()
+		// Events missed while the stream was down are not replayed; a
+		// snapshot catches up instead.
+		if !first {
+			m.Resync()
+		}
 		err := m.docker.Events(ctx, func(ev dockerapi.Event) {
 			if relevantEvent(ev.Action) {
 				m.Resync()
@@ -221,10 +219,10 @@ func containerState(c dockerapi.ContainerSummary) *agentv1.ContainerState {
 	cs := &agentv1.ContainerState{
 		Id:            c.ID,
 		Name:          name,
-		Stack:         c.Labels[labelProject],
-		Service:       c.Labels[labelService],
+		Stack:         c.Labels.ComposeProject,
+		Service:       c.Labels.ComposeService,
 		Image:         c.Image,
-		ImageVersion:  c.Labels[labelVersion],
+		ImageVersion:  c.Labels.ImageVersion,
 		State:         c.State,
 		Status:        c.Status,
 		CreatedUnixMs: c.Created * 1000,
@@ -271,11 +269,19 @@ func (m *Monitor) sample(ctx context.Context) {
 		m.log.Debug("host sample failed", "err", err)
 	}
 
+	// The whole round shares one deadline so a slow dockerd cannot hold up
+	// Run (and event-triggered snapshots) for longer than one interval.
+	// Containers not reached this round are sampled next time.
+	round, cancel := context.WithTimeout(ctx, m.cfg.Interval)
+	defer cancel()
 	seen := make(map[string]bool, len(m.running))
 	for _, id := range m.running {
-		sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		st, err := m.docker.Stats(sctx, id)
-		cancel()
+		if round.Err() != nil {
+			// Keep baselines of skipped containers.
+			seen[id] = true
+			continue
+		}
+		st, err := m.docker.Stats(round, id)
 		if err != nil {
 			continue
 		}

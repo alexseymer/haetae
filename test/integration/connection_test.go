@@ -400,6 +400,46 @@ func TestSupersededOrRevokedCertificateIsRejected(t *testing.T) {
 	}
 }
 
+// A single agent message is size-limited before it is decoded, so one
+// enrolled host cannot make the server buffer arbitrary amounts.
+func TestOversizedAgentMessageIsRejected(t *testing.T) {
+	e := newEnv(t)
+	id, err := agent.Enroll(context.Background(), "https://"+e.addr, e.token("big"), e.pin(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := pki.ClientTLSConfig(id.CADER, id.CertDER, id.Key, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := agentv1connect.NewAgentGatewayServiceClient(httpClientTLS(cfg), "https://"+e.addr)
+	stream := client.Connect(context.Background())
+	defer stream.CloseRequest()
+	if err := stream.Send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Receive(); err != nil { // welcome
+		t.Fatal(err)
+	}
+	big := &agentv1.StateSnapshot{DockerReachable: true}
+	for range 3 {
+		big.Containers = append(big.Containers, &agentv1.ContainerState{Id: "x", Status: strings.Repeat("a", 2<<20)})
+	}
+	_ = stream.Send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_State{State: big}})
+	if _, err := stream.Receive(); err == nil {
+		t.Fatal("stream survived an oversized message")
+	}
+	// The server ended the session and stored nothing from the message.
+	e.waitConnected(id.HostID, false, 10*time.Second)
+	cs, err := e.st.ListContainers(context.Background(), e.org.ID, uuid.MustParse(id.HostID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 0 {
+		t.Fatalf("oversized snapshot was stored: %d containers", len(cs))
+	}
+}
+
 // S1: the agent process opens no listening socket.
 func TestAgentOpensNoListeningSocket(t *testing.T) {
 	e := newEnv(t)

@@ -64,15 +64,23 @@ type Port struct {
 
 // ContainerSummary is one entry from GET /containers/json.
 type ContainerSummary struct {
-	ID      string            `json:"Id"`
-	Names   []string          `json:"Names"`
-	Image   string            `json:"Image"`
-	ImageID string            `json:"ImageID"`
-	Created int64             `json:"Created"`
-	State   string            `json:"State"`
-	Status  string            `json:"Status"`
-	Labels  map[string]string `json:"Labels"`
-	Ports   []Port            `json:"Ports"`
+	ID      string   `json:"Id"`
+	Names   []string `json:"Names"`
+	Image   string   `json:"Image"`
+	ImageID string   `json:"ImageID"`
+	Created int64    `json:"Created"`
+	State   string   `json:"State"`
+	Status  string   `json:"Status"`
+	Labels  Labels   `json:"Labels"`
+	Ports   []Port   `json:"Ports"`
+}
+
+// Labels decodes only the labels the agent uses. Arbitrary labels can hold
+// anything, so they are never decoded, the same as env values.
+type Labels struct {
+	ComposeProject string `json:"com.docker.compose.project"`
+	ComposeService string `json:"com.docker.compose.service"`
+	ImageVersion   string `json:"org.opencontainers.image.version"`
 }
 
 // ListContainers returns container summaries (GET /containers/json?all=1|0).
@@ -88,9 +96,12 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]ContainerSumma
 	return list, nil
 }
 
-// ContainerDetail is the inspect response for a container.
-// Intentionally omits Config.Env and Config.Cmd/Entrypoint/Args: environment
-// values and command lines must never be decoded, so they cannot leak later.
+// ContainerDetail is the inspect response for a container. It decodes only
+// what the agent uses. Config.Env, Config.Cmd/Entrypoint/Args and labels are
+// deliberately absent: environment values, command lines and arbitrary
+// labels must never be decoded, so they cannot leak later. Add fields here
+// only when a feature needs them (misconfiguration checks will add user,
+// privileged mode and mount targets).
 type ContainerDetail struct {
 	ID           string `json:"Id"`
 	Name         string `json:"Name"`
@@ -109,21 +120,6 @@ type ContainerDetail struct {
 			FailingStreak int    `json:"FailingStreak"`
 		} `json:"Health"`
 	} `json:"State"`
-	Config struct {
-		Image  string            `json:"Image"`
-		User   string            `json:"User"`
-		Labels map[string]string `json:"Labels"`
-	} `json:"Config"`
-	HostConfig struct {
-		Privileged  bool   `json:"Privileged"`
-		NetworkMode string `json:"NetworkMode"`
-	} `json:"HostConfig"`
-	Mounts []struct {
-		Type        string `json:"Type"`
-		Source      string `json:"Source"`
-		Destination string `json:"Destination"`
-		RW          bool   `json:"RW"`
-	} `json:"Mounts"`
 }
 
 // InspectContainer returns container details (GET /containers/{id}/json).
@@ -180,9 +176,9 @@ func (c *Client) Stats(ctx context.Context, id string) (Stats, error) {
 type Event struct {
 	Type   string `json:"Type"`
 	Action string `json:"Action"`
-	Actor  struct {
-		ID         string            `json:"ID"`
-		Attributes map[string]string `json:"Attributes"`
+	// Actor.Attributes (which repeat all labels) is deliberately not decoded.
+	Actor struct {
+		ID string `json:"ID"`
 	} `json:"Actor"`
 	TimeNano int64 `json:"timeNano"`
 }

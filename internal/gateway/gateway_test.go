@@ -43,8 +43,8 @@ func TestSampleTimeWindow(t *testing.T) {
 		want bool
 	}{
 		{now, true},
-		{now.Add(-time.Hour), true},
-		{now.Add(-7 * time.Hour), false},
+		{now.Add(-30 * time.Minute), true},
+		{now.Add(-2 * time.Hour), false},
 		{now.Add(time.Minute), true},
 		{now.Add(10 * time.Minute), false},
 		{time.UnixMilli(0), false},

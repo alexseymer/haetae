@@ -58,7 +58,7 @@ func TestReplaceContainersSnapshotAndOrgIsolation(t *testing.T) {
 			Image: "postgres", State: "running", Status: "Up",
 		},
 	}
-	if err := s.ReplaceContainers(ctx, orgA.ID, hostA.ID, snap); err != nil {
+	if err := s.ReplaceContainers(ctx, orgA.ID, hostA.ID, snap, true); err != nil {
 		t.Fatalf("ReplaceContainers: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestReplaceContainersSnapshotAndOrgIsolation(t *testing.T) {
 	}
 
 	// Second snapshot without c2 marks it removed.
-	if err := s.ReplaceContainers(ctx, orgA.ID, hostA.ID, []store.Container{snap[0]}); err != nil {
+	if err := s.ReplaceContainers(ctx, orgA.ID, hostA.ID, []store.Container{snap[0]}, true); err != nil {
 		t.Fatalf("ReplaceContainers 2: %v", err)
 	}
 	got, err = s.ListContainers(ctx, orgA.ID, hostA.ID)
@@ -367,7 +367,7 @@ func TestPruneRollups(t *testing.T) {
 	_, err = s.Pool().Exec(ctx, `
 		INSERT INTO host_metrics_1m (
 			org_id, host_id, ts, cpu_pct_avg, cpu_pct_max, load1_avg, load1_max,
-			mem_total_max, mem_avail_avg, mem_avail_max, disk_total_max, disk_used_avg, disk_used_max,
+			mem_total_max, mem_avail_avg, mem_avail_min, disk_total_max, disk_used_avg, disk_used_max,
 			net_rx_bps_avg, net_rx_bps_max, net_tx_bps_avg, net_tx_bps_max, samples
 		) VALUES
 		($1,$2,$3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),

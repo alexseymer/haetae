@@ -2,6 +2,7 @@ package hoststats
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -160,5 +161,27 @@ func TestCPUPercentBusyGoingBackwardsIsZero(t *testing.T) {
 	cur := cpuTimes{total: 1100, idle: 250, iowait: 0} // busy 900 -> 850
 	if got := cpuPercent(prev, cur); got != 0 {
 		t.Fatalf("cpuPercent = %v, want 0", got)
+	}
+}
+
+func TestPhysicalInterface(t *testing.T) {
+	// Without sysfs next to the proc root: name prefixes decide.
+	c := NewCollector(filepath.Join(t.TempDir(), "proc"), "/")
+	for name, want := range map[string]bool{"eth0": true, "enp3s0": true, "lo": false, "veth1a2b": false, "docker0": false, "br-0f1e": false, "wg0": false} {
+		if got := c.physicalInterface(name); got != want {
+			t.Errorf("no sysfs: physicalInterface(%q) = %v, want %v", name, got, want)
+		}
+	}
+
+	// With sysfs: only interfaces with a device link count.
+	root := t.TempDir()
+	for _, p := range []string{"sys/class/net/eth0/device", "sys/class/net/veth9", "proc"} {
+		if err := os.MkdirAll(filepath.Join(root, p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c = NewCollector(filepath.Join(root, "proc"), "/")
+	if !c.physicalInterface("eth0") || c.physicalInterface("veth9") || c.physicalInterface("ens5") {
+		t.Error("sysfs: want only eth0 counted")
 	}
 }

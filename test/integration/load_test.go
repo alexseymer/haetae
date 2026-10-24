@@ -90,10 +90,25 @@ func TestAgentMemoryUnderLoad(t *testing.T) {
 	if len(cs) < loadContainers {
 		t.Fatalf("server sees %d containers, want >= %d (agent not doing its job)", len(cs), loadContainers)
 	}
+	// The stats path must have run for every container, or the RSS number
+	// would be measured on an agent doing less than in production.
+	withMetrics := 0
+	for _, c := range cs {
+		_, pts, err := e.st.ContainerSeries(context.Background(), e.org.ID, uuid.MustParse(id.HostID), c.ContainerID, "cpu_pct", time.Now().Add(-duration-time.Minute), time.Now().Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(pts) > 0 {
+			withMetrics++
+		}
+	}
+	if withMetrics < loadContainers {
+		t.Fatalf("only %d of %d containers have metrics", withMetrics, loadContainers)
+	}
 
 	mib := func(b uint64) string { return fmt.Sprintf("%.1f MiB", float64(b)/(1<<20)) }
-	t.Logf("MEASURE S10 agent RSS over %s with %d containers: max %s, mean %s, peak (VmHWM) %s, budget %s",
-		duration, loadContainers, mib(maxRSS), mib(sum/max(n, 1)), mib(hwm), mib(rssBudget))
+	t.Logf("MEASURE S10 agent RSS over %s with %d containers (%d with metrics): max %s, mean %s, peak (VmHWM) %s, budget %s",
+		duration, loadContainers, withMetrics, mib(maxRSS), mib(sum/max(n, 1)), mib(hwm), mib(rssBudget))
 	if hwm >= rssBudget {
 		t.Fatalf("agent peak RSS %s exceeds the %s budget", mib(hwm), mib(rssBudget))
 	}

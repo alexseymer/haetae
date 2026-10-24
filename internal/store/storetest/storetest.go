@@ -30,16 +30,12 @@ var (
 )
 
 // New returns a Store on a fresh, empty database that is dropped at test cleanup.
-// If HAETAE_TEST_DATABASE_URL is set it is used as the admin connection; otherwise one shared
-// Postgres container per test process is started with
-//
-//	docker run -d --rm -e POSTGRES_PASSWORD=haetae -p 127.0.0.1::5432 postgres:17-alpine
-//
-// (port found with `docker port <id> 5432/tcp`, wait up to 60 s until a connection succeeds),
-// guarded by sync.Once. The container is left running when the process exits (--rm removes it
-// once stopped). Each call creates database "haetae_test_<16 random hex>" and returns
-// store.Open on it. If neither the env var nor a working docker CLI is available, t.Skip with a
-// clear message.
+// If HAETAE_TEST_DATABASE_URL is set it is used as the admin connection; otherwise the shared
+// container "haetae-test-postgres" (postgres:17-alpine) is reused, or started or created if
+// needed, once per process. It stays running between test runs; remove it with
+// `docker rm -f haetae-test-postgres`. Each call creates database "haetae_test_<16 random hex>"
+// and returns store.Open on it. If neither the env var nor a working docker CLI is available,
+// t.Skip with a clear message.
 //
 // The connection URL for the created database is stored under t.Name() and can be retrieved with URL.
 func New(t testing.TB) *store.Store {
@@ -135,58 +131,90 @@ func resolveAdminURL(t testing.TB) (string, error) {
 	return adminURL, nil
 }
 
+// containerName is shared by every test process, so repeated test runs reuse
+// one PostgreSQL container instead of leaving a new one behind each time.
+const containerName = "haetae-test-postgres"
+
+// startPostgresContainer returns the admin URL of the shared test container,
+// starting or creating it if needed. Parallel test processes may race to
+// create it; the loser retries and finds the winner's container.
 func startPostgresContainer() (string, error) {
-	if _, err := exec.LookPath("docker"); err != nil {
-		return "", fmt.Errorf("storetest: HAETAE_TEST_DATABASE_URL unset and docker not available: %w", err)
-	}
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		running, exists := containerState()
+		switch {
+		case running:
+		case exists:
+			if out, err := exec.Command("docker", "start", containerName).CombinedOutput(); err != nil {
+				lastErr = fmt.Errorf("storetest: docker start: %w (%s)", err, strings.TrimSpace(string(out)))
+				continue
+			}
+		default:
+			out, err := exec.Command("docker", "run", "-d", "--name", containerName,
+				"--label", "haetae.test=postgres",
+				"-e", "POSTGRES_PASSWORD="+postgresPassword,
+				"-p", "127.0.0.1::5432",
+				"postgres:17-alpine",
+			).CombinedOutput()
+			if err != nil {
+				lastErr = fmt.Errorf("storetest: docker run: %w (%s)", err, strings.TrimSpace(string(out)))
+				time.Sleep(time.Second)
+				continue
+			}
+		}
 
-	cmd := exec.Command("docker", "run", "-d", "--rm",
-		"-e", "POSTGRES_PASSWORD="+postgresPassword,
-		"-p", "127.0.0.1::5432",
-		"postgres:17-alpine",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("storetest: docker run failed (%w): %s", err, strings.TrimSpace(string(out)))
+		u, err := containerURL()
+		if err != nil {
+			lastErr = err
+			time.Sleep(time.Second)
+			continue
+		}
+		if err := waitReady(u, 60*time.Second); err != nil {
+			return "", err
+		}
+		return u, nil
 	}
-	id := strings.TrimSpace(string(out))
-	if id == "" {
-		return "", fmt.Errorf("storetest: docker run returned empty container id")
-	}
+	return "", lastErr
+}
 
-	portOut, err := exec.Command("docker", "port", id, "5432/tcp").CombinedOutput()
+func containerState() (running, exists bool) {
+	out, err := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName).Output()
 	if err != nil {
-		_ = exec.Command("docker", "stop", id).Run()
-		return "", fmt.Errorf("storetest: docker port: %w (%s)", err, strings.TrimSpace(string(portOut)))
+		return false, false
 	}
-	hostPort := strings.TrimSpace(string(portOut))
-	// e.g. "127.0.0.1:32768"
-	_, port, ok := strings.Cut(hostPort, ":")
+	return strings.TrimSpace(string(out)) == "true", true
+}
+
+func containerURL() (string, error) {
+	out, err := exec.Command("docker", "port", containerName, "5432/tcp").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("storetest: docker port: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	// e.g. "127.0.0.1:32768", possibly followed by an IPv6 line.
+	first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	_, port, ok := strings.Cut(first, ":")
 	if !ok || port == "" {
-		_ = exec.Command("docker", "stop", id).Run()
-		return "", fmt.Errorf("storetest: unexpected docker port output %q", hostPort)
+		return "", fmt.Errorf("storetest: unexpected docker port output %q", first)
 	}
+	return fmt.Sprintf("postgres://postgres:%s@127.0.0.1:%s/postgres?sslmode=disable", postgresPassword, port), nil
+}
 
-	u := fmt.Sprintf("postgres://postgres:%s@127.0.0.1:%s/postgres?sslmode=disable", postgresPassword, port)
-
-	deadline := time.Now().Add(60 * time.Second)
+func waitReady(u string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		pool, err := pgxpool.New(ctx, u)
 		if err == nil {
-			pingErr := pool.Ping(ctx)
+			err = pool.Ping(ctx)
 			pool.Close()
-			cancel()
-			if pingErr == nil {
-				return u, nil
-			}
-		} else {
-			cancel()
+		}
+		cancel()
+		if err == nil {
+			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	_ = exec.Command("docker", "stop", id).Run()
-	return "", fmt.Errorf("storetest: postgres container %s not ready within 60s", id)
+	return fmt.Errorf("storetest: postgres at %s not ready after %s", u, timeout)
 }
 
 func withDBName(base, dbName string) (string, error) {

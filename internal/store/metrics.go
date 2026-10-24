@@ -98,16 +98,28 @@ const (
 	Resolution1h  Resolution = "1h"
 )
 
-// ResolutionFor picks raw for spans <= 6h, 1m for <= 7 days, 1h otherwise.
-func ResolutionFor(from, to time.Time) Resolution {
+// Retention of each resolution (ADR 0001).
+const (
+	RawRetention      = 48 * time.Hour
+	Rollup1mRetention = 30 * 24 * time.Hour
+	Rollup1hRetention = 395 * 24 * time.Hour
+)
+
+// ResolutionFor picks raw for spans <= 6h, 1m for <= 7 days, 1h otherwise,
+// falling back to a coarser table when the window starts before the finer
+// one's retention.
+func ResolutionFor(now, from, to time.Time) Resolution {
 	span := to.Sub(from)
 	if span < 0 {
 		span = -span
+		from = to
 	}
+	// Also respect retention: raw rows exist for 48 h, 1 min rollups for
+	// 30 days, so an old window must read the coarser table even if short.
 	switch {
-	case span <= 6*time.Hour:
+	case span <= 6*time.Hour && from.After(now.Add(-RawRetention)):
 		return ResolutionRaw
-	case span <= 7*24*time.Hour:
+	case span <= 7*24*time.Hour && from.After(now.Add(-Rollup1mRetention)):
 		return Resolution1m
 	default:
 		return Resolution1h
@@ -132,7 +144,7 @@ type seriesCols struct {
 var hostSeriesMetrics = map[string]seriesCols{
 	"cpu_pct":    {rawValue: "cpu_pct", rawMax: "cpu_pct", avg: "cpu_pct_avg", max: "cpu_pct_max"},
 	"load1":      {rawValue: "load1", rawMax: "load1", avg: "load1_avg", max: "load1_max"},
-	"mem_used":   {rawValue: "(mem_total - mem_avail)", rawMax: "(mem_total - mem_avail)", avg: "(mem_total_max - mem_avail_avg)", max: "(mem_total_max - mem_avail_avg)"},
+	"mem_used":   {rawValue: "(mem_total - mem_avail)", rawMax: "(mem_total - mem_avail)", avg: "(mem_total_max - mem_avail_avg)", max: "(mem_total_max - mem_avail_min)"},
 	"mem_total":  {rawValue: "mem_total", rawMax: "mem_total", avg: "mem_total_max", max: "mem_total_max"},
 	"disk_used":  {rawValue: "disk_used", rawMax: "disk_used", avg: "disk_used_avg", max: "disk_used_max"},
 	"disk_total": {rawValue: "disk_total", rawMax: "disk_total", avg: "disk_total_max", max: "disk_total_max"},
@@ -151,7 +163,7 @@ var containerSeriesMetrics = map[string]seriesCols{
 	"pids":          {rawValue: "pids", rawMax: "pids", avg: "pids_avg", max: "pids_max"},
 }
 
-// HostSeries returns one metric for a host between from and to at ResolutionFor(from,to).
+// HostSeries returns one metric for a host between from and to at ResolutionFor(now, from, to).
 // metric is one of "cpu_pct","load1","mem_used","mem_total","disk_used","disk_total","net_rx_bps","net_tx_bps".
 // Unknown metric -> error. Column names come from a fixed allowlist map.
 func (s *Store) HostSeries(ctx context.Context, orgID, hostID uuid.UUID, metric string, from, to time.Time) (Resolution, []Point, error) {
@@ -159,7 +171,7 @@ func (s *Store) HostSeries(ctx context.Context, orgID, hostID uuid.UUID, metric 
 	if !ok {
 		return "", nil, fmt.Errorf("store: HostSeries: unknown metric %q", metric)
 	}
-	res := ResolutionFor(from, to)
+	res := ResolutionFor(time.Now(), from, to)
 	var (
 		q    string
 		args []any
@@ -201,7 +213,7 @@ func (s *Store) ContainerSeries(ctx context.Context, orgID, hostID uuid.UUID, co
 	if !ok {
 		return "", nil, fmt.Errorf("store: ContainerSeries: unknown metric %q", metric)
 	}
-	res := ResolutionFor(from, to)
+	res := ResolutionFor(time.Now(), from, to)
 	var (
 		q    string
 		args []any
@@ -363,7 +375,7 @@ func (s *Store) rollupHost1m(ctx context.Context, now time.Time) error {
 			org_id, host_id, ts,
 			cpu_pct_avg, cpu_pct_max,
 			load1_avg, load1_max,
-			mem_total_max, mem_avail_avg, mem_avail_max,
+			mem_total_max, mem_avail_avg, mem_avail_min,
 			disk_total_max, disk_used_avg, disk_used_max,
 			net_rx_bps_avg, net_rx_bps_max,
 			net_tx_bps_avg, net_tx_bps_max,
@@ -374,7 +386,7 @@ func (s *Store) rollupHost1m(ctx context.Context, now time.Time) error {
 			date_bin('1 minute', ts, TIMESTAMPTZ 'epoch') AS bucket,
 			AVG(cpu_pct)::real, MAX(cpu_pct)::real,
 			AVG(load1)::real, MAX(load1)::real,
-			MAX(mem_total), AVG(mem_avail)::real, MAX(mem_avail)::real,
+			MAX(mem_total), AVG(mem_avail)::real, MIN(mem_avail)::real,
 			MAX(disk_total), AVG(disk_used)::real, MAX(disk_used)::real,
 			AVG(net_rx_bps)::real, MAX(net_rx_bps)::real,
 			AVG(net_tx_bps)::real, MAX(net_tx_bps)::real,
@@ -392,7 +404,7 @@ func (s *Store) rollupHost1m(ctx context.Context, now time.Time) error {
 			load1_max = EXCLUDED.load1_max,
 			mem_total_max = EXCLUDED.mem_total_max,
 			mem_avail_avg = EXCLUDED.mem_avail_avg,
-			mem_avail_max = EXCLUDED.mem_avail_max,
+			mem_avail_min = EXCLUDED.mem_avail_min,
 			disk_total_max = EXCLUDED.disk_total_max,
 			disk_used_avg = EXCLUDED.disk_used_avg,
 			disk_used_max = EXCLUDED.disk_used_max,
@@ -474,7 +486,7 @@ func (s *Store) rollupHost1h(ctx context.Context, now time.Time) error {
 			org_id, host_id, ts,
 			cpu_pct_avg, cpu_pct_max,
 			load1_avg, load1_max,
-			mem_total_max, mem_avail_avg, mem_avail_max,
+			mem_total_max, mem_avail_avg, mem_avail_min,
 			disk_total_max, disk_used_avg, disk_used_max,
 			net_rx_bps_avg, net_rx_bps_max,
 			net_tx_bps_avg, net_tx_bps_max,
@@ -489,7 +501,7 @@ func (s *Store) rollupHost1h(ctx context.Context, now time.Time) error {
 			MAX(load1_max)::real,
 			MAX(mem_total_max),
 			(SUM(mem_avail_avg * samples) / NULLIF(SUM(samples), 0))::real,
-			MAX(mem_avail_max)::real,
+			MIN(mem_avail_min)::real,
 			MAX(disk_total_max),
 			(SUM(disk_used_avg * samples) / NULLIF(SUM(samples), 0))::real,
 			MAX(disk_used_max)::real,
@@ -511,7 +523,7 @@ func (s *Store) rollupHost1h(ctx context.Context, now time.Time) error {
 			load1_max = EXCLUDED.load1_max,
 			mem_total_max = EXCLUDED.mem_total_max,
 			mem_avail_avg = EXCLUDED.mem_avail_avg,
-			mem_avail_max = EXCLUDED.mem_avail_max,
+			mem_avail_min = EXCLUDED.mem_avail_min,
 			disk_total_max = EXCLUDED.disk_total_max,
 			disk_used_avg = EXCLUDED.disk_used_avg,
 			disk_used_max = EXCLUDED.disk_used_max,
@@ -596,8 +608,8 @@ func (s *Store) rollupContainer1h(ctx context.Context, now time.Time) error {
 // PruneRollups deletes 1m rows older than now-30d and 1h rows older than now-395d.
 func (s *Store) PruneRollups(ctx context.Context, now time.Time) error {
 	now = now.UTC()
-	cutoff1m := now.Add(-30 * 24 * time.Hour)
-	cutoff1h := now.Add(-395 * 24 * time.Hour)
+	cutoff1m := now.Add(-Rollup1mRetention)
+	cutoff1h := now.Add(-Rollup1hRetention)
 	stmts := []struct {
 		q   string
 		arg time.Time

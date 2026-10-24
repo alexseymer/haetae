@@ -23,6 +23,10 @@ import (
 	"github.com/alexseymer/haetae/internal/store"
 )
 
+// MaxMessageBytes is the largest agent message the gateway accepts. The
+// biggest legitimate message (5000 container samples) is about 0.5 MB.
+const MaxMessageBytes = 4 << 20
+
 // ErrNotConnected is returned by Send when the host has no live session.
 var ErrNotConnected = errors.New("gateway: host not connected")
 
@@ -98,7 +102,11 @@ func New(st Store, ca *pki.CA, cfg Config, log *slog.Logger) *Gateway {
 // served over TLS configured with the CA's ServerTLSConfig, so verified client
 // certificates reach Connect.
 func (g *Gateway) Handler() (string, http.Handler) {
-	path, h := agentv1connect.NewAgentGatewayServiceHandler(g)
+	path, h := agentv1connect.NewAgentGatewayServiceHandler(g,
+		// Bound every message before it is decoded; the caps in ingest.go
+		// only apply afterwards.
+		connect.WithReadMaxBytes(MaxMessageBytes),
+	)
 	return path, peerIdentity(h)
 }
 
@@ -181,6 +189,9 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	hello, err := receiveHello(ctx, stream, g.cfg.HelloTimeout)
 	if err != nil {
 		return err
+	}
+	if g.cfg.Tap != nil {
+		g.cfg.Tap(host.ID, &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: hello}})
 	}
 
 	s := newSession(hostID, cancel)

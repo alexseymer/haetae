@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,17 +18,21 @@ const (
 	maxPortsPerContainer     = 64
 	maxHostSamplesPerBatch   = 100
 	maxContainerSamples      = 5000
-	// Samples outside this window are dropped: they would land in partitions
-	// that do not exist and usually mean a broken clock.
-	maxSampleAge    = 6 * time.Hour
+	// Samples outside this window are dropped: they usually mean a broken
+	// clock, and older ones would miss the rollups (which look back 2 h).
+	// The agent buffers at most a few minutes anyway.
+	maxSampleAge    = time.Hour
 	maxSampleFuture = 5 * time.Minute
 )
 
 func (g *Gateway) ingestState(ctx context.Context, s *session, snap *agentv1.StateSnapshot) {
 	cs := snap.GetContainers()
+	complete := true
 	if len(cs) > maxContainersPerSnapshot {
 		g.log.Warn("state snapshot truncated", "host_id", s.hostID, "containers", len(cs))
 		cs = cs[:maxContainersPerSnapshot]
+		// Containers past the cap are unknown, not removed.
+		complete = false
 	}
 	if !snap.GetDockerReachable() {
 		// Keep the last known containers rather than marking all removed;
@@ -43,7 +48,7 @@ func (g *Gateway) ingestState(ctx context.Context, s *session, snap *agentv1.Sta
 		}
 		out = append(out, toContainer(c))
 	}
-	if err := g.store.ReplaceContainers(ctx, s.orgID, s.hostID, out); err != nil {
+	if err := g.store.ReplaceContainers(ctx, s.orgID, s.hostID, out, complete); err != nil {
 		g.log.Error("store containers", "host_id", s.hostID, "err", err)
 	}
 }
@@ -103,19 +108,19 @@ func (g *Gateway) ingestMetrics(ctx context.Context, s *session, b *agentv1.Metr
 	host := make([]store.HostMetric, 0, len(hs))
 	for _, h := range hs {
 		ts := time.UnixMilli(h.GetTsUnixMs()).UTC()
-		if !sampleTimeOK(ts, now) {
+		if !sampleTimeOK(ts, now) || !finite(h.GetCpuPct(), h.GetLoad1(), h.GetNetRxBps(), h.GetNetTxBps()) {
 			continue
 		}
 		host = append(host, store.HostMetric{
 			TS:        ts,
-			CPUPct:    h.GetCpuPct(),
-			Load1:     h.GetLoad1(),
+			CPUPct:    gauge(h.GetCpuPct()),
+			Load1:     gauge(h.GetLoad1()),
 			MemTotal:  toInt64(h.GetMemTotal()),
 			MemAvail:  toInt64(h.GetMemAvail()),
 			DiskTotal: toInt64(h.GetDiskTotal()),
 			DiskUsed:  toInt64(h.GetDiskUsed()),
-			NetRxBps:  h.GetNetRxBps(),
-			NetTxBps:  h.GetNetTxBps(),
+			NetRxBps:  gauge(h.GetNetRxBps()),
+			NetTxBps:  gauge(h.GetNetTxBps()),
 		})
 	}
 
@@ -126,19 +131,20 @@ func (g *Gateway) ingestMetrics(ctx context.Context, s *session, b *agentv1.Metr
 	ctr := make([]store.ContainerMetric, 0, len(cs))
 	for _, c := range cs {
 		ts := time.UnixMilli(c.GetTsUnixMs()).UTC()
-		if c.GetContainerId() == "" || !sampleTimeOK(ts, now) {
+		if c.GetContainerId() == "" || !sampleTimeOK(ts, now) ||
+			!finite(c.GetCpuPct(), c.GetNetRxBps(), c.GetNetTxBps(), c.GetBlkReadBps(), c.GetBlkWriteBps()) {
 			continue
 		}
 		ctr = append(ctr, store.ContainerMetric{
 			ContainerID: clip(c.GetContainerId()),
 			TS:          ts,
-			CPUPct:      c.GetCpuPct(),
+			CPUPct:      gauge(c.GetCpuPct()),
 			MemUsage:    toInt64(c.GetMemUsage()),
 			MemLimit:    toInt64(c.GetMemLimit()),
-			NetRxBps:    c.GetNetRxBps(),
-			NetTxBps:    c.GetNetTxBps(),
-			BlkReadBps:  c.GetBlkReadBps(),
-			BlkWriteBps: c.GetBlkWriteBps(),
+			NetRxBps:    gauge(c.GetNetRxBps()),
+			NetTxBps:    gauge(c.GetNetTxBps()),
+			BlkReadBps:  gauge(c.GetBlkReadBps()),
+			BlkWriteBps: gauge(c.GetBlkWriteBps()),
 			Pids:        int(c.GetPids()),
 		})
 	}
@@ -155,6 +161,23 @@ func (g *Gateway) ingestMetrics(ctx context.Context, s *session, b *agentv1.Metr
 	}
 }
 
+// finite reports whether no value is NaN or infinite. One such value would
+// turn a whole rollup bucket into NaN.
+func finite(vs ...float64) bool {
+	for _, v := range vs {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// gauge clamps a value into what a PostgreSQL real column can hold; metrics
+// are never negative. An out-of-range value would fail the whole batch.
+func gauge(v float64) float64 {
+	return min(max(v, 0), math.MaxFloat32)
+}
+
 func toInt64(v uint64) int64 {
 	if v > 1<<63-1 {
 		return 1<<63 - 1
@@ -165,7 +188,7 @@ func toInt64(v uint64) int64 {
 // ingestStore is the part of Store used for state and metrics; kept separate
 // so its methods are easy to find.
 type ingestStore interface {
-	ReplaceContainers(ctx context.Context, orgID, hostID uuid.UUID, cs []store.Container) error
+	ReplaceContainers(ctx context.Context, orgID, hostID uuid.UUID, cs []store.Container, complete bool) error
 	InsertHostMetrics(ctx context.Context, orgID, hostID uuid.UUID, ms []store.HostMetric) error
 	InsertContainerMetrics(ctx context.Context, orgID, hostID uuid.UUID, ms []store.ContainerMetric) error
 }

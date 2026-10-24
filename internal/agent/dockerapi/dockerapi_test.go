@@ -66,7 +66,12 @@ func TestListContainers(t *testing.T) {
 				"Created": int64(1700000000),
 				"State":   "running",
 				"Status":  "Up 2 hours",
-				"Labels":  map[string]string{"app": "web"},
+				"Labels": map[string]string{
+					"com.docker.compose.project":       "shop",
+					"com.docker.compose.service":       "web",
+					"org.opencontainers.image.version": "1.2.3",
+					"com.example.secret":               "never-decoded",
+				},
 				"Ports": []map[string]any{
 					{"IP": "0.0.0.0", "PrivatePort": 80, "PublicPort": 8080, "Type": "tcp"},
 				},
@@ -76,6 +81,9 @@ func TestListContainers(t *testing.T) {
 	list, err := c.ListContainers(context.Background(), true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if l := list[0].Labels; l.ComposeProject != "shop" || l.ComposeService != "web" || l.ImageVersion != "1.2.3" {
+		t.Fatalf("labels = %+v", l)
 	}
 	if len(list) != 1 || list[0].ID != "abc123" || list[0].Names[0] != "/web" {
 		t.Fatalf("got %+v", list)
@@ -132,8 +140,9 @@ func TestInspectContainer(t *testing.T) {
 	if d.State.Health == nil || d.State.Health.Status != "healthy" {
 		t.Fatalf("health: %+v", d.State.Health)
 	}
-	if d.Config.Image != "nginx:latest" || d.Config.User != "1000" {
-		t.Fatalf("config: %+v", d.Config)
+	// Env, Cmd and labels are in the response but have no field to land in.
+	if b, _ := json.Marshal(d); strings.Contains(string(b), "should-not-decode") || strings.Contains(string(b), "secret") {
+		t.Fatalf("sensitive inspect fields were decoded: %s", b)
 	}
 }
 

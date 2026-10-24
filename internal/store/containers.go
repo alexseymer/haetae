@@ -42,8 +42,9 @@ type Container struct {
 
 // ReplaceContainers stores a full snapshot of a host's containers in one transaction: upserts every given container
 // (removed_at = NULL, updated_at = now()) and sets removed_at = now() on rows of that host not in the snapshot and not
-// already removed. orgID and hostID override the fields in cs.
-func (s *Store) ReplaceContainers(ctx context.Context, orgID, hostID uuid.UUID, cs []Container) error {
+// already removed. orgID and hostID override the fields in cs. When complete is false the snapshot was truncated:
+// rows are upserted but nothing is marked removed, since missing containers are unknown rather than gone.
+func (s *Store) ReplaceContainers(ctx context.Context, orgID, hostID uuid.UUID, cs []Container, complete bool) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: ReplaceContainers: %w", err)
@@ -97,14 +98,17 @@ func (s *Store) ReplaceContainers(ctx context.Context, orgID, hostID uuid.UUID, 
 		ids = append(ids, c.ContainerID)
 	}
 
-	if len(ids) == 0 {
+	switch {
+	case !complete:
+		err = nil
+	case len(ids) == 0:
 		_, err = tx.Exec(ctx, `
 			UPDATE containers
 			SET removed_at = now(), updated_at = now()
 			WHERE org_id = $1 AND host_id = $2 AND removed_at IS NULL`,
 			orgID, hostID,
 		)
-	} else {
+	default:
 		_, err = tx.Exec(ctx, `
 			UPDATE containers
 			SET removed_at = now(), updated_at = now()

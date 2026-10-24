@@ -153,8 +153,10 @@ func (c *Collector) readCPU() (cpuTimes, error) {
 			}
 			vals = append(vals, v)
 		}
+		// user nice system idle iowait irq softirq steal; guest and guest_nice
+		// (fields 9 and 10) are already included in user and nice.
 		var total uint64
-		for _, v := range vals {
+		for _, v := range vals[:min(len(vals), 8)] {
 			total += v
 		}
 		idle := vals[3]
@@ -231,6 +233,28 @@ func (c *Collector) readDisk() (total, used uint64, err error) {
 	return total, used, nil
 }
 
+// virtualPrefixes name interfaces that carry traffic already counted on a
+// physical interface (container veths, bridges, overlays, tunnels). Summing
+// them would count container traffic two or three times.
+var virtualPrefixes = []string{"lo", "veth", "docker", "br-", "virbr", "cni", "flannel", "cali", "vxlan", "tun", "tap", "wg", "kube", "weave", "dummy", "bond", "team"}
+
+// physicalInterface prefers sysfs (a physical NIC has a device link) and
+// falls back to name prefixes when sysfs is not available, as in tests.
+// Bonds count as virtual here because their members are counted already.
+func (c *Collector) physicalInterface(name string) bool {
+	sysNet := filepath.Join(filepath.Dir(c.procRoot), "sys", "class", "net")
+	if _, err := os.Stat(sysNet); err == nil {
+		_, err := os.Stat(filepath.Join(sysNet, name, "device"))
+		return err == nil
+	}
+	for _, p := range virtualPrefixes {
+		if strings.HasPrefix(name, p) {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *Collector) readNet() (rx, tx uint64, err error) {
 	f, err := os.Open(filepath.Join(c.procRoot, "net", "dev"))
 	if err != nil {
@@ -252,7 +276,7 @@ func (c *Collector) readNet() (rx, tx uint64, err error) {
 			continue
 		}
 		name = strings.TrimSpace(name)
-		if name == "lo" {
+		if !c.physicalInterface(name) {
 			continue
 		}
 		fields := strings.Fields(rest)
