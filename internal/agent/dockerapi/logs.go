@@ -19,9 +19,10 @@ const (
 	// MaxLogLine is the longest line delivered; the rest of a longer line is
 	// dropped and reported through LogLine.Truncated.
 	MaxLogLine = 16 << 10
-	// maxFrame is the largest multiplexed frame accepted. Docker writes
-	// frames of at most a few tens of KiB; anything bigger is a protocol error.
-	maxFrame = 1 << 20
+	// readChunk is the fixed read size. Frames of any size are streamed through
+	// it, so a followed container never holds more than this plus its line
+	// buffers, whatever frame sizes the daemon sends.
+	readChunk = 32 << 10
 )
 
 // LogLine is one line from a container's stdout or stderr.
@@ -82,7 +83,7 @@ func ReadLogStream(r io.Reader, tty bool, fn func(LogLine)) error {
 	}
 
 	var hdr [8]byte
-	payload := make([]byte, 0, 32<<10)
+	chunk := make([]byte, readChunk)
 	for {
 		if _, err := io.ReadFull(br, hdr[:]); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -92,22 +93,18 @@ func ReadLogStream(r io.Reader, tty bool, fn func(LogLine)) error {
 			return fmt.Errorf("dockerapi: log header: %w", err)
 		}
 		stream := hdr[0]
-		size := binary.BigEndian.Uint32(hdr[4:])
-		if size > maxFrame {
-			return fmt.Errorf("dockerapi: log frame of %d bytes exceeds limit", size)
+		remaining := int64(binary.BigEndian.Uint32(hdr[4:]))
+		lb := lines[stream] // nil for stdin echo or unknown streams: skipped, not a log line
+		for remaining > 0 {
+			n := int(min(remaining, int64(len(chunk))))
+			if _, err := io.ReadFull(br, chunk[:n]); err != nil {
+				return fmt.Errorf("dockerapi: log payload: %w", err)
+			}
+			remaining -= int64(n)
+			if lb != nil {
+				lb.feed(chunk[:n], stream, fn)
+			}
 		}
-		if cap(payload) < int(size) {
-			payload = make([]byte, size)
-		}
-		payload = payload[:size]
-		if _, err := io.ReadFull(br, payload); err != nil {
-			return fmt.Errorf("dockerapi: log payload: %w", err)
-		}
-		lb, ok := lines[stream]
-		if !ok {
-			continue // stdin echo or an unknown stream: not a log line
-		}
-		lb.feed(payload, stream, fn)
 	}
 }
 
@@ -188,6 +185,10 @@ func (l *lineBuf) emit(stream byte, fn func(LogLine)) {
 // splitTimestamp separates the RFC 3339 timestamp Docker prepends when
 // timestamps=1 is requested.
 func splitTimestamp(line []byte) (time.Time, string) {
+	// "2026-10-24T..." : cheap shape check before the allocating parse.
+	if len(line) < 20 || line[4] != '-' || line[7] != '-' || line[10] != 'T' {
+		return time.Time{}, string(line)
+	}
 	sp := bytes.IndexByte(line, ' ')
 	if sp <= 0 || sp > 40 {
 		return time.Time{}, string(line)

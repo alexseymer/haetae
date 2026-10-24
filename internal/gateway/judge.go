@@ -23,7 +23,7 @@ const (
 // suspicious matches words that make an info or debug line worth a human's
 // attention even when it is frequent. Such templates become "watch": the
 // agent keeps sending them. RE2 only.
-var suspicious = regexp.MustCompile(`(?i)\b(fail(ed|ure|ures|ing)?|error|errors|denied|refused|time(d)? ?out|retry|retrying|retries|unauthori[sz]ed|forbidden|exception|panic|fatal|crash(ed)?|killed|oom|out of memory|corrupt(ed)?|invalid|reject(ed)?|cannot|can't|unable|deprecated|slow|stale|overflow|exhaust(ed)?|unreachable|reset|lost|abort(ed)?|warn(ing)?|degraded|unhealthy|disconnect(ed)?)\b`)
+var suspicious = regexp.MustCompile(`(?i)\b(fail(ed|ure|ures|ing)?|errors?|denied|refused|refusing|time(d)? ?out|retry|retrying|retries|unauthori[sz]ed|forbidden|exceptions?|panic(ked)?|fatal|crash(ed|es)?|killed|sigkill|sigterm|segfault|segmentation fault|deadlock(ed)?|oom|out of memory|corrupt(ed|ion)?|invalid|reject(ed)?|cannot|can't|unable|deprecated|slow|stale|overflow|exhaust(ed)?|unreachable|unavailable|reset|lost|abort(ed)?|warn(ing)?|degraded|unhealthy|disconnect(ed)?|exited|terminated|restart(ed|ing)?|rollback|broken pipe|throttl(ed|ing)|overload(ed)?|quota|limit exceeded|not found|missing|no such|too many|bad gateway|service unavailable|gateway time ?out|internal server)\b`)
 
 // IsRoutine reports whether a template of this level may become green.
 // Warn, error, fatal and unknown levels never can. This is the rule-based
@@ -37,15 +37,17 @@ func IsRoutine(level int16, template string) bool {
 
 // JudgeStore is what the judge needs from the store.
 type JudgeStore interface {
-	JudgeableTemplates(ctx context.Context, orgID uuid.UUID, minOccurrences int64, minWindows, limit int) ([]store.LogTemplate, error)
-	SetVerdicts(ctx context.Context, orgID uuid.UUID, green, watch []string) error
-	GreenTemplateIDs(ctx context.Context, orgID uuid.UUID, limit int) ([]string, error)
+	JudgeableTemplates(ctx context.Context, orgID, hostID uuid.UUID, minOccurrences int64, minWindows, limit int) ([]store.LogTemplate, error)
+	SetVerdicts(ctx context.Context, orgID, hostID uuid.UUID, green, watch []string) error
+	GreenTemplateIDs(ctx context.Context, orgID, hostID uuid.UUID, limit int) ([]string, error)
 }
 
-// judgeOrg judges ready templates of an org. It reports whether any template
-// became green, in which case agents need a new green set.
-func judgeOrg(ctx context.Context, st JudgeStore, orgID uuid.UUID) (changed bool, err error) {
-	ts, err := st.JudgeableTemplates(ctx, orgID, judgeMinOccurrences, judgeMinWindows, judgeBatch)
+// judgeHost judges the ready templates of one host. Judgements are per host:
+// evidence from one host never makes another host's lines skippable. It
+// reports whether any template became green, in which case that host's agent
+// needs a new green set.
+func judgeHost(ctx context.Context, st JudgeStore, orgID, hostID uuid.UUID) (changed bool, err error) {
+	ts, err := st.JudgeableTemplates(ctx, orgID, hostID, judgeMinOccurrences, judgeMinWindows, judgeBatch)
 	if err != nil || len(ts) == 0 {
 		return false, err
 	}
@@ -57,13 +59,13 @@ func judgeOrg(ctx context.Context, st JudgeStore, orgID uuid.UUID) (changed bool
 			watch = append(watch, t.TemplateID)
 		}
 	}
-	if err := st.SetVerdicts(ctx, orgID, green, watch); err != nil {
+	if err := st.SetVerdicts(ctx, orgID, hostID, green, watch); err != nil {
 		return false, err
 	}
 	return len(green) > 0, nil
 }
 
-// judgeThrottle limits how often an org is judged.
+// judgeThrottle limits how often a host is judged.
 type judgeThrottle struct {
 	every time.Duration
 	last  map[uuid.UUID]time.Time

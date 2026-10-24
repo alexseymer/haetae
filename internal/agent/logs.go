@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -48,6 +49,19 @@ func (c LogConfig) withDefaults() LogConfig {
 // maxQueryLines caps one on-demand log query.
 const maxQueryLines = 1000
 
+const (
+	// Batches stay within what the gateway accepts (see gateway.maxLogEventsPerBatch).
+	maxEventsPerBatch     = 1000
+	maxCandidatesPerBatch = 64
+	// maxPendingItems bounds events kept for a retry after a redaction timeout.
+	maxPendingItems = 2000
+	maxPendingCands = 256
+	// maxGreenIDs caps a green set accepted from the server (agent memory).
+	maxGreenIDs = 20000
+	// failedTemplate stands in for a template whose redaction failed.
+	failedTemplate = "<redaction-failed>"
+)
+
 // LogManager follows the logs of running containers, merges and filters them,
 // and sends the result through the Outbox. Raw lines stay on the host: only
 // merged, redacted events leave it, and only when redaction succeeded.
@@ -64,6 +78,15 @@ type LogManager struct {
 	followers  map[string]*follower // by container id
 	redactFail atomic.Uint64
 	dropped    atomic.Uint64
+
+	// Only the flush goroutine touches these.
+	pendingItems []logItem
+	pendingCands []logpipe.TemplateInfo
+}
+
+type logItem struct {
+	container string
+	ev        logpipe.Event
 }
 
 type follower struct {
@@ -73,6 +96,7 @@ type follower struct {
 	mu   sync.Mutex // guards agg, which Add and Flush share
 	agg  *logpipe.Aggregator
 	ring *logpipe.Ring
+	pem  redact.PEMGuard // only the follow goroutine touches it
 }
 
 // NewLogManager returns a manager writing to out.
@@ -90,6 +114,10 @@ func NewLogManager(cfg LogConfig, docker *dockerapi.Client, out *Outbox, log *sl
 
 // SetGreen installs the server's green set.
 func (m *LogManager) SetGreen(ids []string) {
+	if len(ids) > maxGreenIDs {
+		m.log.Warn("green set from server truncated", "ids", len(ids), "kept", maxGreenIDs)
+		ids = ids[:maxGreenIDs]
+	}
 	m.green.Store(logpipe.NewGreenSet(ids))
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -133,6 +161,9 @@ func (m *LogManager) startFollower(ctx context.Context, id, name string) {
 			MergeWindow:  m.cfg.MergeWindow,
 			MaxTemplates: 200,
 			MaxSampleLen: 256,
+			// Template and template ID come from redacted text, so neither the
+			// template nor its hash can be used to recover a secret.
+			Canon: m.canonTemplate,
 		}),
 		ring: logpipe.NewRing(m.cfg.RingLines, m.cfg.RingBytes),
 	}
@@ -154,9 +185,12 @@ func (m *LogManager) follow(ctx context.Context, id string, f *follower) {
 					t = time.Now()
 				}
 				since = t
-				f.ring.Add(t, l.Text)
+				// Blank the body of multi-line private keys before the line is
+				// stored or aggregated: no rule can see a header in lines 2..N.
+				text := f.pem.Filter(l.Text)
+				f.ring.Add(t, text)
 				f.mu.Lock()
-				f.agg.Add(l.Text, t)
+				f.agg.Add(text, t)
 				f.mu.Unlock()
 			})
 			if time.Since(started) > time.Minute {
@@ -176,6 +210,18 @@ func (m *LogManager) follow(ctx context.Context, id string, f *follower) {
 	}
 }
 
+// canonTemplate redacts a template. If redaction fails, the template becomes a
+// fixed marker, so the line is still counted (and always sent if its level
+// demands it) but nothing derived from its text is.
+func (m *LogManager) canonTemplate(t string) string {
+	out, err := m.redact.Redact(t)
+	if err != nil {
+		m.redactFail.Add(1)
+		return failedTemplate
+	}
+	return out
+}
+
 // Run flushes merged events every FlushEvery until ctx ends.
 func (m *LogManager) Run(ctx context.Context) {
 	t := time.NewTicker(m.cfg.FlushEvery)
@@ -193,19 +239,16 @@ func (m *LogManager) Run(ctx context.Context) {
 func levelToProto(l logpipe.Level) agentv1.LogLevel { return agentv1.LogLevel(l) } //nolint:gosec // G115: Level is 0..6
 
 func (m *LogManager) flush(ctx context.Context) {
-	type item struct {
-		container string
-		ev        logpipe.Event
-	}
-	var items []item
-	var cands []logpipe.TemplateInfo
+	items := m.pendingItems
+	cands := m.pendingCands
+	m.pendingItems, m.pendingCands = nil, nil
 	var stats logpipe.Stats
 
 	m.mu.Lock()
 	for id, f := range m.followers {
 		f.mu.Lock()
 		for _, ev := range f.agg.Flush(false) {
-			items = append(items, item{id, ev})
+			items = append(items, logItem{id, ev})
 		}
 		cands = append(cands, f.agg.NewTemplates()...)
 		st := f.agg.Stats()
@@ -213,15 +256,41 @@ func (m *LogManager) flush(ctx context.Context) {
 		stats.LinesIn += st.LinesIn
 		stats.LinesSkipped += st.LinesSkipped
 		stats.EventsOut += st.EventsOut
+		stats.LinesDropped += st.LinesDropped
 	}
 	m.mu.Unlock()
 	if len(items) == 0 && len(cands) == 0 {
 		return
 	}
 
-	// Redact everything that will leave the host in one batch: for each event
-	// the template and the sample, for each candidate the same. If redaction
-	// fails for any reason, nothing from this batch is sent.
+	ri, rc, ok := m.redactFlush(ctx, items, cands)
+	if !ok {
+		return // kept for the next tick, or dropped and counted
+	}
+	m.send(ri, rc, stats)
+}
+
+// redactedItem is a log item whose template and sample were redacted.
+type redactedItem struct {
+	logItem
+	template, sample string
+}
+
+type redactedCand struct {
+	logpipe.TemplateInfo
+	template, sample string
+}
+
+// redactFlush redacts everything that will leave the host. Outcomes:
+//   - success: everything is returned for sending;
+//   - the time budget or context ran out: nothing is sent and the work is kept
+//     (bounded) for the next tick, so warnings and errors are delayed, not lost;
+//   - any other failure (a rule panicked, a line was too long): the batch is
+//     retried event by event, and only the events that cannot be redacted are
+//     dropped and counted.
+//
+// In no case does text leave the host unredacted.
+func (m *LogManager) redactFlush(ctx context.Context, items []logItem, cands []logpipe.TemplateInfo) (_ []redactedItem, _ []redactedCand, ok bool) {
 	texts := make([]string, 0, 2*(len(items)+len(cands)))
 	for _, it := range items {
 		texts = append(texts, it.ev.Template, it.ev.Sample)
@@ -230,37 +299,125 @@ func (m *LogManager) flush(ctx context.Context) {
 		texts = append(texts, c.Template, c.Sample)
 	}
 	res, err := m.redact.RedactBatch(ctx, texts, m.cfg.RedactionBudget)
-	if err != nil {
-		m.redactFail.Add(1)
-		m.log.Warn("redaction failed; log batch not sent", "err", err, "events", len(items))
-		return
+	if err == nil {
+		ri := make([]redactedItem, len(items))
+		for i, it := range items {
+			ri[i] = redactedItem{it, res.Lines[2*i], res.Lines[2*i+1]}
+		}
+		off := 2 * len(items)
+		rc := make([]redactedCand, len(cands))
+		for i, c := range cands {
+			rc[i] = redactedCand{c, res.Lines[off+2*i], res.Lines[off+2*i+1]}
+		}
+		return ri, rc, true
 	}
 
-	batch := &agentv1.LogBatch{}
-	for i, it := range items {
-		batch.Events = append(batch.Events, &agentv1.LogEvent{
-			ContainerId: it.container,
-			TemplateId:  it.ev.TemplateID,
-			Level:       levelToProto(it.ev.Level),
-			Template:    res.Lines[2*i],
-			Sample:      res.Lines[2*i+1],
-			Count:       uint32(min(it.ev.Count, 1<<31)), //nolint:gosec // G115: clamped
-			FirstUnixMs: it.ev.First.UnixMilli(),
-			LastUnixMs:  it.ev.Last.UnixMilli(),
-		})
+	m.redactFail.Add(1)
+	if errors.Is(err, redact.ErrBudget) || ctx.Err() != nil {
+		m.log.Warn("redaction ran out of time; batch kept for the next tick", "err", err, "events", len(items))
+		m.keepPending(items, cands)
+		return nil, nil, false
 	}
-	off := 2 * len(items)
-	for i, c := range cands {
-		batch.Candidates = append(batch.Candidates, &agentv1.TemplateCandidate{
-			TemplateId: c.ID,
-			Level:      levelToProto(c.Level),
-			Template:   res.Lines[off+2*i],
-			Sample:     res.Lines[off+2*i+1],
-		})
+
+	m.log.Warn("redaction failed; retrying event by event", "err", err, "events", len(items))
+	var ri []redactedItem
+	for _, it := range items {
+		r, err := m.redact.RedactBatch(ctx, []string{it.ev.Template, it.ev.Sample}, m.cfg.RedactionBudget)
+		if err != nil {
+			m.redactFail.Add(1)
+			m.dropped.Add(uint64(it.ev.Count)) //nolint:gosec // G115: Count is positive
+			continue
+		}
+		ri = append(ri, redactedItem{it, r.Lines[0], r.Lines[1]})
 	}
-	// Fill everything before queueing: once queued, the forwarder owns the batch.
-	batch.Stats = m.statsProto(stats)
-	m.dropped.Add(uint64(m.out.PutLogs(batch))) //nolint:gosec // G115: non-negative count
+	var rc []redactedCand
+	for _, c := range cands {
+		r, err := m.redact.RedactBatch(ctx, []string{c.Template, c.Sample}, m.cfg.RedactionBudget)
+		if err != nil {
+			m.redactFail.Add(1)
+			continue
+		}
+		rc = append(rc, redactedCand{c, r.Lines[0], r.Lines[1]})
+	}
+	return ri, rc, len(ri) > 0 || len(rc) > 0
+}
+
+// keepPending stores unsent work for the next tick within fixed bounds. When
+// over the bound, routine events are dropped first, then the oldest.
+func (m *LogManager) keepPending(items []logItem, cands []logpipe.TemplateInfo) {
+	if len(items) > maxPendingItems {
+		kept := make([]logItem, 0, maxPendingItems)
+		for _, it := range items { // severe first
+			if it.ev.Level.AlwaysSend() && len(kept) < maxPendingItems {
+				kept = append(kept, it)
+			}
+		}
+		for i := len(items) - 1; i >= 0 && len(kept) < maxPendingItems; i-- { // newest routine
+			if !items[i].ev.Level.AlwaysSend() {
+				kept = append(kept, items[i])
+			}
+		}
+		for _, it := range items {
+			if !containsItem(kept, it) {
+				m.dropped.Add(uint64(it.ev.Count)) //nolint:gosec // G115: Count is positive
+			}
+		}
+		items = kept
+	}
+	if len(cands) > maxPendingCands {
+		cands = cands[:maxPendingCands]
+	}
+	m.pendingItems, m.pendingCands = items, cands
+}
+
+func containsItem(items []logItem, it logItem) bool {
+	for _, k := range items {
+		if k.container == it.container && k.ev.TemplateID == it.ev.TemplateID && k.ev.First.Equal(it.ev.First) {
+			return true
+		}
+	}
+	return false
+}
+
+// send queues redacted events and candidates in batches the gateway accepts.
+// Stats ride on the last batch.
+func (m *LogManager) send(items []redactedItem, cands []redactedCand, stats logpipe.Stats) {
+	var batches []*agentv1.LogBatch
+	for len(items) > 0 || len(cands) > 0 {
+		b := &agentv1.LogBatch{}
+		for len(items) > 0 && len(b.Events) < maxEventsPerBatch {
+			it := items[0]
+			items = items[1:]
+			b.Events = append(b.Events, &agentv1.LogEvent{
+				ContainerId: it.container,
+				TemplateId:  it.ev.TemplateID,
+				Level:       levelToProto(it.ev.Level),
+				Template:    it.template,
+				Sample:      it.sample,
+				Count:       uint32(min(it.ev.Count, 1<<31)), //nolint:gosec // G115: clamped
+				FirstUnixMs: it.ev.First.UnixMilli(),
+				LastUnixMs:  it.ev.Last.UnixMilli(),
+			})
+		}
+		for len(cands) > 0 && len(b.Candidates) < maxCandidatesPerBatch {
+			c := cands[0]
+			cands = cands[1:]
+			b.Candidates = append(b.Candidates, &agentv1.TemplateCandidate{
+				TemplateId: c.ID,
+				Level:      levelToProto(c.Level),
+				Template:   c.template,
+				Sample:     c.sample,
+			})
+		}
+		batches = append(batches, b)
+	}
+	for i, b := range batches {
+		if i == len(batches)-1 {
+			b.Stats = m.statsProto(stats)
+		}
+		// Fully built before queueing: once queued, the forwarder owns it.
+		m.dropped.Add(uint64(m.out.PutLogs(b))) //nolint:gosec // G115: non-negative count
+	}
 }
 
 func (m *LogManager) statsProto(s logpipe.Stats) *agentv1.LogStats {

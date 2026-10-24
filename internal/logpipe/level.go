@@ -4,6 +4,7 @@
 package logpipe
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -61,8 +62,23 @@ func (l Level) AlwaysSend() bool {
 	}
 }
 
-// DetectLevel finds the level of one log line. It never panics on arbitrary bytes.
+// httpServerError matches access-log style lines reporting a 5xx response:
+// `... HTTP/1.1" 502 ...` or `status=503`, `"status":500`, `code=500`.
+// Template extraction masks all numbers, so a 500 and a 200 would otherwise
+// share one template and be judged routine together.
+var httpServerError = regexp.MustCompile(`(?i)(?:HTTP/\d(?:\.\d)?"?\s+5\d\d\b|\b(?:status|status_code|http_status|code)["']?\s*[=:]\s*"?5\d\d\b)`)
+
+// DetectLevel finds the level of one log line. It never panics on arbitrary
+// bytes. A line that reports an HTTP 5xx is at least an error.
 func DetectLevel(line string) Level {
+	lv := detectLevel(line)
+	if lv < LevelError && httpServerError.MatchString(line) {
+		return LevelError
+	}
+	return lv
+}
+
+func detectLevel(line string) Level {
 	if line == "" {
 		return LevelUnknown
 	}
@@ -168,45 +184,62 @@ func detectGlog(s string) (Level, bool) {
 	return lv, true
 }
 
+// detectBracketLevel looks at every [TOKEN] in the first 64 bytes and returns
+// the most severe level among them.
 func detectBracketLevel(s string) (Level, bool) {
-	i := strings.IndexByte(s, '[')
-	if i < 0 || i > 40 {
-		return 0, false
+	head := s[:min(len(s), 64)]
+	best, found := LevelUnknown, false
+	for from := 0; from < len(head); {
+		i := strings.IndexByte(head[from:], '[')
+		if i < 0 {
+			break
+		}
+		i += from
+		j := strings.IndexByte(head[i:], ']')
+		if j < 0 {
+			break
+		}
+		from = i + j + 1
+		if j < 2 || j > 16 {
+			continue
+		}
+		if lv, ok := parseLevelToken(head[i+1 : i+j]); ok {
+			best, found = maxLevel(best, lv), true
+		}
 	}
-	j := strings.IndexByte(s[i:], ']')
-	if j < 2 || j > 16 {
-		return 0, false
-	}
-	tok := s[i+1 : i+j]
-	if lv, ok := parseLevelToken(tok); ok {
-		return lv, true
-	}
-	return 0, false
+	return best, found
 }
 
+// detectLogfmtLevel scans every key=value level occurrence and returns the
+// most severe, so a quoted message containing "level=info" cannot outvote the
+// line's real level=error.
 func detectLogfmtLevel(s string) (Level, bool) {
 	keys := []string{"level=", "lvl=", "severity=", "loglevel="}
 	lower := asciiLower(s)
+	best, found := LevelUnknown, false
 	for _, k := range keys {
-		idx := strings.Index(lower, k)
-		if idx < 0 {
-			continue
-		}
-		rest := s[idx+len(k):]
-		tok, ok := readLogfmtValue(rest)
-		if !ok {
-			continue
-		}
-		if lv, ok := parseLevelToken(tok); ok {
-			return lv, true
-		}
-		if n, err := strconv.Atoi(tok); err == nil {
-			if lv, ok := pinoLevel(n); ok {
-				return lv, true
+		for from := 0; from < len(lower); {
+			j := strings.Index(lower[from:], k)
+			if j < 0 {
+				break
+			}
+			idx := from + j
+			from = idx + len(k)
+			rest := s[idx+len(k):]
+			tok, ok := readLogfmtValue(rest)
+			if !ok {
+				continue
+			}
+			if lv, ok := parseLevelToken(tok); ok {
+				best, found = maxLevel(best, lv), true
+			} else if n, err := strconv.Atoi(tok); err == nil {
+				if lv, ok := pinoLevel(n); ok {
+					best, found = maxLevel(best, lv), true
+				}
 			}
 		}
 	}
-	return 0, false
+	return best, found
 }
 
 func readLogfmtValue(s string) (string, bool) {
@@ -344,7 +377,20 @@ func detectLooseToken(s string) (Level, bool) {
 	return 0, false
 }
 
+// maxLevel returns the more severe of two levels. LevelUnknown counts as the
+// least severe here, so it never hides a real signal.
+func maxLevel(a, b Level) Level {
+	if b > a {
+		return b
+	}
+	return a
+}
+
+// detectJSONLevel returns the MOST SEVERE level found under any level key,
+// at any depth. A nested {"level":"info"} in a payload therefore cannot hide
+// an outer {"level":"fatal"}, and the reverse only causes an over-send.
 func detectJSONLevel(s string) (Level, bool) {
+	best, found := LevelUnknown, false
 	// Fast path: look for known keys without full JSON parse.
 	keys := []string{
 		`"level"`, `"lvl"`, `"severity"`, `"loglevel"`, `"log.level"`, `"@level"`,
@@ -389,7 +435,7 @@ func detectJSONLevel(s string) (Level, bool) {
 				}
 				tok := rest[1:end]
 				if lv, ok := parseLevelToken(tok); ok {
-					return lv, true
+					best, found = maxLevel(best, lv), true
 				}
 			} else {
 				// Numeric or bare.
@@ -405,17 +451,17 @@ func detectJSONLevel(s string) (Level, bool) {
 				tok := rest[:end]
 				if n, err := strconv.Atoi(tok); err == nil {
 					if lv, ok := pinoLevel(n); ok {
-						return lv, true
+						best, found = maxLevel(best, lv), true
 					}
 				}
 				if lv, ok := parseLevelToken(tok); ok {
-					return lv, true
+					best, found = maxLevel(best, lv), true
 				}
 			}
 			idx = j + 1
 		}
 	}
-	return 0, false
+	return best, found
 }
 
 func pinoLevel(n int) (Level, bool) {

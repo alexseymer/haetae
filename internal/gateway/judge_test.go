@@ -23,6 +23,12 @@ func TestIsRoutine(t *testing.T) {
 		{store.LevelInfo, "login denied for user <STR>", false},
 		{store.LevelInfo, "Slow query took <DUR>", false},
 		{store.LevelInfo, "worker OOM killed", false},
+		{store.LevelInfo, "worker exited unexpectedly", false},
+		{store.LevelInfo, "segfault in handler", false},
+		{store.LevelInfo, "deadlock detected between <NUM> and <NUM>", false},
+		{store.LevelInfo, "received SIGTERM, shutting down", false},
+		{store.LevelInfo, "upstream returned bad gateway", false},
+		{store.LevelInfo, "restarting worker <NUM>", false},
 		{store.LevelWarn, "GET /health <NUM>", false},
 		{store.LevelError, "GET /health <NUM>", false},
 		{store.LevelFatal, "started", false},
@@ -36,11 +42,11 @@ func TestIsRoutine(t *testing.T) {
 
 func TestJudgeThrottle(t *testing.T) {
 	j := &judgeThrottle{every: 10 * time.Second}
-	org, now := uuid.New(), time.Now()
-	if !j.allow(org, now) || j.allow(org, now.Add(5*time.Second)) || !j.allow(org, now.Add(11*time.Second)) {
+	host, now := uuid.New(), time.Now()
+	if !j.allow(host, now) || j.allow(host, now.Add(5*time.Second)) || !j.allow(host, now.Add(11*time.Second)) {
 		t.Fatal("throttle did not allow/deny as expected")
 	}
 	if !j.allow(uuid.New(), now) {
-		t.Fatal("another org must not be throttled")
+		t.Fatal("another host must not be throttled")
 	}
 }

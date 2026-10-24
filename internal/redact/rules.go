@@ -82,8 +82,11 @@ func awsSecretKeyRule() rule {
 }
 
 func privateKeyRule() rule {
-	// Full PEM on one line, or BEGIN header plus optional following base64 (and optional END).
-	re := regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[A-Za-z0-9+/=]+(?:-----END [A-Z0-9 ]*PRIVATE KEY-----)?)?`)
+	// The BEGIN header and everything that looks like key material after it,
+	// including spaces (single-line logging often joins PEM lines with spaces),
+	// up to and including an END trailer. A key spread over several log lines
+	// is handled by PEMGuard, which blanks the continuation lines.
+	re := regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\sA-Za-z0-9+/=:,.\-]*`)
 	token := "[REDACTED:private-key]" //nolint:gosec // G101: a placeholder, not a credential
 	return rule{
 		name: "private-key",
@@ -135,12 +138,26 @@ func genericSecretRule() rule {
 	ident := `[a-z0-9_.-]*`
 	word := `(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|credential)`
 	exact := `(?:auth(?:orization)?|session(?:[_-]?id)?|sid|jsessionid|phpsessid)`
-	key := `(?:` + ident + word + ident + `|\b` + exact + `\b)`
-	// A value is a quoted string (may contain spaces) or a run of 6+ non-space characters.
-	val := `("[^"\n]{4,}"|'[^'\n]{4,}'|[^\s"',;]{6,})`
-	eq := regexp.MustCompile(`(?i)(\b` + key + `)(\s*=\s*)` + val)
-	colon := regexp.MustCompile(`(?i)(\b` + key + `)(\s*:\s*)` + val)
-	json := regexp.MustCompile(`(?i)("` + key + `"\s*:\s*")([^"]{4,})(")`)
+	wordKey := ident + word + ident
+	exactKey := `\b` + exact + `\b`
+	key := `(?:` + wordKey + `|` + exactKey + `)`
+	// A value is a quoted string (may contain spaces) or a bare run of
+	// non-space characters. Unambiguous key names (password, secret, token)
+	// redact even short bare values such as password=admin; the ambiguous
+	// exact names (session, sid, auth) need 6+ so that `session:abc` in a
+	// Redis log line is left alone.
+	quoted := `"[^"\n]{1,}"|'[^'\n]{1,}'`
+	valShort := `(` + quoted + `|[^\s"',;]{3,})`
+	valLong := `(` + quoted + `|[^\s"',;]{6,})`
+	mk := func(sep, k, val string) *regexp.Regexp {
+		return regexp.MustCompile(`(?i)(\b` + k + `)(\s*` + sep + `\s*)` + val)
+	}
+	eqW, colonW := mk("=", wordKey, valShort), mk(":", wordKey, valShort)
+	eqX, colonX := mk("=", exactKey, valLong), mk(":", exactKey, valLong)
+	// JSON string values may contain escaped quotes; single-quoted dict keys
+	// and values (Python reprs) are handled the same way.
+	json := regexp.MustCompile(`(?i)("` + key + `"\s*:\s*")((?:[^"\\]|\\.)+)(")`)
+	pyDict := regexp.MustCompile(`(?i)('` + key + `'\s*:\s*')((?:[^'\\]|\\.)+)(')`)
 	token := "[REDACTED:generic-secret]" //nolint:gosec // G101: a placeholder, not a credential
 	return rule{
 		name: "generic-secret",
@@ -157,16 +174,19 @@ func genericSecretRule() rule {
 					return sub[1] + sub[2] + token
 				})
 			}
-			s = replPair(eq, s)
-			s = replPair(colon, s)
-			s = json.ReplaceAllStringFunc(s, func(m string) string {
-				sub := json.FindStringSubmatch(m)
-				if len(sub) < 4 || alreadyRedacted(sub[2]) {
-					return m
-				}
-				n++
-				return sub[1] + token + sub[3]
-			})
+			for _, re := range []*regexp.Regexp{eqW, colonW, eqX, colonX} {
+				s = replPair(re, s)
+			}
+			for _, re := range []*regexp.Regexp{json, pyDict} {
+				s = re.ReplaceAllStringFunc(s, func(m string) string {
+					sub := re.FindStringSubmatch(m)
+					if len(sub) < 4 || alreadyRedacted(sub[2]) {
+						return m
+					}
+					n++
+					return sub[1] + token + sub[3]
+				})
+			}
 			return s, n
 		},
 	}

@@ -133,3 +133,45 @@ func FuzzDetectLevel(f *testing.F) {
 		_ = DetectLevel(line)
 	})
 }
+
+// A real error must not be hidden by level words an attacker or payload puts
+// into the same line: the most severe signal wins.
+func TestDetectLevelCannotBeSpoofedDownwards(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line string
+		want Level
+	}{
+		{"nested JSON level first", `{"details": {"level": "info"}, "error": "database crashed", "level": "fatal"}`, LevelFatal},
+		{"nested JSON level last", `{"level":"error","payload":{"level":"debug"}}`, LevelError},
+		{"logfmt level inside quoted msg", `msg="processing level=info request" level=error`, LevelError},
+		{"logfmt level inside quoted msg 2", `level=error msg="user said level=debug"`, LevelError},
+		{"bracket injected after real level", `2026-10-24 [ERROR] login failed for [DEBUG]`, LevelError},
+		{"bracket injected before real level", `[DEBUG] x [FATAL] crash`, LevelFatal},
+		{"info stays info", `level=info msg="all good"`, LevelInfo},
+		{"plain nested info stays info", `{"level":"info","ctx":{"level":"debug"}}`, LevelInfo},
+	} {
+		if got := DetectLevel(tc.line); got != tc.want {
+			t.Errorf("%s: DetectLevel(%q) = %v, want %v", tc.name, tc.line, got, tc.want)
+		}
+	}
+}
+
+// HTTP 500s share a template with 200s once numbers are masked, so they must
+// not be treated as routine info.
+func TestDetectLevelHTTPServerErrors(t *testing.T) {
+	for line, want := range map[string]Level{
+		`10.0.0.1 - - [24/Oct/2026:12:00:00 +0000] "GET /api HTTP/1.1" 500 123 level=info`: LevelError,
+		`GET /api/items/7 HTTP/1.1" 502 12 level=info`:                                     LevelError,
+		`level=info msg="request done" status=503 dur=12ms`:                                LevelError,
+		`{"level":"info","status":500,"path":"/x"}`:                                        LevelError,
+		`level=info msg="request done" status_code=504`:                                    LevelError,
+		`GET /api/items/7 HTTP/1.1" 200 123 level=info`:                                    LevelInfo,
+		`GET /api/items/7 HTTP/1.1" 404 123 level=info`:                                    LevelInfo,
+		`level=info msg="processed 500 rows"`:                                              LevelInfo,
+	} {
+		if got := DetectLevel(line); got != want {
+			t.Errorf("DetectLevel(%q) = %v, want %v", line, got, want)
+		}
+	}
+}

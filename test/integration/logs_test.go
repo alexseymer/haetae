@@ -81,7 +81,7 @@ func TestLogPipelineEndToEnd(t *testing.T) {
 	// 1. The routine info template turns green and the agent is told.
 	var greenAt time.Time
 	waitFor(t, 60*time.Second, "info template judged green", func() bool {
-		ids, err := e.st.GreenTemplateIDs(ctx, e.org.ID, 100)
+		ids, err := e.st.GreenTemplateIDs(ctx, e.org.ID, hostID, 100)
 		if err != nil {
 			t.Fatal(err)
 		}

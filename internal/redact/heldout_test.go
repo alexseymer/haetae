@@ -59,3 +59,66 @@ func TestHeldOut(t *testing.T) {
 		}
 	}
 }
+
+// Cases from the M3 security review: bypasses of the first rule versions.
+func TestHeldOutReviewVectors(t *testing.T) {
+	r := New()
+	pemHdr := "-----BEGIN RSA " + "PRIVATE KEY-----"
+	secrets := []struct{ line, secret string }{
+		{pemHdr + " MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy0AHB7MhgHcTz6sE2I2yPB aWFuZHNvbWV0aGluZw==", "MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn"},
+		{pemHdr + " " + "MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn" + " -----END RSA " + "PRIVATE KEY-----", "MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn"},
+		{`{"password": "abc\"def123"}`, "def123"},
+		{`{"password":"abc\"def123","user":"u"}`, "abc"},
+		{`login password=admin ok`, "admin"},
+		{`connect pwd=root host=db`, "root"},
+		{`{'token': 'secret123'}`, "secret123"},
+		{`{'db_password': 'p4ss word'}`, "p4ss word"},
+	}
+	for _, tc := range secrets {
+		got, err := r.Redact(tc.line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got, tc.secret) {
+			t.Errorf("not redacted: %q\n  in:  %s\n  out: %s", tc.secret, tc.line, got)
+		}
+	}
+}
+
+func TestPEMGuardBlanksMultilineKeys(t *testing.T) {
+	var g PEMGuard
+	lines := []string{
+		"starting",
+		"-----BEGIN OPENSSH " + "PRIVATE KEY-----",
+		"b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+		"QyNTUxOQAAACD1x5oQ0Zq8ukk0nX3p0mPzQ2wFZ0M9q2oZy4tG0Zq2tA==",
+		"-----END OPENSSH " + "PRIVATE KEY-----",
+		"after the key",
+	}
+	var out []string
+	for _, l := range lines {
+		out = append(out, g.Filter(l))
+	}
+	want := []bool{false, false, true, true, true, false} // true: replaced by the placeholder
+	for i, l := range out {
+		if replaced := l == pemPlaceholder; replaced != want[i] {
+			t.Errorf("line %d (%q): replaced=%v, want %v", i, lines[i], replaced, want[i])
+		}
+	}
+	if !strings.Contains(out[1], "BEGIN") {
+		t.Error("the BEGIN line is passed on for the private-key rule to redact")
+	}
+
+	// A header with no trailer must not swallow the log forever.
+	var g2 PEMGuard
+	g2.Filter("-----BEGIN RSA " + "PRIVATE KEY-----")
+	swallowed := 0
+	for i := 0; i < 1000; i++ {
+		if g2.Filter("MIIEowIBAAKCAQEA") == pemPlaceholder {
+			swallowed++
+		}
+	}
+	if swallowed != maxPEMLines+1 {
+		t.Errorf("swallowed %d lines, want %d", swallowed, maxPEMLines+1)
+	}
+}

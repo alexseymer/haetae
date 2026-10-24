@@ -22,7 +22,7 @@ const (
 // logStore is the part of Store used for logs.
 type logStore interface {
 	InsertLogEvents(ctx context.Context, orgID, hostID uuid.UUID, evs []store.LogEvent) error
-	UpsertTemplateCandidates(ctx context.Context, orgID uuid.UUID, ts []store.LogTemplate) error
+	UpsertTemplateCandidates(ctx context.Context, orgID, hostID uuid.UUID, ts []store.LogTemplate) error
 	SetLogStats(ctx context.Context, orgID, hostID uuid.UUID, st store.LogStats) error
 	JudgeStore
 }
@@ -61,6 +61,9 @@ func (g *Gateway) ingestLogs(ctx context.Context, s *session, b *agentv1.LogBatc
 
 	evs := b.GetEvents()
 	if len(evs) > maxLogEventsPerBatch {
+		// Agents split their batches below this limit; reaching it means a
+		// misbehaving agent, which must not go unnoticed.
+		g.log.Warn("log batch truncated", "host_id", s.hostID, "events", len(evs), "kept", maxLogEventsPerBatch)
 		evs = evs[:maxLogEventsPerBatch]
 	}
 	events := make([]store.LogEvent, 0, len(evs))
@@ -99,7 +102,7 @@ func (g *Gateway) ingestLogs(ctx context.Context, s *session, b *agentv1.LogBatc
 			Sample:     clipTo(c.GetSample(), maxSampleBytes),
 		})
 	}
-	if err := g.store.UpsertTemplateCandidates(ctx, s.orgID, ts); err != nil {
+	if err := g.store.UpsertTemplateCandidates(ctx, s.orgID, s.hostID, ts); err != nil {
 		g.log.Error("store template candidates", "host_id", s.hostID, "err", err)
 	}
 
@@ -115,24 +118,25 @@ func (g *Gateway) ingestLogs(ctx context.Context, s *session, b *agentv1.LogBatc
 		}
 	}
 
-	g.judgeAndPush(ctx, s.orgID)
+	g.judgeAndPush(ctx, s)
 }
 
-// judgeAndPush judges the org's ready templates, at most every JudgeEvery,
-// and sends a new green set to its agents when something turned green.
-func (g *Gateway) judgeAndPush(ctx context.Context, orgID uuid.UUID) {
+// judgeAndPush judges the host's ready templates, at most every JudgeEvery,
+// and sends the host's new green set to its own agent when something turned
+// green. Other hosts are never affected.
+func (g *Gateway) judgeAndPush(ctx context.Context, s *session) {
 	g.judgeMu.Lock()
-	ok := g.judge.allow(orgID, time.Now())
+	ok := g.judge.allow(s.hostID, time.Now())
 	g.judgeMu.Unlock()
 	if !ok {
 		return
 	}
-	changed, err := judgeOrg(ctx, g.store, orgID)
+	changed, err := judgeHost(ctx, g.store, s.orgID, s.hostID)
 	if err != nil {
-		g.log.Error("judge templates", "org_id", orgID, "err", err)
+		g.log.Error("judge templates", "host_id", s.hostID, "err", err)
 		return
 	}
 	if changed {
-		g.pushGreen(ctx, orgID)
+		g.pushGreen(ctx, s)
 	}
 }

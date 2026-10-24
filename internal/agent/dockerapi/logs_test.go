@@ -3,6 +3,7 @@ package dockerapi
 import (
 	"bytes"
 	"encoding/binary"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -81,11 +82,35 @@ func TestReadLogStreamBoundsLongLines(t *testing.T) {
 	}
 }
 
-func TestReadLogStreamRejectsHugeFrame(t *testing.T) {
+// A frame header may promise far more than is sent. The reader must neither
+// allocate that much nor loop forever: it streams in fixed chunks and fails
+// when the data ends.
+func TestReadLogStreamHugeFrameHeaderIsNotBuffered(t *testing.T) {
 	hdr := []byte{1, 0, 0, 0, 0xff, 0xff, 0xff, 0xff}
-	err := ReadLogStream(bytes.NewReader(hdr), false, func(LogLine) {})
-	if err == nil || !strings.Contains(err.Error(), "exceeds limit") {
-		t.Fatalf("err = %v, want frame limit error", err)
+	s := append(append([]byte{}, hdr...), []byte("short")...)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	err := ReadLogStream(bytes.NewReader(s), false, func(LogLine) {})
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("expected an error: the 4 GiB frame never completes")
+	}
+	if grown := after.TotalAlloc - before.TotalAlloc; grown > 8<<20 {
+		t.Fatalf("reader allocated %d bytes for a bogus 4 GiB frame", grown)
+	}
+}
+
+func TestReadLogStreamLargeFrameIsStreamed(t *testing.T) {
+	// One 3 MiB frame holding many short lines must be delivered line by line.
+	var payload strings.Builder
+	for i := 0; i < 100000; i++ {
+		payload.WriteString("line number ")
+		payload.WriteString(strings.Repeat("x", 20))
+		payload.WriteByte('\n')
+	}
+	got := collect(t, frame(1, payload.String()), false)
+	if len(got) != 100000 || got[0].Text != "line number "+strings.Repeat("x", 20) {
+		t.Fatalf("got %d lines", len(got))
 	}
 }
 

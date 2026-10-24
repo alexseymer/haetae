@@ -23,7 +23,21 @@ type Config struct {
 	MaxSampleLen int
 	// Now is an injectable clock; default time.Now.
 	Now func() time.Time
+	// Canon, if set, rewrites each template before its ID is computed and
+	// before it is stored (the agent passes the redactor), so neither the
+	// template nor its hash is derived from text that was not redacted. Results
+	// are cached per raw template (at most canonCacheSize entries).
+	Canon func(template string) string
+	// MaxPendingEvents bounds events waiting for the next Flush because of
+	// MaxTemplates pressure; default 500. When exceeded, the least severe
+	// event is dropped and counted in Stats.
+	MaxPendingEvents int
 }
+
+const (
+	canonCacheSize        = 4096
+	defaultMaxPendingEvts = 500
+)
 
 // Event is one merged output record.
 type Event struct {
@@ -53,6 +67,10 @@ type Stats struct {
 	EventsOut uint64
 	// EarlyFlushes is forced flushes due to MaxTemplates.
 	EarlyFlushes uint64
+	// EventsDropped is events discarded because MaxPendingEvents was exceeded.
+	EventsDropped uint64
+	// LinesDropped is the number of lines inside those dropped events.
+	LinesDropped uint64
 }
 
 // TemplateInfo describes a newly seen non-green template for server judgement.
@@ -79,11 +97,12 @@ type openEntry struct {
 
 // Aggregator merges lines by template. Not safe for concurrent use.
 type Aggregator struct {
-	cfg      Config
-	open     map[string]*openEntry // key = TemplateID
-	order    []string              // LRU: least recently seen at index 0
-	earlyBuf []Event               // early-flushed events awaiting Flush
-	green    *GreenSet
+	cfg        Config
+	open       map[string]*openEntry // key = TemplateID
+	order      []string              // LRU: least recently seen at index 0
+	earlyBuf   []Event               // early-flushed events awaiting Flush
+	green      *GreenSet
+	canonCache map[string]string
 
 	seen    map[string]struct{}
 	seenOrd []string // oldest first; capped at maxSeenIDs
@@ -105,6 +124,9 @@ func NewAggregator(cfg Config) *Aggregator {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.MaxPendingEvents <= 0 {
+		cfg.MaxPendingEvents = defaultMaxPendingEvts
 	}
 	return &Aggregator{
 		cfg:  cfg,
@@ -130,7 +152,7 @@ func (a *Aggregator) SetGreenSet(g *GreenSet) {
 func (a *Aggregator) Add(line string, t time.Time) (skipped bool) {
 	a.stats.LinesIn++
 	level := DetectLevel(line)
-	tmpl := Template(line)
+	tmpl := a.canon(Template(line))
 	id := TemplateID(level, tmpl)
 
 	if !level.AlwaysSend() {
@@ -165,6 +187,23 @@ func (a *Aggregator) Add(line string, t time.Time) (skipped bool) {
 	}
 	a.order = append(a.order, id)
 	return false
+}
+
+// canon applies Config.Canon with a bounded cache. The cache is reset when it
+// fills, which keeps memory fixed under high-cardinality input.
+func (a *Aggregator) canon(raw string) string {
+	if a.cfg.Canon == nil {
+		return raw
+	}
+	if c, ok := a.canonCache[raw]; ok {
+		return c
+	}
+	if a.canonCache == nil || len(a.canonCache) >= canonCacheSize {
+		a.canonCache = make(map[string]string, 64)
+	}
+	c := a.cfg.Canon(raw)
+	a.canonCache[raw] = c
+	return c
 }
 
 // Flush returns events whose window ended (First+MergeWindow <= now) and
@@ -285,4 +324,23 @@ func (a *Aggregator) earlyFlushOne() {
 		Last:       e.last,
 	})
 	a.stats.EarlyFlushes++
+	for len(a.earlyBuf) > a.cfg.MaxPendingEvents {
+		a.dropLeastSevere()
+	}
+}
+
+// dropLeastSevere removes one pending event, preferring routine levels over
+// warn, error, fatal and unknown, and older over newer.
+func (a *Aggregator) dropLeastSevere() {
+	victim := 0
+	for i, ev := range a.earlyBuf {
+		cur, best := a.earlyBuf[victim], ev
+		if (!best.Level.AlwaysSend() && cur.Level.AlwaysSend()) ||
+			(best.Level.AlwaysSend() == cur.Level.AlwaysSend() && best.Level < cur.Level) {
+			victim = i
+		}
+	}
+	a.stats.EventsDropped++
+	a.stats.LinesDropped += uint64(a.earlyBuf[victim].Count) //nolint:gosec // G115: Count is positive
+	a.earlyBuf = append(a.earlyBuf[:victim], a.earlyBuf[victim+1:]...)
 }

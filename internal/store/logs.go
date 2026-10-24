@@ -75,13 +75,13 @@ func (s *Store) InsertLogEvents(ctx context.Context, orgID, hostID uuid.UUID, ev
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 			orgID, hostID, e.ContainerID, e.TemplateID, e.Level, e.Sample, e.Count, e.FirstTS, e.LastTS)
 		batch.Queue(`
-			INSERT INTO log_templates (org_id, template_id, level, template, sample, occurrences, windows, last_seen)
-			VALUES ($1,$2,$3,$4,$5,$6,1,$7)
-			ON CONFLICT (org_id, template_id) DO UPDATE SET
+			INSERT INTO log_templates (org_id, host_id, template_id, level, template, sample, occurrences, windows, last_seen)
+			VALUES ($1,$8,$2,$3,$4,$5,$6,1,$7)
+			ON CONFLICT (host_id, template_id) DO UPDATE SET
 				occurrences = log_templates.occurrences + EXCLUDED.occurrences,
 				windows = log_templates.windows + 1,
 				last_seen = GREATEST(log_templates.last_seen, EXCLUDED.last_seen)`,
-			orgID, e.TemplateID, e.Level, e.Template, e.Sample, e.Count, e.LastTS)
+			orgID, e.TemplateID, e.Level, e.Template, e.Sample, e.Count, e.LastTS, hostID)
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -106,16 +106,16 @@ func (s *Store) InsertLogEvents(ctx context.Context, orgID, hostID uuid.UUID, ev
 
 // UpsertTemplateCandidates records templates an agent saw but has not sent
 // events for (they may be green elsewhere); existing rows are left alone.
-func (s *Store) UpsertTemplateCandidates(ctx context.Context, orgID uuid.UUID, ts []LogTemplate) error {
+func (s *Store) UpsertTemplateCandidates(ctx context.Context, orgID, hostID uuid.UUID, ts []LogTemplate) error {
 	if len(ts) == 0 {
 		return nil
 	}
 	batch := &pgx.Batch{}
 	for _, t := range ts {
 		batch.Queue(`
-			INSERT INTO log_templates (org_id, template_id, level, template, sample)
-			VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, template_id) DO NOTHING`,
-			orgID, t.TemplateID, t.Level, t.Template, t.Sample)
+			INSERT INTO log_templates (org_id, host_id, template_id, level, template, sample)
+			VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (host_id, template_id) DO NOTHING`,
+			orgID, hostID, t.TemplateID, t.Level, t.Template, t.Sample)
 	}
 	br := s.pool.SendBatch(ctx, batch)
 	defer func() { _ = br.Close() }()
@@ -130,14 +130,14 @@ func (s *Store) UpsertTemplateCandidates(ctx context.Context, orgID uuid.UUID, t
 // JudgeableTemplates returns unjudged info, debug and trace templates seen at
 // least minOccurrences times in at least minWindows windows. Warn, error,
 // fatal and unknown-level templates are never returned: they cannot become green.
-func (s *Store) JudgeableTemplates(ctx context.Context, orgID uuid.UUID, minOccurrences int64, minWindows, limit int) ([]LogTemplate, error) {
+func (s *Store) JudgeableTemplates(ctx context.Context, orgID, hostID uuid.UUID, minOccurrences int64, minWindows, limit int) ([]LogTemplate, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT template_id, level, template, sample, occurrences, windows
 		FROM log_templates
-		WHERE org_id = $1 AND verdict = 'new' AND level BETWEEN 1 AND $2
+		WHERE org_id = $1 AND host_id = $6 AND verdict = 'new' AND level BETWEEN 1 AND $2
 		  AND occurrences >= $3 AND windows >= $4
 		ORDER BY occurrences DESC LIMIT $5`,
-		orgID, LevelInfo, minOccurrences, minWindows, limit)
+		orgID, LevelInfo, minOccurrences, minWindows, limit, hostID)
 	if err != nil {
 		return nil, fmt.Errorf("store: JudgeableTemplates: %w", err)
 	}
@@ -155,7 +155,7 @@ func (s *Store) JudgeableTemplates(ctx context.Context, orgID uuid.UUID, minOccu
 
 // SetVerdicts marks templates green or watch. Only unjudged templates of
 // level trace to info change; warn, error, fatal and unknown can never become green.
-func (s *Store) SetVerdicts(ctx context.Context, orgID uuid.UUID, green, watch []string) error {
+func (s *Store) SetVerdicts(ctx context.Context, orgID, hostID uuid.UUID, green, watch []string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: SetVerdicts: %w", err)
@@ -167,8 +167,8 @@ func (s *Store) SetVerdicts(ctx context.Context, orgID uuid.UUID, green, watch [
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE log_templates SET verdict = $3, judged_at = now()
-			WHERE org_id = $1 AND template_id = ANY($2) AND verdict = 'new' AND level BETWEEN 1 AND $4`,
-			orgID, ids, verdict, LevelInfo); err != nil {
+			WHERE org_id = $1 AND host_id = $5 AND template_id = ANY($2) AND verdict = 'new' AND level BETWEEN 1 AND $4`,
+			orgID, ids, verdict, LevelInfo, hostID); err != nil {
 			return fmt.Errorf("store: SetVerdicts: %w", err)
 		}
 	}
@@ -178,13 +178,13 @@ func (s *Store) SetVerdicts(ctx context.Context, orgID uuid.UUID, green, watch [
 	return nil
 }
 
-// GreenTemplateIDs returns the org's green template ids (at most limit, most
+// GreenTemplateIDs returns the host's green template ids (at most limit, most
 // frequent first).
-func (s *Store) GreenTemplateIDs(ctx context.Context, orgID uuid.UUID, limit int) ([]string, error) {
+func (s *Store) GreenTemplateIDs(ctx context.Context, orgID, hostID uuid.UUID, limit int) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT template_id FROM log_templates
-		WHERE org_id = $1 AND verdict = 'green'
-		ORDER BY occurrences DESC, template_id LIMIT $2`, orgID, limit)
+		WHERE org_id = $1 AND host_id = $3 AND verdict = 'green'
+		ORDER BY occurrences DESC, template_id LIMIT $2`, orgID, limit, hostID)
 	if err != nil {
 		return nil, fmt.Errorf("store: GreenTemplateIDs: %w", err)
 	}

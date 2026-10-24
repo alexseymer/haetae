@@ -2,8 +2,12 @@
 -- The control plane judges info and debug templates: routine ones become green
 -- and agents stop sending them. Events hold merged, redacted lines with counts;
 -- no raw log stream is stored (hosted mode keeps raw logs on the customer host).
+--
+-- Judgements are per HOST: a host can only make its own lines skippable, so a
+-- compromised host cannot silence other hosts' logs by emitting look-alike lines.
 CREATE TABLE log_templates (
   org_id uuid NOT NULL REFERENCES orgs(id),
+  host_id uuid NOT NULL REFERENCES hosts(id),
   template_id text NOT NULL,
   level smallint NOT NULL,
   template text NOT NULL,
@@ -14,7 +18,7 @@ CREATE TABLE log_templates (
   windows int NOT NULL DEFAULT 0,
   verdict text NOT NULL DEFAULT 'new' CHECK (verdict IN ('new', 'green', 'watch')),
   judged_at timestamptz,
-  PRIMARY KEY (org_id, template_id)
+  PRIMARY KEY (host_id, template_id)
 );
 
 CREATE TABLE log_events (

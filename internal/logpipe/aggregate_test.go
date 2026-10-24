@@ -2,6 +2,7 @@ package logpipe
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -271,4 +272,79 @@ func alphaID(i int) string {
 		}
 	}
 	return string(b[pos:])
+}
+
+func TestPendingEventsAreBoundedAndKeepSevere(t *testing.T) {
+	a := NewAggregator(Config{MaxTemplates: 10, MaxPendingEvents: 20, MergeWindow: time.Hour})
+	now := time.Now()
+	// One error among a flood of distinct info templates: early flushes pile up.
+	a.Add("level=error msg=disk full on volume data", now)
+	for i := 0; i < 5000; i++ {
+		a.Add(fmt.Sprintf("level=info event%s happened", strings.Repeat("x", i%97+1)+string(rune('a'+i%26))+fmt.Sprint(i%7)), now)
+	}
+	evs := a.Flush(true)
+	if len(a.earlyBuf) > 20 {
+		t.Fatalf("earlyBuf holds %d events, want <= 20", len(a.earlyBuf))
+	}
+	if len(evs) > 20+10 {
+		t.Fatalf("Flush returned %d events; pending + open must stay bounded", len(evs))
+	}
+	var sawError bool
+	for _, ev := range evs {
+		if ev.Level == LevelError {
+			sawError = true
+		}
+	}
+	if !sawError {
+		t.Fatal("the error event was dropped while routine events were kept")
+	}
+	if st := a.Stats(); st.EventsDropped == 0 || st.LinesDropped == 0 {
+		t.Fatalf("drops not counted: %+v", st)
+	}
+}
+
+func TestCanonDecidesTemplateAndID(t *testing.T) {
+	calls := 0
+	canon := func(s string) string {
+		calls++
+		return strings.ReplaceAll(s, "hunter2", "[X]")
+	}
+	a := NewAggregator(Config{Canon: canon, MergeWindow: time.Hour})
+	now := time.Now()
+	a.Add("level=info login with hunter2 ok", now)
+	a.Add("level=info login with hunter2 ok", now)
+	if calls != 1 {
+		t.Fatalf("Canon called %d times for one raw template, want 1 (cached)", calls)
+	}
+	ev := a.Flush(true)[0]
+	if strings.Contains(ev.Template, "hunter2") {
+		t.Fatalf("template still has the secret: %q", ev.Template)
+	}
+	if ev.TemplateID != TemplateID(ev.Level, ev.Template) {
+		t.Fatalf("ID %s is not the hash of the stored (canonical) template", ev.TemplateID)
+	}
+}
+
+// The core S5 risk: a 500 shares a masked template with the routine 200s, so
+// once the 200 template is green, a 500 line must still get through.
+func TestGreen200DoesNotSilence500(t *testing.T) {
+	ok := `10.0.0.1 "GET /api/items/7 HTTP/1.1" 200 512 level=info`
+	bad := `10.0.0.1 "GET /api/items/9 HTTP/1.1" 500 512 level=info`
+	if Template(ok) != Template(bad) && DetectLevel(ok) == DetectLevel(bad) {
+		t.Fatal("the premise changed: re-check how templates and levels relate")
+	}
+	idOK := TemplateID(DetectLevel(ok), Template(ok))
+
+	a := NewAggregator(Config{MergeWindow: time.Hour})
+	a.SetGreen([]string{idOK})
+	now := time.Now()
+	if !a.Add(ok, now) {
+		t.Fatal("the routine 200 line should be skipped once green")
+	}
+	if a.Add(bad, now) {
+		t.Fatal("a 500 line was skipped because the 200 template is green")
+	}
+	if DetectLevel(bad) < LevelError {
+		t.Fatalf("500 line level = %v, want error", DetectLevel(bad))
+	}
 }

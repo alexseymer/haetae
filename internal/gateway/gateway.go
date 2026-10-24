@@ -222,9 +222,9 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	if err := stream.Send(welcome); err != nil {
 		return err
 	}
-	// Tell the agent which templates are already green for this org, so it
+	// Tell the agent which templates are already green for this host, so it
 	// skips them from its first line.
-	if ids, err := g.store.GreenTemplateIDs(ctx, host.OrgID, maxGreenIDs); err != nil {
+	if ids, err := g.store.GreenTemplateIDs(ctx, host.OrgID, hostID, maxGreenIDs); err != nil {
 		g.log.Warn("load green set", "host_id", hostID, "err", err)
 	} else if len(ids) > 0 {
 		s.setGreen(ids)
@@ -395,24 +395,14 @@ func (g *Gateway) unregister(s *session) {
 	}
 }
 
-// pushGreen sends the org's green set to all its connected agents.
-func (g *Gateway) pushGreen(ctx context.Context, orgID uuid.UUID) {
-	ids, err := g.store.GreenTemplateIDs(ctx, orgID, maxGreenIDs)
+// pushGreen sends the host's green set to the host's own session.
+func (g *Gateway) pushGreen(ctx context.Context, s *session) {
+	ids, err := g.store.GreenTemplateIDs(ctx, s.orgID, s.hostID, maxGreenIDs)
 	if err != nil {
-		g.log.Warn("load green set", "org_id", orgID, "err", err)
+		g.log.Warn("load green set", "host_id", s.hostID, "err", err)
 		return
 	}
-	g.mu.Lock()
-	var targets []*session
-	for _, s := range g.sessions {
-		if s.orgID == orgID {
-			targets = append(targets, s)
-		}
-	}
-	g.mu.Unlock()
-	for _, s := range targets {
-		s.setGreen(ids)
-	}
+	s.setGreen(ids)
 }
 
 // Connected reports whether the host has a live session on this gateway.
