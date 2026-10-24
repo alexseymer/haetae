@@ -51,6 +51,8 @@ message ConnectRequest {
     Hello hello = 1;
     Heartbeat heartbeat = 2;
     CommandResult result = 3;
+    StateSnapshot state = 4;
+    MetricsBatch metrics = 5;
   }
 }
 
@@ -92,4 +94,73 @@ message CommandResult {
   string command_id = 1;
   // Empty on success.
   string error = 2;
+}
+
+// StateSnapshot is the complete set of containers on the host. The agent
+// sends one after connecting, after Docker events, and at least every 60 s.
+// Container environment values, command lines and arbitrary labels are never
+// included.
+message StateSnapshot {
+  int64 taken_unix_ms = 1;
+  bool docker_reachable = 2;
+  string docker_error = 3; // why Docker could not be read, if not reachable
+  string docker_version = 4;
+  repeated ContainerState containers = 5;
+}
+
+message ContainerState {
+  string id = 1;
+  string name = 2;
+  string stack = 3;   // compose project label
+  string service = 4; // compose service label
+  string image = 5;
+  string image_version = 6; // org.opencontainers.image.version label, if set
+  string state = 7;         // running, exited, restarting, ...
+  string status = 8;        // human status, e.g. "Up 3 hours (healthy)"
+  string health = 9;        // healthy, unhealthy, starting, or empty
+  int32 restart_count = 10;
+  bool oom_killed = 11;
+  int32 exit_code = 12;
+  repeated PortMapping ports = 13;
+  int64 created_unix_ms = 14;
+  int64 started_unix_ms = 15;
+}
+
+message PortMapping {
+  string ip = 1;
+  uint32 private_port = 2;
+  uint32 public_port = 3; // 0 when not published
+  string proto = 4;
+}
+
+// MetricsBatch carries samples taken since the previous batch. Rates are per
+// second and computed on the agent.
+message MetricsBatch {
+  repeated HostMetricSample host = 1;
+  repeated ContainerMetricSample containers = 2;
+}
+
+message HostMetricSample {
+  int64 ts_unix_ms = 1;
+  double cpu_pct = 2;
+  double load1 = 3;
+  uint64 mem_total = 4;
+  uint64 mem_avail = 5;
+  uint64 disk_total = 6;
+  uint64 disk_used = 7;
+  double net_rx_bps = 8;
+  double net_tx_bps = 9;
+}
+
+message ContainerMetricSample {
+  string container_id = 1;
+  int64 ts_unix_ms = 2;
+  double cpu_pct = 3;
+  uint64 mem_usage = 4;
+  uint64 mem_limit = 5;
+  double net_rx_bps = 6;
+  double net_tx_bps = 7;
+  double blk_read_bps = 8;
+  double blk_write_bps = 9;
+  uint32 pids = 10;
 }

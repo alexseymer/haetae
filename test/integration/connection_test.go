@@ -47,7 +47,16 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newEnvWith lets a test adjust the gateway config before it starts.
+func newEnvWith(t *testing.T, configure func(*gateway.Config)) *env {
+	t.Helper()
 	st := storetest.New(t)
+	if err := st.EnsurePartitions(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	ca, err := pki.LoadOrCreateCA(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +76,9 @@ func newEnv(t *testing.T) *env {
 	}
 	if testing.Verbose() {
 		e.log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
+	if configure != nil {
+		configure(&e.gwCfg)
 	}
 	e.startGateway()
 	t.Cleanup(func() { e.stopGateway() })
@@ -121,11 +133,19 @@ func (e *env) waitConnected(id string, want bool, timeout time.Duration) time.Du
 
 // runAgent runs the agent in-process until the returned stop function is called.
 func (e *env) runAgent(id *agent.Identity) (stop func()) {
+	return e.runAgentWith(id, agent.RunOptions{}, nil)
+}
+
+// runAgentWith also runs mon, if given, for the lifetime of the agent.
+func (e *env) runAgentWith(id *agent.Identity, opts agent.RunOptions, mon *agent.Monitor) (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	if mon != nil {
+		go mon.Run(ctx)
+	}
 	go func() {
 		defer close(done)
-		_ = agent.Run(ctx, id, e.log.With("component", "agent"))
+		_ = agent.Run(ctx, id, e.log.With("component", "agent"), opts)
 	}()
 	var once sync.Once
 	stop = func() {

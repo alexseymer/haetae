@@ -245,6 +245,8 @@ type ConnectRequest struct {
 	//	*ConnectRequest_Hello
 	//	*ConnectRequest_Heartbeat
 	//	*ConnectRequest_Result
+	//	*ConnectRequest_State
+	//	*ConnectRequest_Metrics
 	Msg           isConnectRequest_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -314,6 +316,24 @@ func (x *ConnectRequest) GetResult() *CommandResult {
 	return nil
 }
 
+func (x *ConnectRequest) GetState() *StateSnapshot {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_State); ok {
+			return x.State
+		}
+	}
+	return nil
+}
+
+func (x *ConnectRequest) GetMetrics() *MetricsBatch {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_Metrics); ok {
+			return x.Metrics
+		}
+	}
+	return nil
+}
+
 type isConnectRequest_Msg interface {
 	isConnectRequest_Msg()
 }
@@ -330,11 +350,23 @@ type ConnectRequest_Result struct {
 	Result *CommandResult `protobuf:"bytes,3,opt,name=result,proto3,oneof"`
 }
 
+type ConnectRequest_State struct {
+	State *StateSnapshot `protobuf:"bytes,4,opt,name=state,proto3,oneof"`
+}
+
+type ConnectRequest_Metrics struct {
+	Metrics *MetricsBatch `protobuf:"bytes,5,opt,name=metrics,proto3,oneof"`
+}
+
 func (*ConnectRequest_Hello) isConnectRequest_Msg() {}
 
 func (*ConnectRequest_Heartbeat) isConnectRequest_Msg() {}
 
 func (*ConnectRequest_Result) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_State) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_Metrics) isConnectRequest_Msg() {}
 
 type ConnectResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -719,6 +751,588 @@ func (x *CommandResult) GetError() string {
 	return ""
 }
 
+// StateSnapshot is the complete set of containers on the host. The agent
+// sends one after connecting, after Docker events, and at least every 60 s.
+// Container environment values, command lines and arbitrary labels are never
+// included.
+type StateSnapshot struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TakenUnixMs     int64                  `protobuf:"varint,1,opt,name=taken_unix_ms,json=takenUnixMs,proto3" json:"taken_unix_ms,omitempty"`
+	DockerReachable bool                   `protobuf:"varint,2,opt,name=docker_reachable,json=dockerReachable,proto3" json:"docker_reachable,omitempty"`
+	DockerError     string                 `protobuf:"bytes,3,opt,name=docker_error,json=dockerError,proto3" json:"docker_error,omitempty"` // why Docker could not be read, if not reachable
+	DockerVersion   string                 `protobuf:"bytes,4,opt,name=docker_version,json=dockerVersion,proto3" json:"docker_version,omitempty"`
+	Containers      []*ContainerState      `protobuf:"bytes,5,rep,name=containers,proto3" json:"containers,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *StateSnapshot) Reset() {
+	*x = StateSnapshot{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StateSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StateSnapshot) ProtoMessage() {}
+
+func (x *StateSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StateSnapshot.ProtoReflect.Descriptor instead.
+func (*StateSnapshot) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *StateSnapshot) GetTakenUnixMs() int64 {
+	if x != nil {
+		return x.TakenUnixMs
+	}
+	return 0
+}
+
+func (x *StateSnapshot) GetDockerReachable() bool {
+	if x != nil {
+		return x.DockerReachable
+	}
+	return false
+}
+
+func (x *StateSnapshot) GetDockerError() string {
+	if x != nil {
+		return x.DockerError
+	}
+	return ""
+}
+
+func (x *StateSnapshot) GetDockerVersion() string {
+	if x != nil {
+		return x.DockerVersion
+	}
+	return ""
+}
+
+func (x *StateSnapshot) GetContainers() []*ContainerState {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+type ContainerState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Stack         string                 `protobuf:"bytes,3,opt,name=stack,proto3" json:"stack,omitempty"`     // compose project label
+	Service       string                 `protobuf:"bytes,4,opt,name=service,proto3" json:"service,omitempty"` // compose service label
+	Image         string                 `protobuf:"bytes,5,opt,name=image,proto3" json:"image,omitempty"`
+	ImageVersion  string                 `protobuf:"bytes,6,opt,name=image_version,json=imageVersion,proto3" json:"image_version,omitempty"` // org.opencontainers.image.version label, if set
+	State         string                 `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`                                   // running, exited, restarting, ...
+	Status        string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`                                 // human status, e.g. "Up 3 hours (healthy)"
+	Health        string                 `protobuf:"bytes,9,opt,name=health,proto3" json:"health,omitempty"`                                 // healthy, unhealthy, starting, or empty
+	RestartCount  int32                  `protobuf:"varint,10,opt,name=restart_count,json=restartCount,proto3" json:"restart_count,omitempty"`
+	OomKilled     bool                   `protobuf:"varint,11,opt,name=oom_killed,json=oomKilled,proto3" json:"oom_killed,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,12,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Ports         []*PortMapping         `protobuf:"bytes,13,rep,name=ports,proto3" json:"ports,omitempty"`
+	CreatedUnixMs int64                  `protobuf:"varint,14,opt,name=created_unix_ms,json=createdUnixMs,proto3" json:"created_unix_ms,omitempty"`
+	StartedUnixMs int64                  `protobuf:"varint,15,opt,name=started_unix_ms,json=startedUnixMs,proto3" json:"started_unix_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerState) Reset() {
+	*x = ContainerState{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerState) ProtoMessage() {}
+
+func (x *ContainerState) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerState.ProtoReflect.Descriptor instead.
+func (*ContainerState) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ContainerState) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ContainerState) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ContainerState) GetStack() string {
+	if x != nil {
+		return x.Stack
+	}
+	return ""
+}
+
+func (x *ContainerState) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *ContainerState) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *ContainerState) GetImageVersion() string {
+	if x != nil {
+		return x.ImageVersion
+	}
+	return ""
+}
+
+func (x *ContainerState) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ContainerState) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ContainerState) GetHealth() string {
+	if x != nil {
+		return x.Health
+	}
+	return ""
+}
+
+func (x *ContainerState) GetRestartCount() int32 {
+	if x != nil {
+		return x.RestartCount
+	}
+	return 0
+}
+
+func (x *ContainerState) GetOomKilled() bool {
+	if x != nil {
+		return x.OomKilled
+	}
+	return false
+}
+
+func (x *ContainerState) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *ContainerState) GetPorts() []*PortMapping {
+	if x != nil {
+		return x.Ports
+	}
+	return nil
+}
+
+func (x *ContainerState) GetCreatedUnixMs() int64 {
+	if x != nil {
+		return x.CreatedUnixMs
+	}
+	return 0
+}
+
+func (x *ContainerState) GetStartedUnixMs() int64 {
+	if x != nil {
+		return x.StartedUnixMs
+	}
+	return 0
+}
+
+type PortMapping struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ip            string                 `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
+	PrivatePort   uint32                 `protobuf:"varint,2,opt,name=private_port,json=privatePort,proto3" json:"private_port,omitempty"`
+	PublicPort    uint32                 `protobuf:"varint,3,opt,name=public_port,json=publicPort,proto3" json:"public_port,omitempty"` // 0 when not published
+	Proto         string                 `protobuf:"bytes,4,opt,name=proto,proto3" json:"proto,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortMapping) Reset() {
+	*x = PortMapping{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortMapping) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortMapping) ProtoMessage() {}
+
+func (x *PortMapping) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortMapping.ProtoReflect.Descriptor instead.
+func (*PortMapping) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PortMapping) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+func (x *PortMapping) GetPrivatePort() uint32 {
+	if x != nil {
+		return x.PrivatePort
+	}
+	return 0
+}
+
+func (x *PortMapping) GetPublicPort() uint32 {
+	if x != nil {
+		return x.PublicPort
+	}
+	return 0
+}
+
+func (x *PortMapping) GetProto() string {
+	if x != nil {
+		return x.Proto
+	}
+	return ""
+}
+
+// MetricsBatch carries samples taken since the previous batch. Rates are per
+// second and computed on the agent.
+type MetricsBatch struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Host          []*HostMetricSample      `protobuf:"bytes,1,rep,name=host,proto3" json:"host,omitempty"`
+	Containers    []*ContainerMetricSample `protobuf:"bytes,2,rep,name=containers,proto3" json:"containers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricsBatch) Reset() {
+	*x = MetricsBatch{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricsBatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricsBatch) ProtoMessage() {}
+
+func (x *MetricsBatch) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricsBatch.ProtoReflect.Descriptor instead.
+func (*MetricsBatch) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *MetricsBatch) GetHost() []*HostMetricSample {
+	if x != nil {
+		return x.Host
+	}
+	return nil
+}
+
+func (x *MetricsBatch) GetContainers() []*ContainerMetricSample {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+type HostMetricSample struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TsUnixMs      int64                  `protobuf:"varint,1,opt,name=ts_unix_ms,json=tsUnixMs,proto3" json:"ts_unix_ms,omitempty"`
+	CpuPct        float64                `protobuf:"fixed64,2,opt,name=cpu_pct,json=cpuPct,proto3" json:"cpu_pct,omitempty"`
+	Load1         float64                `protobuf:"fixed64,3,opt,name=load1,proto3" json:"load1,omitempty"`
+	MemTotal      uint64                 `protobuf:"varint,4,opt,name=mem_total,json=memTotal,proto3" json:"mem_total,omitempty"`
+	MemAvail      uint64                 `protobuf:"varint,5,opt,name=mem_avail,json=memAvail,proto3" json:"mem_avail,omitempty"`
+	DiskTotal     uint64                 `protobuf:"varint,6,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`
+	DiskUsed      uint64                 `protobuf:"varint,7,opt,name=disk_used,json=diskUsed,proto3" json:"disk_used,omitempty"`
+	NetRxBps      float64                `protobuf:"fixed64,8,opt,name=net_rx_bps,json=netRxBps,proto3" json:"net_rx_bps,omitempty"`
+	NetTxBps      float64                `protobuf:"fixed64,9,opt,name=net_tx_bps,json=netTxBps,proto3" json:"net_tx_bps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HostMetricSample) Reset() {
+	*x = HostMetricSample{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostMetricSample) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostMetricSample) ProtoMessage() {}
+
+func (x *HostMetricSample) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostMetricSample.ProtoReflect.Descriptor instead.
+func (*HostMetricSample) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *HostMetricSample) GetTsUnixMs() int64 {
+	if x != nil {
+		return x.TsUnixMs
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetCpuPct() float64 {
+	if x != nil {
+		return x.CpuPct
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetLoad1() float64 {
+	if x != nil {
+		return x.Load1
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetMemTotal() uint64 {
+	if x != nil {
+		return x.MemTotal
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetMemAvail() uint64 {
+	if x != nil {
+		return x.MemAvail
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetDiskTotal() uint64 {
+	if x != nil {
+		return x.DiskTotal
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetDiskUsed() uint64 {
+	if x != nil {
+		return x.DiskUsed
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetNetRxBps() float64 {
+	if x != nil {
+		return x.NetRxBps
+	}
+	return 0
+}
+
+func (x *HostMetricSample) GetNetTxBps() float64 {
+	if x != nil {
+		return x.NetTxBps
+	}
+	return 0
+}
+
+type ContainerMetricSample struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	TsUnixMs      int64                  `protobuf:"varint,2,opt,name=ts_unix_ms,json=tsUnixMs,proto3" json:"ts_unix_ms,omitempty"`
+	CpuPct        float64                `protobuf:"fixed64,3,opt,name=cpu_pct,json=cpuPct,proto3" json:"cpu_pct,omitempty"`
+	MemUsage      uint64                 `protobuf:"varint,4,opt,name=mem_usage,json=memUsage,proto3" json:"mem_usage,omitempty"`
+	MemLimit      uint64                 `protobuf:"varint,5,opt,name=mem_limit,json=memLimit,proto3" json:"mem_limit,omitempty"`
+	NetRxBps      float64                `protobuf:"fixed64,6,opt,name=net_rx_bps,json=netRxBps,proto3" json:"net_rx_bps,omitempty"`
+	NetTxBps      float64                `protobuf:"fixed64,7,opt,name=net_tx_bps,json=netTxBps,proto3" json:"net_tx_bps,omitempty"`
+	BlkReadBps    float64                `protobuf:"fixed64,8,opt,name=blk_read_bps,json=blkReadBps,proto3" json:"blk_read_bps,omitempty"`
+	BlkWriteBps   float64                `protobuf:"fixed64,9,opt,name=blk_write_bps,json=blkWriteBps,proto3" json:"blk_write_bps,omitempty"`
+	Pids          uint32                 `protobuf:"varint,10,opt,name=pids,proto3" json:"pids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerMetricSample) Reset() {
+	*x = ContainerMetricSample{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerMetricSample) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerMetricSample) ProtoMessage() {}
+
+func (x *ContainerMetricSample) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerMetricSample.ProtoReflect.Descriptor instead.
+func (*ContainerMetricSample) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ContainerMetricSample) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ContainerMetricSample) GetTsUnixMs() int64 {
+	if x != nil {
+		return x.TsUnixMs
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetCpuPct() float64 {
+	if x != nil {
+		return x.CpuPct
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetMemUsage() uint64 {
+	if x != nil {
+		return x.MemUsage
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetMemLimit() uint64 {
+	if x != nil {
+		return x.MemLimit
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetNetRxBps() float64 {
+	if x != nil {
+		return x.NetRxBps
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetNetTxBps() float64 {
+	if x != nil {
+		return x.NetTxBps
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetBlkReadBps() float64 {
+	if x != nil {
+		return x.BlkReadBps
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetBlkWriteBps() float64 {
+	if x != nil {
+		return x.BlkWriteBps
+	}
+	return 0
+}
+
+func (x *ContainerMetricSample) GetPids() uint32 {
+	if x != nil {
+		return x.Pids
+	}
+	return 0
+}
+
 var File_haetae_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_haetae_agent_v1_agent_proto_rawDesc = "" +
@@ -738,11 +1352,13 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x06kernel\x18\x03 \x01(\tR\x06kernel\x12\x12\n" +
 	"\x04arch\x18\x04 \x01(\tR\x04arch\x12%\n" +
 	"\x0edocker_version\x18\x05 \x01(\tR\rdockerVersion\x12#\n" +
-	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"\xbd\x01\n" +
+	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"\xb0\x02\n" +
 	"\x0eConnectRequest\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.haetae.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.haetae.agent.v1.HeartbeatH\x00R\theartbeat\x128\n" +
-	"\x06result\x18\x03 \x01(\v2\x1e.haetae.agent.v1.CommandResultH\x00R\x06resultB\x05\n" +
+	"\x06result\x18\x03 \x01(\v2\x1e.haetae.agent.v1.CommandResultH\x00R\x06result\x126\n" +
+	"\x05state\x18\x04 \x01(\v2\x1e.haetae.agent.v1.StateSnapshotH\x00R\x05state\x129\n" +
+	"\ametrics\x18\x05 \x01(\v2\x1d.haetae.agent.v1.MetricsBatchH\x00R\ametricsB\x05\n" +
 	"\x03msg\"\x84\x01\n" +
 	"\x0fConnectResponse\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.haetae.agent.v1.WelcomeH\x00R\awelcome\x124\n" +
@@ -763,7 +1379,74 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2\xb2\x01\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\xe9\x01\n" +
+	"\rStateSnapshot\x12\"\n" +
+	"\rtaken_unix_ms\x18\x01 \x01(\x03R\vtakenUnixMs\x12)\n" +
+	"\x10docker_reachable\x18\x02 \x01(\bR\x0fdockerReachable\x12!\n" +
+	"\fdocker_error\x18\x03 \x01(\tR\vdockerError\x12%\n" +
+	"\x0edocker_version\x18\x04 \x01(\tR\rdockerVersion\x12?\n" +
+	"\n" +
+	"containers\x18\x05 \x03(\v2\x1f.haetae.agent.v1.ContainerStateR\n" +
+	"containers\"\xca\x03\n" +
+	"\x0eContainerState\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05stack\x18\x03 \x01(\tR\x05stack\x12\x18\n" +
+	"\aservice\x18\x04 \x01(\tR\aservice\x12\x14\n" +
+	"\x05image\x18\x05 \x01(\tR\x05image\x12#\n" +
+	"\rimage_version\x18\x06 \x01(\tR\fimageVersion\x12\x14\n" +
+	"\x05state\x18\a \x01(\tR\x05state\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12\x16\n" +
+	"\x06health\x18\t \x01(\tR\x06health\x12#\n" +
+	"\rrestart_count\x18\n" +
+	" \x01(\x05R\frestartCount\x12\x1d\n" +
+	"\n" +
+	"oom_killed\x18\v \x01(\bR\toomKilled\x12\x1b\n" +
+	"\texit_code\x18\f \x01(\x05R\bexitCode\x122\n" +
+	"\x05ports\x18\r \x03(\v2\x1c.haetae.agent.v1.PortMappingR\x05ports\x12&\n" +
+	"\x0fcreated_unix_ms\x18\x0e \x01(\x03R\rcreatedUnixMs\x12&\n" +
+	"\x0fstarted_unix_ms\x18\x0f \x01(\x03R\rstartedUnixMs\"w\n" +
+	"\vPortMapping\x12\x0e\n" +
+	"\x02ip\x18\x01 \x01(\tR\x02ip\x12!\n" +
+	"\fprivate_port\x18\x02 \x01(\rR\vprivatePort\x12\x1f\n" +
+	"\vpublic_port\x18\x03 \x01(\rR\n" +
+	"publicPort\x12\x14\n" +
+	"\x05proto\x18\x04 \x01(\tR\x05proto\"\x8d\x01\n" +
+	"\fMetricsBatch\x125\n" +
+	"\x04host\x18\x01 \x03(\v2!.haetae.agent.v1.HostMetricSampleR\x04host\x12F\n" +
+	"\n" +
+	"containers\x18\x02 \x03(\v2&.haetae.agent.v1.ContainerMetricSampleR\n" +
+	"containers\"\x91\x02\n" +
+	"\x10HostMetricSample\x12\x1c\n" +
+	"\n" +
+	"ts_unix_ms\x18\x01 \x01(\x03R\btsUnixMs\x12\x17\n" +
+	"\acpu_pct\x18\x02 \x01(\x01R\x06cpuPct\x12\x14\n" +
+	"\x05load1\x18\x03 \x01(\x01R\x05load1\x12\x1b\n" +
+	"\tmem_total\x18\x04 \x01(\x04R\bmemTotal\x12\x1b\n" +
+	"\tmem_avail\x18\x05 \x01(\x04R\bmemAvail\x12\x1d\n" +
+	"\n" +
+	"disk_total\x18\x06 \x01(\x04R\tdiskTotal\x12\x1b\n" +
+	"\tdisk_used\x18\a \x01(\x04R\bdiskUsed\x12\x1c\n" +
+	"\n" +
+	"net_rx_bps\x18\b \x01(\x01R\bnetRxBps\x12\x1c\n" +
+	"\n" +
+	"net_tx_bps\x18\t \x01(\x01R\bnetTxBps\"\xc1\x02\n" +
+	"\x15ContainerMetricSample\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1c\n" +
+	"\n" +
+	"ts_unix_ms\x18\x02 \x01(\x03R\btsUnixMs\x12\x17\n" +
+	"\acpu_pct\x18\x03 \x01(\x01R\x06cpuPct\x12\x1b\n" +
+	"\tmem_usage\x18\x04 \x01(\x04R\bmemUsage\x12\x1b\n" +
+	"\tmem_limit\x18\x05 \x01(\x04R\bmemLimit\x12\x1c\n" +
+	"\n" +
+	"net_rx_bps\x18\x06 \x01(\x01R\bnetRxBps\x12\x1c\n" +
+	"\n" +
+	"net_tx_bps\x18\a \x01(\x01R\bnetTxBps\x12 \n" +
+	"\fblk_read_bps\x18\b \x01(\x01R\n" +
+	"blkReadBps\x12\"\n" +
+	"\rblk_write_bps\x18\t \x01(\x01R\vblkWriteBps\x12\x12\n" +
+	"\x04pids\x18\n" +
+	" \x01(\rR\x04pids2\xb2\x01\n" +
 	"\x13AgentGatewayService\x12I\n" +
 	"\x06Enroll\x12\x1e.haetae.agent.v1.EnrollRequest\x1a\x1f.haetae.agent.v1.EnrollResponse\x12P\n" +
 	"\aConnect\x12\x1f.haetae.agent.v1.ConnectRequest\x1a .haetae.agent.v1.ConnectResponse(\x010\x01BCZAgithub.com/alexseymer/haetae/internal/gen/haetae/agent/v1;agentv1b\x06proto3"
@@ -780,38 +1463,50 @@ func file_haetae_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_haetae_agent_v1_agent_proto_rawDescData
 }
 
-var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_haetae_agent_v1_agent_proto_goTypes = []any{
-	(*EnrollRequest)(nil),   // 0: haetae.agent.v1.EnrollRequest
-	(*EnrollResponse)(nil),  // 1: haetae.agent.v1.EnrollResponse
-	(*HostInfo)(nil),        // 2: haetae.agent.v1.HostInfo
-	(*ConnectRequest)(nil),  // 3: haetae.agent.v1.ConnectRequest
-	(*ConnectResponse)(nil), // 4: haetae.agent.v1.ConnectResponse
-	(*Hello)(nil),           // 5: haetae.agent.v1.Hello
-	(*Welcome)(nil),         // 6: haetae.agent.v1.Welcome
-	(*Heartbeat)(nil),       // 7: haetae.agent.v1.Heartbeat
-	(*Command)(nil),         // 8: haetae.agent.v1.Command
-	(*Ping)(nil),            // 9: haetae.agent.v1.Ping
-	(*CommandResult)(nil),   // 10: haetae.agent.v1.CommandResult
+	(*EnrollRequest)(nil),         // 0: haetae.agent.v1.EnrollRequest
+	(*EnrollResponse)(nil),        // 1: haetae.agent.v1.EnrollResponse
+	(*HostInfo)(nil),              // 2: haetae.agent.v1.HostInfo
+	(*ConnectRequest)(nil),        // 3: haetae.agent.v1.ConnectRequest
+	(*ConnectResponse)(nil),       // 4: haetae.agent.v1.ConnectResponse
+	(*Hello)(nil),                 // 5: haetae.agent.v1.Hello
+	(*Welcome)(nil),               // 6: haetae.agent.v1.Welcome
+	(*Heartbeat)(nil),             // 7: haetae.agent.v1.Heartbeat
+	(*Command)(nil),               // 8: haetae.agent.v1.Command
+	(*Ping)(nil),                  // 9: haetae.agent.v1.Ping
+	(*CommandResult)(nil),         // 10: haetae.agent.v1.CommandResult
+	(*StateSnapshot)(nil),         // 11: haetae.agent.v1.StateSnapshot
+	(*ContainerState)(nil),        // 12: haetae.agent.v1.ContainerState
+	(*PortMapping)(nil),           // 13: haetae.agent.v1.PortMapping
+	(*MetricsBatch)(nil),          // 14: haetae.agent.v1.MetricsBatch
+	(*HostMetricSample)(nil),      // 15: haetae.agent.v1.HostMetricSample
+	(*ContainerMetricSample)(nil), // 16: haetae.agent.v1.ContainerMetricSample
 }
 var file_haetae_agent_v1_agent_proto_depIdxs = []int32{
 	2,  // 0: haetae.agent.v1.EnrollRequest.host:type_name -> haetae.agent.v1.HostInfo
 	5,  // 1: haetae.agent.v1.ConnectRequest.hello:type_name -> haetae.agent.v1.Hello
 	7,  // 2: haetae.agent.v1.ConnectRequest.heartbeat:type_name -> haetae.agent.v1.Heartbeat
 	10, // 3: haetae.agent.v1.ConnectRequest.result:type_name -> haetae.agent.v1.CommandResult
-	6,  // 4: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
-	8,  // 5: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
-	2,  // 6: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
-	9,  // 7: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
-	0,  // 8: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
-	3,  // 9: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
-	1,  // 10: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
-	4,  // 11: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
-	10, // [10:12] is the sub-list for method output_type
-	8,  // [8:10] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	11, // 4: haetae.agent.v1.ConnectRequest.state:type_name -> haetae.agent.v1.StateSnapshot
+	14, // 5: haetae.agent.v1.ConnectRequest.metrics:type_name -> haetae.agent.v1.MetricsBatch
+	6,  // 6: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
+	8,  // 7: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
+	2,  // 8: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
+	9,  // 9: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
+	12, // 10: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
+	13, // 11: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
+	15, // 12: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
+	16, // 13: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
+	0,  // 14: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
+	3,  // 15: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
+	1,  // 16: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
+	4,  // 17: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
+	16, // [16:18] is the sub-list for method output_type
+	14, // [14:16] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_haetae_agent_v1_agent_proto_init() }
@@ -823,6 +1518,8 @@ func file_haetae_agent_v1_agent_proto_init() {
 		(*ConnectRequest_Hello)(nil),
 		(*ConnectRequest_Heartbeat)(nil),
 		(*ConnectRequest_Result)(nil),
+		(*ConnectRequest_State)(nil),
+		(*ConnectRequest_Metrics)(nil),
 	}
 	file_haetae_agent_v1_agent_proto_msgTypes[4].OneofWrappers = []any{
 		(*ConnectResponse_Welcome)(nil),
@@ -837,7 +1534,7 @@ func file_haetae_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_haetae_agent_v1_agent_proto_rawDesc), len(file_haetae_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

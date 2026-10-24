@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X github.com/alexseymer/haetae/internal/version.Version=$(VERS
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
 
-.PHONY: build test test-integration lint vuln fmt generate clean
+.PHONY: build test test-integration test-load lint vuln fmt generate clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
@@ -17,6 +17,11 @@ test:
 # Needs Docker, or HAETAE_TEST_DATABASE_URL pointing at a PostgreSQL admin connection.
 test-integration:
 	go test -race -count=1 -tags integration -timeout 15m ./...
+
+# Agent memory under load (spec S10): 20 noisy containers, RSS sampled every second.
+# HAETAE_LOAD_DURATION overrides the default 2m.
+test-load:
+	go test -count=1 -tags 'integration load' -timeout 30m -run TestAgentMemoryUnderLoad -v ./test/integration/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'
 
 # Regenerates internal/gen from proto/ (needs buf, protoc-gen-go, protoc-gen-connect-go on PATH).
 generate:

@@ -35,3 +35,22 @@ func TestHeartbeatBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestSampleTimeWindow(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		ts   time.Time
+		want bool
+	}{
+		{now, true},
+		{now.Add(-time.Hour), true},
+		{now.Add(-7 * time.Hour), false},
+		{now.Add(time.Minute), true},
+		{now.Add(10 * time.Minute), false},
+		{time.UnixMilli(0), false},
+	} {
+		if got := sampleTimeOK(tc.ts, now); got != tc.want {
+			t.Errorf("sampleTimeOK(%s) = %v, want %v", now.Sub(tc.ts), got, tc.want)
+		}
+	}
+}
