@@ -60,3 +60,17 @@ func TestEscapeSlackMentions(t *testing.T) {
 		t.Fatalf("expected entity escape: %q", got)
 	}
 }
+
+func TestEscapeSlackMarkupSpecials(t *testing.T) {
+	// Container-derived text must not introduce Slack mrkdwn emphasis.
+	got := EscapeSlack("name *_~`evil*_~`")
+	for _, ch := range []string{"*", "_", "~", "`"} {
+		if strings.Contains(got, ch) && !strings.Contains(got, "\\"+ch) {
+			t.Fatalf("unescaped %q in %q", ch, got)
+		}
+	}
+	if !strings.Contains(got, "\\*") || !strings.Contains(got, "\\_") ||
+		!strings.Contains(got, "\\~") || !strings.Contains(got, "\\`") {
+		t.Fatalf("expected backslash escapes: %q", got)
+	}
+}

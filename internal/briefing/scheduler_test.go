@@ -41,6 +41,8 @@ type memStore struct {
 	facts    map[uuid.UUID]store.BriefingFacts
 	claimed  map[string]struct{}
 	enqueued map[string]struct{}
+	leased   map[string]time.Time // exclusive enqueue lease expiry
+	clock    func() time.Time
 }
 
 func newMemStore(orgs ...store.BriefingOrg) *memStore {
@@ -49,6 +51,8 @@ func newMemStore(orgs ...store.BriefingOrg) *memStore {
 		facts:    map[uuid.UUID]store.BriefingFacts{},
 		claimed:  map[string]struct{}{},
 		enqueued: map[string]struct{}{},
+		leased:   map[string]time.Time{},
+		clock:    time.Now,
 	}
 }
 
@@ -80,6 +84,7 @@ func (m *memStore) BriefingTryClaim(_ context.Context, orgID uuid.UUID, localDat
 		return false, nil
 	}
 	m.claimed[k] = struct{}{}
+	m.leased[k] = m.clock().Add(store.BriefingLeaseTTL)
 	return true, nil
 }
 
@@ -93,13 +98,20 @@ func (m *memStore) BriefingReclaimUnenqueued(_ context.Context, orgID uuid.UUID,
 	if _, done := m.enqueued[k]; done {
 		return false, nil
 	}
+	now := m.clock()
+	if until, ok := m.leased[k]; ok && now.Before(until) {
+		return false, nil // exclusive lease still held
+	}
+	m.leased[k] = now.Add(store.BriefingLeaseTTL)
 	return true, nil
 }
 
 func (m *memStore) BriefingMarkEnqueued(_ context.Context, orgID uuid.UUID, localDate time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.enqueued[claimKey(orgID, localDate)] = struct{}{}
+	k := claimKey(orgID, localDate)
+	m.enqueued[k] = struct{}{}
+	delete(m.leased, k)
 	return nil
 }
 
@@ -109,7 +121,14 @@ func (m *memStore) BriefingDelete(_ context.Context, orgID uuid.UUID, localDate 
 	k := claimKey(orgID, localDate)
 	delete(m.claimed, k)
 	delete(m.enqueued, k)
+	delete(m.leased, k)
 	return nil
+}
+
+func (m *memStore) expireLease(orgID uuid.UUID, localDate time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.leased[claimKey(orgID, localDate)] = m.clock().Add(-time.Second)
 }
 
 func (m *memStore) claims() int {

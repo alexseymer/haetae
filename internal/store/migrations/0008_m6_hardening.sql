@@ -1,4 +1,5 @@
--- M6 hardening: opaque chat action refs, alert eval persistence, briefing enqueue tracking.
+-- M6 hardening: opaque chat action refs, alert eval persistence, briefing enqueue
+-- tracking, delivery send receipt, mute dedupe, chat message idempotency.
 
 CREATE TABLE chat_action_refs (
   org_id uuid NOT NULL REFERENCES orgs(id),
@@ -29,9 +30,53 @@ CREATE TABLE alert_eval_state (
 );
 
 ALTER TABLE briefings ADD COLUMN enqueued_at timestamptz;
+ALTER TABLE briefings ADD COLUMN lease_until timestamptz;
+
+-- Persist Send success across process restart (AC#6).
+ALTER TABLE chat_messages ADD COLUMN send_started_at timestamptz;
+ALTER TABLE chat_messages ADD COLUMN sent_at timestamptz;
+-- UNIQUE allows multiple NULLs; non-null keys are exactly-once (briefing fan-out).
+ALTER TABLE chat_messages ADD COLUMN idempotency_key text UNIQUE;
+
+-- Pre-hardening mute replays could leave duplicate (org, host, rule) rows;
+-- collapse them (keep GREATEST(until)) before the unique index. NULL host_id
+-- is included via COALESCE so org-wide mutes also dedupe.
+WITH ranked AS (
+  SELECT id,
+    ROW_NUMBER() OVER (
+      PARTITION BY org_id, COALESCE(host_id, '00000000-0000-0000-0000-000000000000'::uuid), rule
+      ORDER BY until DESC, created_at ASC, id ASC
+    ) AS rn,
+    MAX(until) OVER (
+      PARTITION BY org_id, COALESCE(host_id, '00000000-0000-0000-0000-000000000000'::uuid), rule
+    ) AS max_until
+  FROM mutes
+)
+UPDATE mutes m
+SET until = ranked.max_until
+FROM ranked
+WHERE m.id = ranked.id AND ranked.rn = 1;
+
+DELETE FROM mutes
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id,
+      ROW_NUMBER() OVER (
+        PARTITION BY org_id, COALESCE(host_id, '00000000-0000-0000-0000-000000000000'::uuid), rule
+        ORDER BY until DESC, created_at ASC, id ASC
+      ) AS rn
+    FROM mutes
+  ) d
+  WHERE d.rn > 1
+);
 
 -- Unique mute key so (org, host, rule) extends until instead of duplicating.
-CREATE UNIQUE INDEX mutes_org_host_rule_uidx ON mutes (org_id, host_id, rule) NULLS NOT DISTINCT;
+-- COALESCE makes NULL host_id collide with itself (org-wide mute).
+CREATE UNIQUE INDEX mutes_org_host_rule_uidx ON mutes (
+  org_id,
+  (COALESCE(host_id, '00000000-0000-0000-0000-000000000000'::uuid)),
+  rule
+);
 
 DO $$
 DECLARE

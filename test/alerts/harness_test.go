@@ -126,6 +126,7 @@ func (h *harness) serverEnv(extra []string) []string {
 		"HAETAE_GATEWAY_ADDR=127.0.0.1:"+h.gwPort,
 		"HAETAE_GATEWAY_URL="+h.gwURL,
 		"HAETAE_TELEGRAM_TOKEN="+tgToken,
+		"HAETAE_TEST_HOOKS=1",
 		"HAETAE_TELEGRAM_BASE_URL="+h.tg.URL(),
 	)
 	env = append(env, extra...)

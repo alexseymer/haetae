@@ -55,6 +55,10 @@ func escapeSlackMarkup(s string) string {
 		"&", "&amp;",
 		"<", "&lt;",
 		">", "&gt;",
+		"*", "\\*",
+		"_", "\\_",
+		"~", "\\~",
+		"`", "\\`",
 	)
 	s = replacer.Replace(s)
 	// Break mention sequences after escaping so they cannot ping the channel.

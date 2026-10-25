@@ -66,3 +66,34 @@ func TestValidatePublicURLViaEnvSecretOK(t *testing.T) {
 		t.Fatalf("%v len=%d", err, len(s))
 	}
 }
+
+func TestChatSecretConcurrentCreateSameFile(t *testing.T) {
+	_ = os.Unsetenv("HAETAE_CHAT_SECRET")
+	d := t.TempDir()
+	const n = 16
+	type result struct {
+		key []byte
+		err error
+	}
+	ch := make(chan result, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			k, err := chat.LoadOrCreateChatSecret(d)
+			ch <- result{k, err}
+		}()
+	}
+	var first []byte
+	for i := 0; i < n; i++ {
+		r := <-ch
+		if r.err != nil {
+			t.Fatalf("err: %v", r.err)
+		}
+		if first == nil {
+			first = r.key
+			continue
+		}
+		if string(r.key) != string(first) {
+			t.Fatalf("concurrent create produced different secrets")
+		}
+	}
+}

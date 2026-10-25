@@ -18,4 +18,15 @@ func TestAllowedSlackResponseURL(t *testing.T) {
 	if allowedSlackResponseURL("https://hooks.slack.com.evil/x", hosts) {
 		t.Fatal("suffix host must be rejected")
 	}
+	// userinfo must not bypass Hostname() exact match.
+	if allowedSlackResponseURL("https://hooks.slack.com@evil.example/x", hosts) {
+		t.Fatal("userinfo host trick must be rejected")
+	}
+	if allowedSlackResponseURL("https://user:pass@evil.example/x", hosts) {
+		t.Fatal("userinfo on evil host must be rejected")
+	}
+	// Default https port is stripped by Hostname(); still exact host match.
+	if !allowedSlackResponseURL("https://hooks.slack.com:443/actions/T/B/x", hosts) {
+		t.Fatal(":443 on exact host must be allowed")
+	}
 }

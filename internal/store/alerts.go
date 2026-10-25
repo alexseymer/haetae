@@ -445,7 +445,7 @@ func (s *Store) CreateMute(ctx context.Context, m Mute) (Mute, error) {
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO mutes (id, org_id, host_id, rule, until, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (org_id, host_id, rule) DO UPDATE SET
+		ON CONFLICT (org_id, (COALESCE(host_id, '00000000-0000-0000-0000-000000000000'::uuid)), rule) DO UPDATE SET
 			until = GREATEST(mutes.until, EXCLUDED.until)
 		RETURNING `+muteCols,
 		m.ID, m.OrgID, m.HostID, m.Rule, m.Until, m.CreatedBy,

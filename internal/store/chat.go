@@ -41,7 +41,8 @@ var (
 )
 
 // EnqueueChatMessage inserts an outbound chat message (server role) and
-// notifies the delivery loop.
+// notifies the delivery loop. When IdempotencyKey is set, a second insert with
+// the same key is a no-op that returns the existing row (no duplicate outbound).
 func (s *Store) EnqueueChatMessage(ctx context.Context, m ChatMessage) (ChatMessage, error) {
 	if m.ID == uuid.Nil {
 		m.ID = uuid.New()
@@ -69,30 +70,78 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, m ChatMessage) (ChatMess
 	if m.Evidence == nil {
 		evidence = []byte("[]")
 	}
+	var idemArg any
+	if m.IdempotencyKey != "" {
+		idemArg = m.IdempotencyKey
+	}
+	var idemOut *string
 	err = s.pool.QueryRow(ctx, `
 		INSERT INTO chat_messages (
 			id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, attempts, next_attempt_at, delivery_error
+			incident_id, created_at, attempts, next_attempt_at, delivery_error, idempotency_key
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
 		)
+		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error`,
+			incident_id, created_at, delivered_at, send_started_at, sent_at,
+			attempts, next_attempt_at, delivery_error, idempotency_key`,
 		m.ID, m.OrgID, m.Channel, m.AccountID, m.Direction, m.Kind, m.Body, actions, evidence,
-		m.IncidentID, m.CreatedAt, m.Attempts, m.NextAttemptAt, m.DeliveryError,
+		m.IncidentID, m.CreatedAt, m.Attempts, m.NextAttemptAt, m.DeliveryError, idemArg,
 	).Scan(
 		&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 		&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
-		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError,
+		&m.SendStartedAt, &m.SentAt,
+		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError, &idemOut,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) && m.IdempotencyKey != "" {
+			// Conflict: return the existing row so callers treat it as success.
+			existing, gerr := s.getChatMessageByIdempotency(ctx, m.IdempotencyKey)
+			if gerr != nil {
+				return ChatMessage{}, fmt.Errorf("store: EnqueueChatMessage: %w", gerr)
+			}
+			return existing, nil
+		}
 		return ChatMessage{}, fmt.Errorf("store: EnqueueChatMessage: %w", err)
+	}
+	if idemOut != nil {
+		m.IdempotencyKey = *idemOut
+	} else {
+		m.IdempotencyKey = ""
 	}
 	if err := unmarshalChatJSON(actions, evidence, &m); err != nil {
 		return ChatMessage{}, err
 	}
 	if _, err := s.pool.Exec(ctx, `SELECT pg_notify($1, $2)`, ChatNotifyChannel, m.Channel); err != nil {
 		return ChatMessage{}, fmt.Errorf("store: EnqueueChatMessage: notify: %w", err)
+	}
+	return m, nil
+}
+
+func (s *Store) getChatMessageByIdempotency(ctx context.Context, key string) (ChatMessage, error) {
+	var m ChatMessage
+	var actions, evidence []byte
+	var idem *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
+			incident_id, created_at, delivered_at, send_started_at, sent_at,
+			attempts, next_attempt_at, delivery_error, idempotency_key
+		FROM chat_messages WHERE idempotency_key = $1`, key,
+	).Scan(
+		&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
+		&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
+		&m.SendStartedAt, &m.SentAt,
+		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError, &idem,
+	)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	if idem != nil {
+		m.IdempotencyKey = *idem
+	}
+	if err := unmarshalChatJSON(actions, evidence, &m); err != nil {
+		return ChatMessage{}, err
 	}
 	return m, nil
 }
@@ -111,11 +160,12 @@ func (s *Store) ClaimDueChatMessages(ctx context.Context, limit int) ([]ChatMess
 
 	rows, err := tx.Query(ctx, `
 		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error
+			incident_id, created_at, delivered_at, send_started_at, sent_at,
+			attempts, next_attempt_at, delivery_error
 		FROM chat_messages
 		WHERE direction = 'out'
 		  AND delivered_at IS NULL
-		  AND attempts < $1
+		  AND (attempts < $1 OR sent_at IS NOT NULL)
 		  AND next_attempt_at <= now()
 		ORDER BY next_attempt_at
 		FOR UPDATE SKIP LOCKED
@@ -152,6 +202,23 @@ func (s *Store) MarkDelivered(ctx context.Context, id uuid.UUID, at time.Time) e
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("store: MarkDelivered: %w", ErrNotFound)
+	}
+	return nil
+}
+
+// MarkSent records that channel Send succeeded (best-effort persist so a process
+// restart does not resend). Retries are the caller's responsibility.
+func (s *Store) MarkSent(ctx context.Context, id uuid.UUID, at time.Time) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE chat_messages
+		SET sent_at = COALESCE(sent_at, $2),
+		    send_started_at = COALESCE(send_started_at, $2)
+		WHERE id = $1 AND delivered_at IS NULL`, id, at)
+	if err != nil {
+		return fmt.Errorf("store: MarkSent: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("store: MarkSent: %w", ErrNotFound)
 	}
 	return nil
 }
@@ -213,7 +280,8 @@ func (s *Store) ListMessages(ctx context.Context, orgID uuid.UUID, after *uuid.U
 	if after == nil {
 		rows, err = s.pool.Query(ctx, `
 			SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-				incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error
+				incident_id, created_at, delivered_at, send_started_at, sent_at,
+				attempts, next_attempt_at, delivery_error
 			FROM chat_messages
 			WHERE org_id = $1 AND channel = $2
 			ORDER BY created_at ASC, id ASC
@@ -221,7 +289,8 @@ func (s *Store) ListMessages(ctx context.Context, orgID uuid.UUID, after *uuid.U
 	} else {
 		rows, err = s.pool.Query(ctx, `
 			SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-				incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error
+				incident_id, created_at, delivered_at, send_started_at, sent_at,
+				attempts, next_attempt_at, delivery_error
 			FROM chat_messages
 			WHERE org_id = $1 AND channel = $2
 			  AND (created_at, id) > (
@@ -274,12 +343,14 @@ func (s *Store) InsertInbound(ctx context.Context, m ChatMessage) (ChatMessage, 
 			$1,$2,$3,$4,'in',$5,$6,$7,$8,$9,$10,$11,0,$10,''
 		)
 		RETURNING id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error`,
+			incident_id, created_at, delivered_at, send_started_at, sent_at,
+			attempts, next_attempt_at, delivery_error`,
 		m.ID, m.OrgID, m.Channel, m.AccountID, m.Kind, m.Body, actions, evidence,
 		m.IncidentID, m.CreatedAt, now,
 	).Scan(
 		&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 		&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
+		&m.SendStartedAt, &m.SentAt,
 		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError,
 	)
 	if err != nil {
@@ -529,7 +600,8 @@ func (s *Store) FindOutboundByShortRef(ctx context.Context, orgID uuid.UUID, cha
 	ref = ref[:8]
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error
+			incident_id, created_at, delivered_at, send_started_at, sent_at,
+			attempts, next_attempt_at, delivery_error
 		FROM chat_messages
 		WHERE org_id = $1 AND channel = $2 AND direction = 'out'
 		  AND replace(id::text, '-', '') LIKE $3
@@ -554,11 +626,13 @@ func (s *Store) GetChatMessage(ctx context.Context, id uuid.UUID) (ChatMessage, 
 	var actions, evidence []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, delivered_at, attempts, next_attempt_at, delivery_error
+			incident_id, created_at, delivered_at, send_started_at, sent_at,
+			attempts, next_attempt_at, delivery_error
 		FROM chat_messages WHERE id = $1`, id,
 	).Scan(
 		&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 		&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
+		&m.SendStartedAt, &m.SentAt,
 		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError,
 	)
 	if err != nil {
@@ -682,6 +756,7 @@ func scanChatMessages(rows pgx.Rows) ([]ChatMessage, error) {
 		if err := rows.Scan(
 			&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 			&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
+			&m.SendStartedAt, &m.SentAt,
 			&m.Attempts, &m.NextAttemptAt, &m.DeliveryError,
 		); err != nil {
 			return nil, err

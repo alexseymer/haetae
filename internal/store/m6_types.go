@@ -126,19 +126,22 @@ type ChatEvidence struct {
 
 // ChatMessage is one chat message, in either direction.
 type ChatMessage struct {
-	ID            uuid.UUID      `json:"id"`
-	OrgID         uuid.UUID      `json:"orgId"`
-	Channel       string         `json:"channel"`
-	AccountID     *uuid.UUID     `json:"accountId,omitempty"`
-	Direction     string         `json:"direction"` // in | out
-	Kind          string         `json:"kind"`
-	Body          string         `json:"body"`
-	Actions       []ChatAction   `json:"actions"`
-	Evidence      []ChatEvidence `json:"evidence"`
-	IncidentID    *uuid.UUID     `json:"incidentId,omitempty"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	DeliveredAt   *time.Time     `json:"deliveredAt,omitempty"`
-	Attempts      int            `json:"attempts"`
-	NextAttemptAt time.Time      `json:"nextAttemptAt"`
-	DeliveryError string         `json:"deliveryError,omitempty"`
+	ID             uuid.UUID      `json:"id"`
+	OrgID          uuid.UUID      `json:"orgId"`
+	Channel        string         `json:"channel"`
+	AccountID      *uuid.UUID     `json:"accountId,omitempty"`
+	Direction      string         `json:"direction"` // in | out
+	Kind           string         `json:"kind"`
+	Body           string         `json:"body"`
+	Actions        []ChatAction   `json:"actions"`
+	Evidence       []ChatEvidence `json:"evidence"`
+	IncidentID     *uuid.UUID     `json:"incidentId,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	DeliveredAt    *time.Time     `json:"deliveredAt,omitempty"`
+	SendStartedAt  *time.Time     `json:"sendStartedAt,omitempty"`
+	SentAt         *time.Time     `json:"sentAt,omitempty"`
+	Attempts       int            `json:"attempts"`
+	NextAttemptAt  time.Time      `json:"nextAttemptAt"`
+	DeliveryError  string         `json:"deliveryError,omitempty"`
+	IdempotencyKey string         `json:"-"` // optional unique key; empty = no idempotency
 }

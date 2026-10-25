@@ -110,39 +110,41 @@ func (s *Service) applyAction(ctx context.Context, channel, externalID string, m
 		return replyActionRejected, nil
 	}
 
-	if err := s.st.ConsumeActionRef(ctx, messageID, action); err != nil {
-		if errors.Is(err, store.ErrActionAlreadyUsed) {
-			return replyAlreadyHandled, nil
-		}
-		s.auditReject(channel, externalID, "action_consume", err)
-		return replyActionRejected, nil
-	}
-
 	switch action {
 	case "later":
-		if _, err := s.st.InsertInbound(ctx, store.ChatMessage{
+		err := s.st.ApplyActionInbound(ctx, messageID, action, store.ChatMessage{
 			OrgID:      msg.OrgID,
 			Channel:    channel,
 			AccountID:  &acc.ID,
 			Kind:       store.KindAction,
 			Body:       "later",
 			IncidentID: msg.IncidentID,
-		}); err != nil {
-			return "", err
+		})
+		if err != nil {
+			if errors.Is(err, store.ErrActionAlreadyUsed) {
+				return replyAlreadyHandled, nil
+			}
+			s.auditReject(channel, externalID, "action_consume", err)
+			return replyActionRejected, nil
 		}
 		return replyActionLater, nil
 	case "mute30d":
 		return s.muteIncident(ctx, acc, msg)
 	case "ack":
-		if _, err := s.st.InsertInbound(ctx, store.ChatMessage{
+		err := s.st.ApplyActionInbound(ctx, messageID, action, store.ChatMessage{
 			OrgID:      msg.OrgID,
 			Channel:    channel,
 			AccountID:  &acc.ID,
 			Kind:       store.KindAction,
 			Body:       "ack",
 			IncidentID: msg.IncidentID,
-		}); err != nil {
-			return "", err
+		})
+		if err != nil {
+			if errors.Is(err, store.ErrActionAlreadyUsed) {
+				return replyAlreadyHandled, nil
+			}
+			s.auditReject(channel, externalID, "action_consume", err)
+			return replyActionRejected, nil
 		}
 		return replyActionAck, nil
 	default:
@@ -169,26 +171,30 @@ func (s *Service) muteIncident(ctx context.Context, acc store.ChatAccount, msg s
 	if len(rules) == 0 {
 		rules = []string{""}
 	}
+	mutes := make([]store.Mute, 0, len(rules))
 	for _, rule := range rules {
-		if _, err := s.st.CreateMute(ctx, store.Mute{
+		mutes = append(mutes, store.Mute{
 			OrgID:     msg.OrgID,
 			HostID:    &hostID,
 			Rule:      rule,
 			Until:     until,
 			CreatedBy: &uid,
-		}); err != nil {
-			return "", err
-		}
+		})
 	}
-	if _, err := s.st.InsertInbound(ctx, store.ChatMessage{
+	err = s.st.ApplyActionMute(ctx, msg.ID, mutes, store.ChatMessage{
 		OrgID:      msg.OrgID,
 		Channel:    acc.Channel,
 		AccountID:  &acc.ID,
 		Kind:       store.KindAction,
 		Body:       "mute30d",
 		IncidentID: msg.IncidentID,
-	}); err != nil {
-		return "", err
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrActionAlreadyUsed) {
+			return replyAlreadyHandled, nil
+		}
+		s.auditReject(acc.Channel, acc.ExternalID, "action_consume", err)
+		return replyActionRejected, nil
 	}
 	return replyActionMuted, nil
 }
@@ -253,7 +259,7 @@ func (s *Service) allowUnlinkedReply(channel, externalID string) bool {
 	if s.unlinkedReplies == nil {
 		return true
 	}
-	return s.unlinkedReplies.allow(channel+":"+externalID, s.now())
+	return s.unlinkedReplies.allow(normalizeRateKey(channel+":"+externalID), s.now())
 }
 
 func (s *Service) auditReject(channel, externalID, reason string, err error) {

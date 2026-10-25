@@ -41,6 +41,7 @@ type Config struct {
 // Service delivers chat messages and handles inbound actions.
 // Delivery is at-least-once: after a successful Send, MarkDelivered is retried
 // in-process and claimed ids are remembered so a reclaim does not resend.
+// sent_at in the DB covers process restart; the in-memory map is TTL- and size-bounded.
 type Service struct {
 	st         *store.Store
 	channels   map[string]Channel
@@ -55,7 +56,8 @@ type Service struct {
 
 	// delivered remembers message ids whose Send succeeded but MarkDelivered
 	// may still be pending (AC#6: no duplicate after successful send).
-	delivered sync.Map // uuid.UUID -> struct{}
+	deliveredMu sync.Mutex
+	delivered   map[uuid.UUID]deliveredEntry
 
 	unlinkedReplies *tokenBucketMap
 }
@@ -90,6 +92,7 @@ func New(cfg Config) *Service {
 		claimLimit:      cfg.ClaimLimit,
 		now:             cfg.Now,
 		wake:            make(chan struct{}, 1),
+		delivered:       make(map[uuid.UUID]deliveredEntry),
 		unlinkedReplies: newTokenBucketMap(5, time.Minute),
 	}
 }
@@ -211,7 +214,9 @@ func escapeFor(channel, s string) string {
 }
 
 // EnqueueMessage writes outbound message(s). An empty or web channel fans out
-// to web plus every verified account on configured channels.
+// to web plus every verified account on configured channels. When
+// IdempotencyKey is set on m, each fan-out row gets a deterministic key
+// (base:channel:account) so a second enqueue cannot create a duplicate.
 func (s *Service) EnqueueMessage(ctx context.Context, orgID uuid.UUID, m store.ChatMessage) error {
 	m.OrgID = orgID
 	if m.Direction == "" {
@@ -220,9 +225,11 @@ func (s *Service) EnqueueMessage(ctx context.Context, orgID uuid.UUID, m store.C
 	if m.Channel == "" {
 		m.Channel = store.ChannelWeb
 	}
+	baseKey := m.IdempotencyKey
 	if m.Channel == store.ChannelWeb {
 		m.AccountID = nil
 		m.Body = EscapeBody(store.ChannelWeb, stripControls(m.Body))
+		m.IdempotencyKey = fanoutIdempotencyKey(baseKey, store.ChannelWeb, nil)
 		if _, err := s.st.EnqueueChatMessage(ctx, m); err != nil {
 			return err
 		}
@@ -241,6 +248,7 @@ func (s *Service) EnqueueMessage(ctx context.Context, orgID uuid.UUID, m store.C
 				id := acc.ID
 				cp.AccountID = &id
 				cp.Body = EscapeBody(name, stripControls(m.Body))
+				cp.IdempotencyKey = fanoutIdempotencyKey(baseKey, name, &id)
 				if _, err := s.st.EnqueueChatMessage(ctx, cp); err != nil {
 					return err
 				}
@@ -250,11 +258,23 @@ func (s *Service) EnqueueMessage(ctx context.Context, orgID uuid.UUID, m store.C
 		return nil
 	}
 	m.Body = EscapeBody(m.Channel, stripControls(m.Body))
+	m.IdempotencyKey = fanoutIdempotencyKey(baseKey, m.Channel, m.AccountID)
 	if _, err := s.st.EnqueueChatMessage(ctx, m); err != nil {
 		return err
 	}
 	s.nudge()
 	return nil
+}
+
+func fanoutIdempotencyKey(base, channel string, accountID *uuid.UUID) string {
+	if base == "" {
+		return ""
+	}
+	acc := "-"
+	if accountID != nil {
+		acc = accountID.String()
+	}
+	return base + ":" + channel + ":" + acc
 }
 
 func (s *Service) nudge() {

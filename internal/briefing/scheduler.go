@@ -2,6 +2,7 @@ package briefing
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -143,6 +144,7 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 		return err
 	}
 	body := Compose(facts, now, loc)
+	day := localDate.UTC().Format("2006-01-02")
 	msg := store.ChatMessage{
 		Channel:   store.ChannelWeb,
 		Direction: "out",
@@ -153,6 +155,8 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 			{Label: "hosts", Path: "/hosts"},
 			{Label: "all incidents", Path: "/incidents"},
 		},
+		// Deterministic per (org, local_date); fan-out appends channel/account.
+		IdempotencyKey: fmt.Sprintf("briefing:%s:%s", o.OrgID, day),
 	}
 	if err := s.Enq.EnqueueMessage(ctx, o.OrgID, msg); err != nil {
 		_ = s.Store.BriefingDelete(ctx, o.OrgID, localDate)

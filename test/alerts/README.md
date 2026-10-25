@@ -15,8 +15,9 @@ No AI is configured. Rule alerts and the daily briefing must work without it (S9
 | Variable | Role |
 | --- | --- |
 | `HAETAE_TELEGRAM_TOKEN` | Enables the Telegram channel |
-| `HAETAE_TELEGRAM_BASE_URL` | Points the Bot API client at the fake HTTP server (default is `https://api.telegram.org`) |
-| `HAETAE_BRIEFING_NOW` | **Test-only.** When set (any non-empty value), the briefing scheduler treats every org as due on each tick. Exactly-once delivery is still enforced by the `briefings` primary key. Do not set in production. |
+| `HAETAE_TEST_HOOKS` | Must be `1` for test-only overrides (`HAETAE_TELEGRAM_BASE_URL`, `HAETAE_BRIEFING_NOW`) to take effect. |
+| `HAETAE_TELEGRAM_BASE_URL` | Points the Bot API client at the fake HTTP server. Honoured only when `HAETAE_TEST_HOOKS=1`; otherwise ignored (default `https://api.telegram.org`). |
+| `HAETAE_BRIEFING_NOW` | **Test-only.** When set (any non-empty value) and `HAETAE_TEST_HOOKS=1`, the briefing scheduler treats every org as due on each tick. Exactly-once delivery is still enforced by the `briefings` primary key / lease / idempotency key. Do not set in production. |
 
 Org settings are tuned via `PUT /api/settings/alerts` for fast runs: `offlineAfterS=30`, `sustainedS=10`.
 

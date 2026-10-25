@@ -81,7 +81,10 @@ func rankItems(items []store.BriefingItem) []store.BriefingItem {
 		if ri != rj {
 			return ri > rj
 		}
-		// Prefer incidents over alerts at the same severity.
+		// Then recency (newer first). Prefer incidents over alerts when tied.
+		if !out[i].At.Equal(out[j].At) {
+			return out[i].At.After(out[j].At)
+		}
 		if out[i].Kind != out[j].Kind {
 			return out[i].Kind == "incident"
 		}

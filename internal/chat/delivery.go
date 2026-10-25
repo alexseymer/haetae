@@ -9,6 +9,15 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	deliveredTTL     = time.Hour
+	deliveredMaxKeys = 10_000
+)
+
+type deliveredEntry struct {
+	at time.Time
+}
+
 // Run starts the delivery loop and each channel's inbound Run until ctx ends.
 func (s *Service) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
@@ -145,8 +154,8 @@ func (s *Service) deliverChannel(ctx context.Context, channel string, batch []st
 func (s *Service) deliverOne(ctx context.Context, ch Channel, m store.ChatMessage) {
 	now := s.now()
 
-	// Already sent successfully in this process: only retry MarkDelivered.
-	if _, ok := s.delivered.Load(m.ID); ok {
+	// Already sent successfully (in-process or persisted): only retry MarkDelivered.
+	if s.rememberedDelivered(m.ID, now) || m.SentAt != nil {
 		s.markDeliveredRetry(ctx, m.ID, now)
 		return
 	}
@@ -185,12 +194,14 @@ func (s *Service) deliverOne(ctx context.Context, ch Channel, m store.ChatMessag
 		s.log.Warn("chat delivery failed", "channel", m.Channel, "id", m.ID, "attempt", m.Attempts+1, "err", err)
 		return
 	}
-	s.delivered.Store(m.ID, struct{}{})
+	s.persistSent(ctx, m.ID, now)
+	s.rememberDelivered(m.ID, now)
 	s.markDeliveredRetry(ctx, m.ID, now)
 }
 
 // attachActionPayloads builds channel-safe action values: Telegram/Signal get
-// short opaque refs; Slack/web keep HMAC tokens (size allows).
+// short opaque refs; Slack/web keep HMAC tokens (size allows). Used actions are
+// omitted so redelivery does not attach dead buttons.
 func (s *Service) attachActionPayloads(ctx context.Context, m store.ChatMessage, now time.Time) ([]store.ChatAction, error) {
 	exp := now.Add(store.ActionTokenTTL)
 	ids := make([]string, len(m.Actions))
@@ -201,22 +212,42 @@ func (s *Service) attachActionPayloads(ctx context.Context, m store.ChatMessage,
 	if err != nil {
 		return nil, err
 	}
-	out := make([]store.ChatAction, len(m.Actions))
-	for i, a := range m.Actions {
+	out := make([]store.ChatAction, 0, len(m.Actions))
+	for _, a := range m.Actions {
 		label := a.Label
 		switch m.Channel {
 		case store.ChannelTelegram:
-			ref := refs[a.ID]
-			out[i] = store.ChatAction{ID: store.ActionRefPrefix + ref, Label: label}
+			ref, ok := refs[a.ID]
+			if !ok {
+				continue // already used — skip button
+			}
+			out = append(out, store.ChatAction{ID: store.ActionRefPrefix + ref, Label: label})
 		default:
 			// Slack action value ≤ 2000; web uses the same HMAC form.
-			out[i] = store.ChatAction{
+			out = append(out, store.ChatAction{
 				ID:    store.SignActionToken(s.secret, m.ID, a.ID, exp),
 				Label: label,
-			}
+			})
 		}
 	}
 	return out, nil
+}
+
+func (s *Service) persistSent(ctx context.Context, id uuid.UUID, at time.Time) {
+	backoff := []time.Duration{0, 50 * time.Millisecond, 200 * time.Millisecond, time.Second}
+	for _, d := range backoff {
+		if d > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(d):
+			}
+		}
+		if err := s.st.MarkSent(ctx, id, at); err == nil {
+			return
+		}
+	}
+	s.log.Error("mark sent", "id", id)
 }
 
 func (s *Service) markDeliveredRetry(ctx context.Context, id uuid.UUID, at time.Time) {
@@ -232,13 +263,68 @@ func (s *Service) markDeliveredRetry(ctx context.Context, id uuid.UUID, at time.
 		}
 		err = s.st.MarkDelivered(ctx, id, at)
 		if err == nil {
-			s.delivered.Delete(id)
+			s.forgetDelivered(id)
 			return
 		}
 		s.log.Error("mark delivered", "id", id, "attempt", i+1, "err", err)
 	}
 	// Keep id in delivered set so a reclaim will not resend; next claim will
-	// only retry MarkDelivered.
+	// only retry MarkDelivered. DB sent_at (if persisted) covers restarts.
+}
+
+func (s *Service) rememberDelivered(id uuid.UUID, now time.Time) {
+	s.deliveredMu.Lock()
+	defer s.deliveredMu.Unlock()
+	s.sweepDeliveredLocked(now)
+	if len(s.delivered) >= deliveredMaxKeys {
+		s.evictOldestDeliveredLocked()
+	}
+	s.delivered[id] = deliveredEntry{at: now}
+}
+
+func (s *Service) rememberedDelivered(id uuid.UUID, now time.Time) bool {
+	s.deliveredMu.Lock()
+	defer s.deliveredMu.Unlock()
+	s.sweepDeliveredLocked(now)
+	e, ok := s.delivered[id]
+	if !ok {
+		return false
+	}
+	if now.Sub(e.at) > deliveredTTL {
+		delete(s.delivered, id)
+		return false
+	}
+	return true
+}
+
+func (s *Service) forgetDelivered(id uuid.UUID) {
+	s.deliveredMu.Lock()
+	defer s.deliveredMu.Unlock()
+	delete(s.delivered, id)
+}
+
+func (s *Service) sweepDeliveredLocked(now time.Time) {
+	for id, e := range s.delivered {
+		if now.Sub(e.at) > deliveredTTL {
+			delete(s.delivered, id)
+		}
+	}
+}
+
+func (s *Service) evictOldestDeliveredLocked() {
+	var oldestID uuid.UUID
+	var oldest time.Time
+	first := true
+	for id, e := range s.delivered {
+		if first || e.at.Before(oldest) {
+			oldestID = id
+			oldest = e.at
+			first = false
+		}
+	}
+	if !first {
+		delete(s.delivered, oldestID)
+	}
 }
 
 // DeliverOnceForTest runs one delivery pass (tests).
@@ -248,5 +334,5 @@ func (s *Service) DeliverOnceForTest(ctx context.Context) {
 
 // RememberDeliveredForTest marks an id as already sent (tests).
 func (s *Service) RememberDeliveredForTest(id uuid.UUID) {
-	s.delivered.Store(id, struct{}{})
+	s.rememberDelivered(id, s.now())
 }
