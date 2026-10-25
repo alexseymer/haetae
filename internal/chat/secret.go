@@ -48,23 +48,31 @@ func loadOrCreateChatSecretFile(path string) ([]byte, error) {
 		if _, err := io.ReadFull(rand.Reader, key); err != nil {
 			return nil, fmt.Errorf("chat: generate secret: %w", err)
 		}
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: operator data dir
+		// Write the complete key to a private temp file, then publish it with
+		// a hard link: the link is atomic and fails if the file exists, so a
+		// concurrent starter never sees a partially written secret.
+		tmp, err := os.CreateTemp(filepath.Dir(path), ".chat-secret-*") // 0600
 		if err != nil {
+			return nil, fmt.Errorf("chat: write secret: %w", err)
+		}
+		tmpName := tmp.Name()
+		defer func() { _ = os.Remove(tmpName) }()
+		_, werr := tmp.Write(key)
+		if werr == nil {
+			werr = tmp.Sync()
+		}
+		if cerr := tmp.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			return nil, fmt.Errorf("chat: write secret: %w", werr)
+		}
+		if err := os.Link(tmpName, path); err != nil {
 			if errors.Is(err, os.ErrExist) {
-				// Another process won the create race — read their file.
+				// Another process won the create race; read its complete file.
 				return readChatSecretFile(path)
 			}
 			return nil, fmt.Errorf("chat: write secret: %w", err)
-		}
-		_, werr := f.Write(key)
-		cerr := f.Close()
-		if werr != nil {
-			_ = os.Remove(path)
-			return nil, fmt.Errorf("chat: write secret: %w", werr)
-		}
-		if cerr != nil {
-			_ = os.Remove(path)
-			return nil, fmt.Errorf("chat: write secret: %w", cerr)
 		}
 		fi, err = os.Lstat(path)
 		if err != nil {
