@@ -3,6 +3,7 @@ package grypedb
 import (
 	"archive/tar"
 	"compress/gzip"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	v6 "github.com/anchore/grype/grype/db/v6"
+	_ "github.com/glebarez/go-sqlite" // registers the "sqlite" driver Grype already links
 )
 
 // Advisory describes one crafted vulnerability for a test database.
@@ -28,6 +30,10 @@ type Advisory struct {
 }
 
 // BuildDB writes a minimal Grype v6 database into dir containing the given advisories.
+//
+// The writer stamps the database with the wall clock; the stamp is rewritten
+// to built afterwards so it matches the listing, as it does for real databases.
+// Otherwise the update check keeps seeing a "newer" listing and reinstalls.
 func BuildDB(dir string, built time.Time, advisories []Advisory) (err error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -39,6 +45,9 @@ func BuildDB(dir string, built time.Time, advisories []Advisory) (err error) {
 	defer func() {
 		if cerr := w.Close(); err == nil && cerr != nil {
 			err = fmt.Errorf("grypedb: close writer: %w", cerr)
+		}
+		if err == nil {
+			err = stampBuilt(dir, built)
 		}
 	}()
 
@@ -186,3 +195,15 @@ func ArchiveDir(dbDir, archivePath string) (err error) {
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+func stampBuilt(dir string, built time.Time) error {
+	db, err := sql.Open("sqlite", filepath.Join(dir, v6.VulnerabilityDBFileName))
+	if err != nil {
+		return fmt.Errorf("grypedb: open for stamp: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec("UPDATE db_metadata SET build_timestamp = ?", built.UTC().Round(time.Second)); err != nil {
+		return fmt.Errorf("grypedb: stamp build time: %w", err)
+	}
+	return nil
+}

@@ -168,6 +168,7 @@ func (m *Manager) CheckOnce(ctx context.Context) error {
 		return res.Error
 	}
 
+	m.log.Info("vuln db checked", "updated", res.Updated, "built_at", res.BuiltAt, "message", res.Message)
 	built := res.BuiltAt
 	if built.IsZero() && prev.BuiltAt != nil {
 		built = *prev.BuiltAt
@@ -227,19 +228,23 @@ func (m *Manager) openActive() error {
 	if _, err := os.Stat(filepath.Join(dir, "vulnerability.db")); err != nil {
 		return err
 	}
-	matcher, err := m.cfg.OpenMatcher(dir)
-	if err != nil {
-		return err
-	}
+	// Close the old matcher before opening the new one: while the replaced
+	// file is still open, a reader opened at the same path sees the old data.
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.matcher != nil {
 		if c, ok := m.matcher.(interface{ Close() error }); ok {
 			_ = c.Close()
 		}
+		m.matcher = nil
+		m.ready = false
+	}
+	matcher, err := m.cfg.OpenMatcher(dir)
+	if err != nil {
+		return err
 	}
 	m.matcher = matcher
 	m.ready = true
-	m.mu.Unlock()
 	return nil
 }
 
