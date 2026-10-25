@@ -20,8 +20,10 @@ import (
 
 const (
 	defaultHealthWindow = 10 * time.Second
-	defaultStartTimeout = 180 * time.Second
-	defaultBuildTimeout = 15 * time.Minute
+	// DefaultStartTimeout is the agent compose-up / health wait budget.
+	DefaultStartTimeout = 180 * time.Second
+	// DefaultBuildTimeout is the agent build/pull budget.
+	DefaultBuildTimeout = 15 * time.Minute
 	logBatchLines       = 50
 	logBatchWait        = 500 * time.Millisecond
 	maxDeployLogBytes   = 2 << 20
@@ -64,10 +66,10 @@ func (c Config) withDefaults() Config {
 		c.HealthWindow = defaultHealthWindow
 	}
 	if c.StartTimeout <= 0 {
-		c.StartTimeout = defaultStartTimeout
+		c.StartTimeout = DefaultStartTimeout
 	}
 	if c.BuildTimeout <= 0 {
-		c.BuildTimeout = defaultBuildTimeout
+		c.BuildTimeout = DefaultBuildTimeout
 	}
 	if c.Redact == nil {
 		c.Redact = func(context.Context, []string) ([]string, error) {

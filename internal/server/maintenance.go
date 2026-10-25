@@ -21,7 +21,12 @@ const (
 
 // StaleDeployAge is how long a running deploy may go without an event before
 // it is marked failed ("agent stopped reporting").
-const StaleDeployAge = 15 * time.Minute
+//
+// Must exceed agent DefaultBuildTimeout + DefaultStartTimeout plus a rollback
+// budget: a quiet image pull or `compose up --wait` can leave last_event_at
+// idle for the full build/start window, and rollback emits no intermediate
+// phases. 45 minutes covers build (15m) + start (3m) + rollback headroom.
+const StaleDeployAge = 45 * time.Minute
 
 // MetricsMaintainer is the store work done on a schedule (metrics, logs,
 // sessions and deploys).

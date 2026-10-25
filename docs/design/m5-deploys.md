@@ -70,3 +70,16 @@ the deploy. No inbound port, no webhook.
 - push to healthy, cached build (target <= 30 s), and cold build separately;
 - result reported (healthy or failed with error) within 60 s of the start;
 - a broken build leaves the old version serving; a crashing start rolls back.
+
+## Test-only environment hooks
+
+These variables exist for the deploy e2e harness (`test/deploy`) and unit tests.
+They must not be set in production manifests or operator installs:
+
+- `HAETAE_ALLOW_LOCAL_GIT=1` (server) and `HAETAE_AGENT_ALLOW_LOCAL_GIT=1`
+  (agent) — together allow `file://` git URLs. Both must be set; neither alone
+  is enough. Production stays `https://` only.
+- `HAETAE_AGENT_CADDY_TLS=internal`, `HAETAE_AGENT_CADDY_NAME`,
+  `HAETAE_AGENT_CADDY_VOLUME_PREFIX` — isolate Caddy in tests.
+- `HAETAE_AGENT_HEALTH_WINDOW`, `HAETAE_AGENT_WATCH_INTERVAL`,
+  `HAETAE_AGENT_START_TIMEOUT` — shorten agent timing for CI.

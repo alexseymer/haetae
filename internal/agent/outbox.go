@@ -149,11 +149,42 @@ func (o *Outbox) shedDeployLocked() bool {
 	if len(o.deploy) == 0 {
 		return false
 	}
-	// Last resort: drop the oldest message (event or branch).
+	// Last resort: never drop a terminal phase while a non-terminal message
+	// exists; if only terminals remain, drop the oldest.
+	return o.dropOldestLastResortLocked()
+}
+
+func (o *Outbox) dropOldestLastResortLocked() bool {
+	if len(o.deploy) == 0 {
+		return false
+	}
+	for i, m := range o.deploy {
+		if m.event != nil && isTerminalDeployPhase(m.event.GetPhase()) {
+			continue
+		}
+		copy(o.deploy[i:], o.deploy[i+1:])
+		o.deploy[len(o.deploy)-1] = deployMsg{}
+		o.deploy = o.deploy[:len(o.deploy)-1]
+		o.dropped++
+		return true
+	}
+	// Only terminal phase events remain: drop oldest.
 	o.deploy[0] = deployMsg{}
 	o.deploy = o.deploy[1:]
 	o.dropped++
 	return true
+}
+
+func isTerminalDeployPhase(p agentv1.DeployPhase) bool {
+	switch p {
+	case agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY,
+		agentv1.DeployPhase_DEPLOY_PHASE_FAILED,
+		agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK,
+		agentv1.DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED:
+		return true
+	default:
+		return false
+	}
 }
 
 func (o *Outbox) dropOldestDeployLogLocked() bool {

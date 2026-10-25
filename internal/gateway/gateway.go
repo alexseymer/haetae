@@ -17,6 +17,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
+	"github.com/alexseymer/haetae/internal/deploys"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/gen/haetae/agent/v1/agentv1connect"
 	"github.com/alexseymer/haetae/internal/pki"
@@ -429,12 +430,15 @@ func (g *Gateway) Connected(hostID uuid.UUID) bool {
 }
 
 // Send delivers a command to a connected host and waits for its result.
+// Returns deploys.ErrNotDelivered when the command never reached the session
+// outbox (no session, closed before enqueue, or enqueue failed). A timeout
+// after enqueue returns context.DeadlineExceeded without ErrNotDelivered.
 func (g *Gateway) Send(ctx context.Context, hostID uuid.UUID, cmd *agentv1.Command) (*agentv1.CommandResult, error) {
 	g.mu.Lock()
 	s := g.sessions[hostID]
 	g.mu.Unlock()
 	if s == nil {
-		return nil, ErrNotConnected
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, ErrNotConnected)
 	}
 	return s.call(ctx, cmd)
 }

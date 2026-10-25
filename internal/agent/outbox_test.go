@@ -145,3 +145,91 @@ func TestOutboxHardCapMixedFlood(t *testing.T) {
 		t.Fatal("expected drops under mixed flood")
 	}
 }
+
+func TestOutboxLastResortKeepsTerminalWhileNonTerminalExists(t *testing.T) {
+	o := NewOutbox(3)
+	terminal := &agentv1.DeployEvent{
+		DeployId: "keep-healthy",
+		Phase:    agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY,
+		TsUnixMs: 1,
+	}
+	o.Event(terminal)
+	// Fill to the hard cap with distinct non-terminal events (forces last-resort shed).
+	for i := 0; i < maxDeployMsgs+50; i++ {
+		o.Event(&agentv1.DeployEvent{
+			DeployId: "n-" + strconv.Itoa(i),
+			Phase:    agentv1.DeployPhase_DEPLOY_PHASE_BUILDING,
+			TsUnixMs: int64(i + 2),
+		})
+	}
+	if n := o.DeployQueueLen(); n > maxDeployMsgs {
+		t.Fatalf("queue len %d exceeds hard cap %d", n, maxDeployMsgs)
+	}
+
+	var sawTerminal, sawNonTerminal bool
+	ctx := context.Background()
+	for o.DeployQueueLen() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ev := msg.GetDeployEvent()
+		if ev == nil {
+			continue
+		}
+		if ev.GetDeployId() == "keep-healthy" && ev.GetPhase() == agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY {
+			sawTerminal = true
+		}
+		if ev.GetPhase() == agentv1.DeployPhase_DEPLOY_PHASE_BUILDING {
+			sawNonTerminal = true
+		}
+	}
+	if !sawTerminal {
+		t.Fatal("last-resort shed dropped terminal healthy while non-terminals were present")
+	}
+	if !sawNonTerminal {
+		t.Fatal("expected some non-terminal events to remain under the cap")
+	}
+}
+
+func TestOutboxLastResortDropsOldestWhenOnlyTerminals(t *testing.T) {
+	o := NewOutbox(3)
+	phases := []agentv1.DeployPhase{
+		agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY,
+		agentv1.DeployPhase_DEPLOY_PHASE_FAILED,
+		agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK,
+		agentv1.DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED,
+	}
+	for i := 0; i < maxDeployMsgs+10; i++ {
+		o.Event(&agentv1.DeployEvent{
+			DeployId: "t-" + strconv.Itoa(i),
+			Phase:    phases[i%len(phases)],
+			TsUnixMs: int64(i),
+		})
+	}
+	if n := o.DeployQueueLen(); n != maxDeployMsgs {
+		t.Fatalf("queue len %d, want hard cap %d", n, maxDeployMsgs)
+	}
+	// Oldest terminals were shed; newest ts should be present.
+	ctx := context.Background()
+	var minTS, maxTS int64 = -1, -1
+	for o.DeployQueueLen() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts := msg.GetDeployEvent().GetTsUnixMs()
+		if minTS < 0 || ts < minTS {
+			minTS = ts
+		}
+		if ts > maxTS {
+			maxTS = ts
+		}
+	}
+	if minTS != 10 { // first 10 (0..9) dropped to make room for +10 over cap
+		t.Fatalf("oldest kept ts = %d, want 10 (oldest terminals dropped first)", minTS)
+	}
+	if maxTS != int64(maxDeployMsgs+9) {
+		t.Fatalf("newest ts = %d, want %d", maxTS, maxDeployMsgs+9)
+	}
+}

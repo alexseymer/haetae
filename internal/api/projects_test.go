@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -122,6 +121,18 @@ func TestProjectsAdminVsMember(t *testing.T) {
 	if s, _, _ := f.member.do(http.MethodPost, "/api/projects/"+pid+"/deploy", map[string]any{}); s != http.StatusForbidden {
 		t.Fatalf("member deploy: %d", s)
 	}
+	s, _, raw := f.admin.do(http.MethodPost, "/api/projects/"+pid+"/deploy", map[string]any{})
+	if s != http.StatusAccepted {
+		t.Fatalf("admin deploy: %d %s", s, raw)
+	}
+	var started map[string]any
+	if err := json.Unmarshal(raw, &started); err != nil {
+		t.Fatal(err)
+	}
+	did := started["deploy"].(map[string]any)["id"].(string)
+	if s, _, _ := f.member.do(http.MethodPost, "/api/deploys/"+did+"/rollback", map[string]any{}); s != http.StatusForbidden {
+		t.Fatalf("member rollback: %d", s)
+	}
 }
 
 func TestProjectsValidation(t *testing.T) {
@@ -193,20 +204,30 @@ func TestProjectsCrossOrg404(t *testing.T) {
 	f := newProjectsFixture(t, true)
 	proj := f.createProject(t, "")
 	pid := proj["id"].(string)
-	for _, path := range []string{
-		"/api/projects/" + pid,
-		"/api/projects/" + pid + "/deploys",
-		"/api/projects/" + pid + "/deploy",
+	s, _, raw := f.admin.do(http.MethodPost, "/api/projects/"+pid+"/deploy", map[string]any{})
+	if s != http.StatusAccepted {
+		t.Fatalf("admin deploy: %d %s", s, raw)
+	}
+	var started map[string]any
+	if err := json.Unmarshal(raw, &started); err != nil {
+		t.Fatal(err)
+	}
+	did := started["deploy"].(map[string]any)["id"].(string)
+
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/api/projects/" + pid, nil},
+		{http.MethodGet, "/api/projects/" + pid + "/deploys", nil},
+		{http.MethodPost, "/api/projects/" + pid + "/deploy", map[string]any{}},
+		{http.MethodPost, "/api/deploys/" + did + "/rollback", map[string]any{}},
+		{http.MethodPatch, "/api/projects/" + pid, map[string]any{"autoDeploy": true}},
+		{http.MethodDelete, "/api/projects/" + pid, map[string]any{}},
 	} {
-		method := http.MethodGet
-		var body any
-		if strings.HasSuffix(path, "/deploy") {
-			method = http.MethodPost
-			body = map[string]any{}
-		}
-		s, _, _ := f.other.do(method, path, body)
-		if s != http.StatusNotFound {
-			t.Fatalf("%s: %d", path, s)
+		got, _, _ := f.other.do(tc.method, tc.path, tc.body)
+		if got != http.StatusNotFound {
+			t.Fatalf("%s %s: %d", tc.method, tc.path, got)
 		}
 	}
 }

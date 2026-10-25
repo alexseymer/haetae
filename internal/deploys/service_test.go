@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/alexseymer/haetae/internal/deployphase"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/secrets"
 	"github.com/alexseymer/haetae/internal/store"
@@ -87,13 +88,35 @@ func (f *fakeStore) ListDeploys(_ context.Context, _, _ uuid.UUID, limit int) ([
 	return rev, nil
 }
 
-func (f *fakeStore) ApplyDeployEvent(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, store.DeployEvent) error {
-	return nil
+func (f *fakeStore) ApplyDeployEvent(_ context.Context, _, _, deployID uuid.UUID, ev store.DeployEvent) error {
+	for i, d := range f.deploys {
+		if d.ID != deployID {
+			continue
+		}
+		if !deployphase.Allowed(d.Status, ev.Phase) {
+			return nil
+		}
+		f.deploys[i].Status = ev.Phase
+		if deployphase.IsFinal(ev.Phase) {
+			f.running = nil
+		} else {
+			cp := f.deploys[i]
+			f.running = &cp
+		}
+		return nil
+	}
+	return store.ErrNotFound
 }
 
 func (f *fakeStore) MarkDeployFailed(_ context.Context, _, _, deployID uuid.UUID, _ string) error {
 	f.failed = append(f.failed, deployID)
 	f.running = nil
+	for i, d := range f.deploys {
+		if d.ID == deployID {
+			f.deploys[i].Status = store.DeployFailed
+			break
+		}
+	}
 	return nil
 }
 
@@ -334,15 +357,55 @@ func TestOnBranchUpdateCooldown(t *testing.T) {
 	}
 }
 
-func TestStartMarksFailedOnSendError(t *testing.T) {
+func TestStartMarksFailedOnNotDelivered(t *testing.T) {
 	p := store.Project{ID: uuid.New(), OrgID: uuid.New(), HostID: uuid.New(), Name: "shop", SourceKind: "inline", InlineCompose: "x"}
 	st := &fakeStore{}
-	svc := &Service{Store: st, Sender: &fakeSender{connected: true, err: errors.New("boom")}}
-	_, err := svc.Start(context.Background(), p.OrgID, p.HostID, p, store.TriggerManual, nil, StartOpts{})
-	if err == nil {
-		t.Fatal("expected error")
+	svc := &Service{Store: st, Sender: &fakeSender{connected: true, err: ErrNotDelivered}}
+	d, err := svc.Start(context.Background(), p.OrgID, p.HostID, p, store.TriggerManual, nil, StartOpts{})
+	if !errors.Is(err, ErrNotDelivered) {
+		t.Fatalf("got %v, want ErrNotDelivered", err)
 	}
-	if len(st.failed) != 1 {
-		t.Fatalf("failed marks = %v", st.failed)
+	if len(st.failed) != 1 || st.failed[0] != d.ID {
+		t.Fatalf("failed marks = %v, deploy %v", st.failed, d.ID)
+	}
+	if d.Status != store.DeployFailed {
+		t.Fatalf("status = %s, want failed", d.Status)
+	}
+}
+
+func TestStartAckTimeoutLeavesQueuedThenHealthy(t *testing.T) {
+	p := store.Project{ID: uuid.New(), OrgID: uuid.New(), HostID: uuid.New(), Name: "shop", SourceKind: "inline", InlineCompose: "x"}
+	st := &fakeStore{}
+	// Enqueued, then ack wait timed out — not ErrNotDelivered.
+	svc := &Service{Store: st, Sender: &fakeSender{connected: true, err: context.DeadlineExceeded}}
+	d, err := svc.Start(context.Background(), p.OrgID, p.HostID, p, store.TriggerManual, nil, StartOpts{})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if len(st.failed) != 0 {
+		t.Fatalf("must not MarkDeployFailed after enqueue timeout; failed=%v", st.failed)
+	}
+	if d.Status != store.DeployQueued {
+		t.Fatalf("status = %s, want queued", d.Status)
+	}
+	if _, err := svc.Start(context.Background(), p.OrgID, p.HostID, p, store.TriggerManual, nil, StartOpts{}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("second Start: %v, want ErrBusy", err)
+	}
+
+	ctx := context.Background()
+	for _, ph := range []string{
+		store.DeployFetching, store.DeployBuilding, store.DeployStarting,
+		store.DeployChecking, store.DeployHealthy,
+	} {
+		if err := st.ApplyDeployEvent(ctx, p.OrgID, p.HostID, d.ID, store.DeployEvent{Phase: ph}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := st.GetDeploy(ctx, p.OrgID, d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.DeployHealthy {
+		t.Fatalf("after agent events status = %s, want healthy", got.Status)
 	}
 }

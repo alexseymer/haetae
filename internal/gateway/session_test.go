@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/alexseymer/haetae/internal/deploys"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 )
 
@@ -42,8 +43,8 @@ func TestCallReturnsWhenSessionClosesWithFullOutbox(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if !errors.Is(err, errSessionClosed) {
-			t.Fatalf("err = %v, want errSessionClosed", err)
+		if !errors.Is(err, deploys.ErrNotDelivered) || !errors.Is(err, errSessionClosed) {
+			t.Fatalf("err = %v, want ErrNotDelivered wrapping errSessionClosed", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("call still blocked after session close")

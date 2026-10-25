@@ -3,12 +3,14 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/alexseymer/haetae/internal/deploys"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 )
 
@@ -106,11 +108,11 @@ func (s *session) call(ctx context.Context, cmd *agentv1.Command) (*agentv1.Comm
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return nil, errSessionClosed
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, errSessionClosed)
 	}
 	if len(s.pending) >= maxPending {
 		s.mu.Unlock()
-		return nil, errors.New("gateway: too many commands in flight for host")
+		return nil, fmt.Errorf("%w: gateway: too many commands in flight for host", deploys.ErrNotDelivered)
 	}
 	s.pending[id] = ch
 	s.mu.Unlock()
@@ -124,18 +126,21 @@ func (s *session) call(ctx context.Context, cmd *agentv1.Command) (*agentv1.Comm
 	select {
 	case s.outbox <- cmd:
 	case <-ch: // closed by close(): the session ended while the outbox was full
-		return nil, errSessionClosed
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, errSessionClosed)
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		// Timed out before enqueue — command never left the server.
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, ctx.Err())
 	}
 
 	select {
 	case res, ok := <-ch:
 		if !ok {
+			// Session closed after enqueue; agent may still have the command.
 			return nil, errSessionClosed
 		}
 		return res, nil
 	case <-ctx.Done():
+		// Ack wait timed out after enqueue — not ErrNotDelivered.
 		return nil, ctx.Err()
 	}
 }

@@ -22,6 +22,11 @@ var (
 	ErrHostOffline = errors.New("deploys: host is not connected")
 	ErrNotHealthy  = errors.New("deploys: target deploy is not healthy")
 	ErrSameDeploy  = errors.New("deploys: cannot roll back to the current deploy")
+	// ErrNotDelivered means the command never reached the agent session outbox
+	// (no session, enqueue failed, or session closed before enqueue). Only then
+	// may Start mark the deploy failed. A wait/ack timeout after enqueue must
+	// not be wrapped as ErrNotDelivered — leave the deploy queued.
+	ErrNotDelivered = errors.New("deploys: command not delivered to agent")
 )
 
 const (
@@ -45,6 +50,10 @@ type Store interface {
 }
 
 // Sender delivers commands to a connected agent.
+//
+// Send must return ErrNotDelivered when the command never reached the session
+// outbox. A timeout waiting for the agent's ack after a successful enqueue
+// must return a non-ErrNotDelivered error (typically context.DeadlineExceeded).
 type Sender interface {
 	Connected(hostID uuid.UUID) bool
 	Send(ctx context.Context, hostID uuid.UUID, cmd *agentv1.Command) (*agentv1.CommandResult, error)
@@ -117,10 +126,16 @@ func (s *Service) Start(ctx context.Context, orgID, hostID uuid.UUID, project st
 	defer cancel()
 	res, err := s.Sender.Send(sendCtx, hostID, cmd)
 	if err != nil {
-		_ = s.Store.MarkDeployFailed(ctx, orgID, hostID, d.ID, err.Error())
-		d.Status = store.DeployFailed
-		d.Error = err.Error()
-		return d, fmt.Errorf("deploys: send: %w", err)
+		// Only mark failed when the command never left the server. If it was
+		// already on the session outbox, leave queued and let agent events or
+		// ExpireStaleDeploys finish.
+		if errors.Is(err, ErrNotDelivered) {
+			_ = s.Store.MarkDeployFailed(ctx, orgID, hostID, d.ID, err.Error())
+			d.Status = store.DeployFailed
+			d.Error = err.Error()
+			return d, fmt.Errorf("deploys: send: %w", err)
+		}
+		return d, nil
 	}
 	if res != nil && res.GetError() != "" {
 		_ = s.Store.MarkDeployFailed(ctx, orgID, hostID, d.ID, res.GetError())
