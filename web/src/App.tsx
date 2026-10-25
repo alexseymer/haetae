@@ -3,9 +3,12 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { api, setUnauthorizedHandler } from "./api/client";
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
+import { ChatPage } from "./pages/Chat";
 import { DeployPage } from "./pages/Deploy";
 import { HostPage } from "./pages/Host";
 import { HostsPage } from "./pages/Hosts";
+import { IncidentDetailPage } from "./pages/IncidentDetail";
+import { IncidentsPage } from "./pages/Incidents";
 import { LoginPage } from "./pages/Login";
 import { ProjectPage } from "./pages/Project";
 import { SettingsPage } from "./pages/Settings";
@@ -113,6 +116,9 @@ export function App() {
       >
         <Route path="/" element={<HostsPage />} />
         <Route path="/hosts/:id" element={<HostPage />} />
+        <Route path="/incidents" element={<IncidentsPage />} />
+        <Route path="/incidents/:id" element={<IncidentDetailPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="/projects/:id" element={<ProjectPage />} />
         <Route path="/deploys/:id" element={<DeployPage />} />
         <Route path="/settings" element={<SettingsPage />} />

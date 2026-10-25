@@ -19,6 +19,7 @@ import (
 
 	"github.com/alexseymer/haetae/internal/api"
 	"github.com/alexseymer/haetae/internal/auth"
+	"github.com/alexseymer/haetae/internal/chat"
 	"github.com/alexseymer/haetae/internal/deploys"
 	"github.com/alexseymer/haetae/internal/gateway"
 	"github.com/alexseymer/haetae/internal/installer"
@@ -243,6 +244,12 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	chatSvc, err := startChat(ctx, st, cfg.dataDir, log)
+	if err != nil {
+		return err
+	}
+	go server.RunBriefing(ctx, st, chatSvc, log.With("component", "briefing"))
+	go server.RunAlertsEvaluator(ctx, st, chatSvc, log.With("component", "alerts"))
 	gw := gateway.New(st, ca, gateway.Config{}, log)
 	deploySvc := &deploys.Service{Store: st, Sender: gw, Box: box}
 	gw.SetDeploys(deploySvc)
@@ -252,7 +259,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 	log.Info("agent gateway listening", "addr", gs.Addr(), "url", cfg.gatewayURL, "ca_pin", pki.Fingerprint(ca.DER))
 
-	ws, err := startWeb(ctx, cfg, st, ca, log, box, deploySvc, gw)
+	ws, err := startWeb(ctx, cfg, st, ca, log, box, deploySvc, gw, chatSvc)
 	if err != nil {
 		_ = gs.Close()
 		return err
@@ -275,7 +282,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 // creates a one-time setup code, logs it and keeps it in DATA_DIR/setup-code
 // (readable only by the server's user), so only someone with access to the
 // server can create the first administrator.
-func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger, box *secrets.Box, deploySvc *deploys.Service, gw *gateway.Gateway) (*server.WebServer, error) {
+func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger, box *secrets.Box, deploySvc *deploys.Service, gw *gateway.Gateway, chatSvc *chat.Service) (*server.WebServer, error) {
 	var (
 		cert   tls.Certificate
 		webPin string
@@ -327,6 +334,7 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		Deploys:        deploySvc,
 		Secrets:        box,
 		RefreshWatch:   gw.RefreshWatch,
+		Chat:           chatSvc,
 		OnSetupDone: func() {
 			_ = os.Remove(codeFile)
 		},

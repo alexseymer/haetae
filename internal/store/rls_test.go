@@ -71,7 +71,60 @@ func seedTwoOrgs(t *testing.T) twoOrgs {
 	if err := s.Rollup(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	seedM6TenantRows(t, s, o.orgA, o.hostA, "a")
+	seedM6TenantRows(t, s, o.orgB, o.hostB, "b")
 	return o
+}
+
+func seedM6TenantRows(t *testing.T, s *store.Store, org store.Org, host store.Host, tag string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := s.UpsertOrgSettings(ctx, store.DefaultOrgSettings(org.ID)); err != nil {
+		t.Fatal(err)
+	}
+	inc, err := s.InsertIncidentForTest(ctx, store.Incident{
+		OrgID: org.ID, HostID: host.ID, Title: tag + "-inc",
+		Severity: store.SeverityHigh, State: "open",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertAlertForTest(ctx, store.Alert{
+		OrgID: org.ID, HostID: host.ID, IncidentID: inc.ID,
+		Rule: "oom_kill", Severity: store.SeverityHigh, State: "firing",
+		DedupeKey: "oom|" + tag, Summary: "oom",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(time.Hour)
+	if _, err := s.CreateMute(ctx, store.Mute{OrgID: org.ID, HostID: &host.ID, Rule: "oom_kill", Until: until}); err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.UserByEmail(ctx, tag+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateChatAccount(ctx, org.ID, u.ID, store.ChannelTelegram, tag+"-ext"); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := s.EnqueueChatMessage(ctx, store.ChatMessage{
+		OrgID: org.ID, Channel: store.ChannelWeb, Kind: store.KindText, Body: tag,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateActionRefs(ctx, org.ID, msg.ID, []string{"ack"}, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertAlertEvalState(ctx, store.AlertEvalState{
+		OrgID: org.ID, Kind: store.EvalKindFalseStreak, Key: "k-" + tag, FalseStreak: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+	if _, err := s.BriefingTryClaim(ctx, org.ID, day); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // tenantTables are all tables holding tenant data; each must show an
@@ -80,6 +133,9 @@ var tenantTables = []string{
 	"hosts", "enrollment_tokens", "containers", "host_metrics", "container_metrics",
 	"host_metrics_1m", "host_metrics_1h", "container_metrics_1m", "container_metrics_1h",
 	"log_templates", "log_events", "log_stats", "users", "orgs",
+	// M6 (+ 0008 hardening). chat_link_codes stays server-role-only (no SELECT grant).
+	"org_settings", "incidents", "alerts", "mutes", "chat_accounts", "chat_messages",
+	"briefings", "chat_action_refs", "alert_eval_state",
 }
 
 // A query with no WHERE clause at all, run as the scoped role, returns only

@@ -1,4 +1,22 @@
 import type {
+  AlertSettings,
+  ChatAccountsResponse,
+  ChatActionRequest,
+  ChatActionResponse,
+  ChatChannelsResponse,
+  ChatLinkRequest,
+  ChatLinkResponse,
+  ChatMessagesQuery,
+  ChatMessagesResponse,
+  CreateMuteRequest,
+  IncidentDetailResponse,
+  IncidentsQuery,
+  IncidentsResponse,
+  MutesResponse,
+  PostChatMessageRequest,
+  PostChatMessageResponse,
+} from "./m6Types";
+import type {
   ContainersResponse,
   CreateProjectRequest,
   CreateUserRequest,
@@ -219,7 +237,67 @@ export const api = {
       method: "POST",
       body: {},
     }),
+
+  incidents: (query: IncidentsQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.state) params.set("state", query.state);
+    if (query.hostId) params.set("hostId", query.hostId);
+    if (query.limit != null) params.set("limit", String(query.limit));
+    const qs = params.toString();
+    return request<IncidentsResponse>(`/api/incidents${qs ? `?${qs}` : ""}`);
+  },
+
+  incident: (id: string) =>
+    request<IncidentDetailResponse>(`/api/incidents/${encodeURIComponent(id)}`),
+
+  alertSettings: () => request<AlertSettings>("/api/settings/alerts"),
+
+  putAlertSettings: (body: AlertSettings) =>
+    request<AlertSettings>("/api/settings/alerts", { method: "PUT", body }),
+
+  mutes: () => request<MutesResponse>("/api/mutes"),
+
+  createMute: (body: CreateMuteRequest) =>
+    request<MuteLike>("/api/mutes", { method: "POST", body }),
+
+  deleteMute: (id: string) =>
+    request<void>(`/api/mutes/${encodeURIComponent(id)}`, { method: "DELETE", body: {} }),
+
+  chatChannels: () => request<ChatChannelsResponse>("/api/chat/channels"),
+
+  chatMessages: (query: ChatMessagesQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.after) params.set("after", query.after);
+    if (query.limit != null) params.set("limit", String(query.limit));
+    const qs = params.toString();
+    return request<ChatMessagesResponse>(`/api/chat/messages${qs ? `?${qs}` : ""}`);
+  },
+
+  postChatMessage: (body: PostChatMessageRequest) =>
+    request<PostChatMessageResponse>("/api/chat/messages", { method: "POST", body }),
+
+  chatAction: (body: ChatActionRequest) =>
+    request<ChatActionResponse>("/api/chat/actions", { method: "POST", body }),
+
+  chatAccounts: () => request<ChatAccountsResponse>("/api/chat/accounts"),
+
+  deleteChatAccount: (id: string) =>
+    request<void>(`/api/chat/accounts/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      body: {},
+    }),
+
+  chatLink: (body: ChatLinkRequest) =>
+    request<ChatLinkResponse>("/api/chat/link", { method: "POST", body }),
 };
+
+interface MuteLike {
+  id: string;
+  hostId: string | null;
+  rule: string;
+  until: string;
+  createdAt: string;
+}
 
 interface UserLike {
   id: string;

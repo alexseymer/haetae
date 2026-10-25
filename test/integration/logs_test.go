@@ -75,6 +75,10 @@ func TestLogPipelineEndToEnd(t *testing.T) {
 	agentStart := time.Now()
 	hostID, _ := startLogAgent(t, e, "logs-host", agent.LogConfig{
 		FlushEvery: 500 * time.Millisecond, MergeWindow: time.Second,
+		// Fail-closed redaction times out on a loaded shared runner at the
+		// 500 ms default (race detector, parallel packages); the budget is
+		// not what this test measures.
+		RedactionBudget: 5 * time.Second,
 	})
 	ctx := context.Background()
 

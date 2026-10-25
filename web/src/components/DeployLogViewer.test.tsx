@@ -122,7 +122,7 @@ describe("DeployLogViewer", () => {
     );
     render(<DeployLogViewer deployId="d1" />);
     const log = await screen.findByRole("log");
-    expect(log).toHaveTextContent("red");
+    await waitFor(() => expect(log).toHaveTextContent("red"));
     expect(log).toHaveTextContent("[output withheld: redaction failed]");
     expect(log.textContent).not.toContain("\u001b");
   });

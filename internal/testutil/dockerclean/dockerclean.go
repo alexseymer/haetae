@@ -1,4 +1,4 @@
-//go:build deploy || e2e_deploy
+//go:build deploy || e2e_deploy || e2e_alerts
 
 // Package dockerclean removes leftover Docker resources from deploy integration
 // tests and fails the package if any remain after TestMain.

@@ -12,9 +12,10 @@ const modules = import.meta.glob(["./**/*.tsx", "!./**/*.test.tsx"], {
 describe("navigation targets", () => {
   it("are constants or host ids only", () => {
     const allowed = [
-      /^"\/[a-z-]*"$/, // "/login", "/", "/setup", "/settings"
+      /^"\/[a-z-]*"$/, // "/login", "/", "/setup", "/settings", "/incidents", "/chat"
       /^`\/hosts\/\$\{[a-z]+\.id\}`$/, // `/hosts/${h.id}`
-      /^`\/hosts\/\$\{[a-z]+\.hostId\}`$/, // `/hosts/${project.hostId}`
+      /^`\/hosts\/\$\{[a-z]+\.hostId\}`$/, // `/hosts/${project.hostId}` / incident.hostId
+      /^`\/incidents\/\$\{[a-z]+\.id\}`$/, // `/incidents/${inc.id}`
       /^`\/projects\/\$\{[a-z]+\.id\}`$/, // `/projects/${p.id}`
       /^`\/projects\/\$\{[a-z]+\.projectId\}`$/, // `/projects/${deploy.projectId}`
       /^`\/deploys\/\$\{[a-z]+\.id\}`$/, // `/deploys/${d.id}`

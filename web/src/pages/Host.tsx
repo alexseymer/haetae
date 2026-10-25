@@ -64,6 +64,7 @@ export function HostPage() {
 
   const [host, setHost] = useState<HostSummary | null>(null);
   const [logStats, setLogStats] = useState<LogStats | null>(null);
+  const [openIncidentCount, setOpenIncidentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [rangeId, setRangeId] = useState("1h");
   const rangeMs = RANGES.find((r) => r.id === rangeId)?.ms ?? 3600_000;
@@ -111,6 +112,15 @@ export function HostPage() {
     } catch (err) {
       if (gen !== hostGenRef.current || !mountedRef.current) return;
       setError(err instanceof ApiError ? err.message : "Failed to load host");
+      return;
+    }
+    try {
+      const incs = await api.incidents({ state: "open", hostId: id, limit: 10 });
+      if (gen !== hostGenRef.current || !mountedRef.current) return;
+      setOpenIncidentCount(incs.incidents.length);
+    } catch {
+      if (gen !== hostGenRef.current || !mountedRef.current) return;
+      setOpenIncidentCount(0);
     }
   }, [id]);
 
@@ -296,6 +306,12 @@ export function HostPage() {
           <div className="row" style={{ marginBottom: "0.5rem" }}>
             <h1 style={{ margin: 0 }}>{host.name}</h1>
             <OnlineBadge online={host.connected} />
+            {openIncidentCount > 0 ? (
+              <Link to="/incidents" className="incident-count-badge">
+                {openIncidentCount} open{" "}
+                {openIncidentCount === 1 ? "incident" : "incidents"}
+              </Link>
+            ) : null}
           </div>
           <p className="muted">
             {host.hostname} · {host.os} / {host.kernel} / {host.arch} · Docker{" "}
