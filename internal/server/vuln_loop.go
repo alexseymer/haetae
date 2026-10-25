@@ -22,16 +22,25 @@ type VulnLoopConfig struct {
 
 // VulnConfigFromEnv reads HAETAE_VULN_DB_URL and HAETAE_VULN_DB_DIR.
 // Empty URL disables downloads (S11). "off" also disables.
+// HAETAE_VULN_CHECK_EVERY is test-only and ignored unless HAETAE_TEST_HOOKS=1.
 func VulnConfigFromEnv(dataDir string) VulnLoopConfig {
 	url := strings.TrimSpace(os.Getenv("HAETAE_VULN_DB_URL"))
 	dir := strings.TrimSpace(os.Getenv("HAETAE_VULN_DB_DIR"))
 	if dir == "" {
 		dir = filepath.Join(dataDir, "vuln-db")
 	}
+	every := 10 * time.Minute
+	if os.Getenv("HAETAE_TEST_HOOKS") == "1" {
+		if v := strings.TrimSpace(os.Getenv("HAETAE_VULN_CHECK_EVERY")); v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				every = d
+			}
+		}
+	}
 	return VulnLoopConfig{
 		ListingURL: url,
 		DataDir:    dir,
-		CheckEvery: 10 * time.Minute,
+		CheckEvery: every,
 	}
 }
 

@@ -108,6 +108,14 @@ func (l *Loop) maybeScan(ctx context.Context, u store.ImageUpdate) {
 	if l.Sender == nil || u.CandidateDigest == "" {
 		return
 	}
+	runningFindingsID := u.RunningDigest
+	if rs, ok := l.Store.(interface {
+		LatestScanForContainer(context.Context, uuid.UUID, uuid.UUID, string) (store.Scan, error)
+	}); ok {
+		if sc, err := rs.LatestScanForContainer(ctx, u.OrgID, u.HostID, u.ContainerID); err == nil && sc.Status == store.ScanOK && sc.ImageID != "" {
+			runningFindingsID = sc.ImageID
+		}
+	}
 	in := Input{
 		RunningDigest:    u.RunningDigest,
 		CandidateDigest:  u.CandidateDigest,
@@ -115,7 +123,7 @@ func (l *Loop) maybeScan(ctx context.Context, u store.ImageUpdate) {
 		Status:           "ok",
 		Now:              time.Now(),
 		OrgID:            u.OrgID.String(),
-		RunningImageID:   u.RunningDigest,
+		RunningImageID:   runningFindingsID,
 		Lookup:           l.Lookup,
 	}
 	dec := Decide(in)
@@ -165,11 +173,17 @@ func timeOrZero(t *time.Time) time.Time {
 }
 
 // ApplyCandidate runs Decide and returns the ImageUpdate to store.
-func ApplyCandidate(orgID, hostID uuid.UUID, c *agentv1.ImageCandidate, lookup FindingsLookup, now time.Time) store.ImageUpdate {
+// findingsImageID is the SBOM image id used for RunningFindings (typically the
+// container's latest ok scan image_id). When empty, RunningDigest is used.
+func ApplyCandidate(orgID, hostID uuid.UUID, c *agentv1.ImageCandidate, lookup FindingsLookup, now time.Time, findingsImageID string) store.ImageUpdate {
 	var created *time.Time
 	if c.GetCandidateCreatedUnixMs() > 0 {
 		t := time.UnixMilli(c.GetCandidateCreatedUnixMs()).UTC()
 		created = &t
+	}
+	runningFindingsID := findingsImageID
+	if runningFindingsID == "" {
+		runningFindingsID = c.GetRunningDigest()
 	}
 	in := Input{
 		RunningDigest:    c.GetRunningDigest(),
@@ -179,7 +193,7 @@ func ApplyCandidate(orgID, hostID uuid.UUID, c *agentv1.ImageCandidate, lookup F
 		Error:            c.GetError(),
 		Now:              now,
 		OrgID:            orgID.String(),
-		RunningImageID:   c.GetRunningDigest(),
+		RunningImageID:   runningFindingsID,
 		Lookup:           lookup,
 	}
 	dec := Decide(in)

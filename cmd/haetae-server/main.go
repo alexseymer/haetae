@@ -27,6 +27,7 @@ import (
 	"github.com/alexseymer/haetae/internal/secrets"
 	"github.com/alexseymer/haetae/internal/server"
 	"github.com/alexseymer/haetae/internal/store"
+	"github.com/alexseymer/haetae/internal/updates"
 	"github.com/alexseymer/haetae/internal/version"
 	"github.com/alexseymer/haetae/internal/webui"
 )
@@ -257,6 +258,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	gw := gateway.New(st, ca, gateway.Config{}, log)
 	matchWorker := gateway.NewMatchWorker(ctx, vulnMgr, log.With("component", "sbom-match"), 2)
 	gw.SetSbomHandlers(st, matchWorker)
+	gw.SetFindingsLookup(updates.StoreFindings{Store: st})
 	deploySvc := &deploys.Service{Store: st, Sender: gw, Box: box}
 	gw.SetDeploys(deploySvc)
 	go server.RunUpdatesLoop(ctx, st, gw, log.With("component", "updates"))

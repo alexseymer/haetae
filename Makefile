@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X github.com/alexseymer/haetae/internal/version.Version=$(VERS
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
 
-.PHONY: build test test-integration test-e2e test-deploy test-alerts test-load test-selfhost web dist docker-image lint vuln fmt generate clean
+.PHONY: build test test-integration test-e2e test-deploy test-alerts test-security test-load test-selfhost bench-m7 web dist docker-image lint vuln fmt generate clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
@@ -30,6 +30,10 @@ test-deploy:
 test-alerts:
 	bash -o pipefail -c "go test -count=1 -tags e2e_alerts -timeout 20m -v ./test/alerts/ 2>&1 | tee alerts-e2e.log | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
 
+# M7 security acceptance: real server + agent + inventory + crafted Grype DB (needs Docker).
+test-security:
+	bash -o pipefail -c "go test -count=1 -tags e2e_security -timeout 40m -v ./test/security/ 2>&1 | tee security-e2e.log | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
+
 # Agent memory under load (spec S10): 20 noisy containers, RSS sampled every second.
 # HAETAE_LOAD_DURATION overrides the default 2m.
 # pipefail: a failing go test must fail the target even though grep is last.
@@ -39,6 +43,12 @@ test-load:
 # Self-hosted install (spec S11 / M4): needs Docker. Builds the image once inside the test.
 test-selfhost:
 	bash -o pipefail -c "go test -count=1 -tags selfhost -timeout 30m -v ./test/selfhost/ 2>&1 | tee selfhost-full.log | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
+
+# M7 ADR risks 2–3 + agent RSS: sequential Docker/Go benches (see bench/m7/README.md).
+# Needs Docker, ~4 GB+ free disk for transient pulls; writes bench/m7/results (gitignored).
+bench-m7:
+	bash bench/m7/run-all.sh
+
 # Build the web UI into internal/webui/app for embedding.
 web:
 	cd web && npm ci && npm run build

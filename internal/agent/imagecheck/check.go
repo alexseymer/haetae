@@ -25,6 +25,8 @@ type Checker struct {
 	Now      func() time.Time
 	Interval time.Duration // default 24h
 	Jitter   time.Duration // default 1h
+	// FirstDelay is the settle time before the first Check (default 30s).
+	FirstDelay time.Duration
 }
 
 // New returns a Checker.
@@ -45,8 +47,12 @@ func New(docker *dockerapi.Client, emit Emitter, log *slog.Logger) *Checker {
 
 // Run emits candidates daily (with jitter) until ctx ends.
 func (c *Checker) Run(ctx context.Context) {
+	first := c.FirstDelay
+	if first <= 0 {
+		first = 30 * time.Second
+	}
 	// First run after a short delay so the agent settles.
-	if !sleepCtx(ctx, 30*time.Second) {
+	if !sleepCtx(ctx, first) {
 		return
 	}
 	c.Check(ctx)

@@ -155,7 +155,15 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		Interval:     *interval,
 	}, out, log.With("component", "monitor"))
 	logs := agent.NewLogManager(agent.LogConfig{}, mon.Docker(), out, log.With("component", "logs"))
-	scanner := scan.NewScanner(scan.Config{DockerSocket: *dockerSocket}, mon.Docker(), nil, out, log.With("component", "scan"))
+	scanCfg := scan.Config{DockerSocket: *dockerSocket}
+	// HAETAE_SCAN_DAILY_EVERY is test-only; ignored unless HAETAE_TEST_HOOKS=1.
+	if os.Getenv("HAETAE_TEST_HOOKS") == "1" {
+		if d := parseEnvDuration("HAETAE_SCAN_DAILY_EVERY"); d > 0 {
+			scanCfg.DailyEvery = d
+			scanCfg.RandJitter = func(time.Duration) time.Duration { return 0 }
+		}
+	}
+	scanner := scan.NewScanner(scanCfg, mon.Docker(), nil, out, log.With("component", "scan"))
 	caddyContainer := caddyName
 	if caddyContainer == "" {
 		caddyContainer = "haetae-caddy"

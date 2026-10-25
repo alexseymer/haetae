@@ -16,6 +16,7 @@ func RunUpdatesLoop(ctx context.Context, st *store.Store, sender updates.Sender,
 		log = slog.Default()
 	}
 	l := updates.NewLoop(st, sender, log)
+	l.Lookup = updates.StoreFindings{Store: st}
 	l.Every = time.Minute
 	l.Run(ctx)
 }

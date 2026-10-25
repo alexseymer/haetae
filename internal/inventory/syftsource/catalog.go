@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/cataloging"
 	"github.com/anchore/syft/syft/sbom"
@@ -68,6 +69,10 @@ func Catalog(ctx context.Context, kind SourceKind, input, dockerSocket, tempDir 
 		srcCfg = srcCfg.WithSources("docker")
 	case SourceRegistry:
 		srcCfg = srcCfg.WithSources("registry")
+		// Loopback registries (Docker insecure 127.0.0.0/8) speak HTTP.
+		if registryIsLoopback(input) {
+			srcCfg = srcCfg.WithRegistryOptions(&image.RegistryOptions{InsecureUseHTTP: true})
+		}
 	case SourceDir:
 		srcCfg = srcCfg.WithSources("dir")
 	default:
@@ -143,6 +148,25 @@ func fromSBOM(doc *sbom.SBOM, src source.Source) *Result {
 func toolVersion() string {
 	cfg := syft.DefaultCreateSBOMConfig()
 	return cfg.ToolVersion
+}
+
+// registryIsLoopback reports whether ref points at localhost / 127.0.0.1 / ::1
+// (with or without a port), so InsecureUseHTTP can be enabled for local registries.
+func registryIsLoopback(ref string) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return false
+	}
+	// Strip digest / tag noise: host is before the first '/'.
+	host := ref
+	if i := strings.Index(ref, "/"); i >= 0 {
+		host = ref[:i]
+	}
+	if i := strings.LastIndex(host, ":"); i > 0 && !strings.Contains(host, "]") {
+		host = host[:i]
+	}
+	host = strings.Trim(host, "[]")
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func setEnv(k, v string) (prev string, had bool) {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/alexseymer/haetae/internal/agent"
 	"github.com/alexseymer/haetae/internal/agent/conntrack"
@@ -32,6 +33,16 @@ func startSecurity(ctx context.Context, docker *dockerapi.Client, out *agent.Out
 	sf.Domains = func() []string { return readIngressDomains(stateDir) }
 	sf.Conntrack = ct
 	img := imagecheck.New(docker, out, log.With("component", "imagecheck"))
+	// HAETAE_IMAGECHECK_EVERY is test-only; ignored unless HAETAE_TEST_HOOKS=1.
+	if os.Getenv("HAETAE_TEST_HOOKS") == "1" {
+		if v := os.Getenv("HAETAE_IMAGECHECK_EVERY"); v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				img.Interval = d
+				img.Jitter = 0
+				img.FirstDelay = 2 * time.Second
+			}
+		}
+	}
 
 	go sf.Run(ctx)
 	go ct.Run(ctx)

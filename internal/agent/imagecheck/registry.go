@@ -36,7 +36,10 @@ func (c *RegistryClient) client() *http.Client {
 		Timeout: defaultTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if req.URL.Scheme != "https" {
-				return errors.New("registry: refusing redirect to non-HTTPS")
+				// Allow http only when the redirect target is loopback (local registry).
+				if req.URL.Hostname() != "localhost" && req.URL.Hostname() != "127.0.0.1" && req.URL.Hostname() != "::1" {
+					return errors.New("registry: refusing redirect to non-HTTPS")
+				}
 			}
 			if len(via) >= 5 {
 				return errors.New("registry: too many redirects")
@@ -69,7 +72,8 @@ func (c *RegistryClient) Lookup(ctx context.Context, ref string) (ManifestInfo, 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout())
 	defer cancel()
 
-	manifestURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, repo, url.PathEscape(tag))
+	scheme := registryScheme(host)
+	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", scheme, host, repo, url.PathEscape(tag))
 	body, digest, contentType, err := c.getManifest(ctx, manifestURL, host, repo)
 	if err != nil {
 		return ManifestInfo{}, err
@@ -81,7 +85,7 @@ func (c *RegistryClient) Lookup(ctx context.Context, ref string) (ManifestInfo, 
 		if err != nil {
 			return ManifestInfo{}, err
 		}
-		childURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, repo, d)
+		childURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", scheme, host, repo, d)
 		body, digest, contentType, err = c.getManifest(ctx, childURL, host, repo)
 		if err != nil {
 			return ManifestInfo{}, err
@@ -93,11 +97,26 @@ func (c *RegistryClient) Lookup(ctx context.Context, ref string) (ManifestInfo, 
 		sum := sha256.Sum256(body)
 		digest = "sha256:" + hex.EncodeToString(sum[:])
 	}
-	created, err := configCreated(ctx, c, host, repo, body)
+	created, err := configCreated(ctx, c, scheme, host, repo, body)
 	if err != nil {
 		return ManifestInfo{Digest: digest}, nil // digest still useful
 	}
 	return ManifestInfo{Digest: digest, CreatedAt: created}, nil
+}
+
+// registryScheme returns http for loopback registries (Docker's default
+// insecure CIDR 127.0.0.0/8 and localhost), otherwise https.
+func registryScheme(host string) string {
+	h := host
+	if i := strings.LastIndex(host, ":"); i > 0 && !strings.Contains(host, "]") {
+		// host:port (not an IPv6 literal)
+		h = host[:i]
+	}
+	h = strings.Trim(h, "[]")
+	if h == "localhost" || h == "127.0.0.1" || h == "::1" {
+		return "http"
+	}
+	return "https"
 }
 
 func (c *RegistryClient) getManifest(ctx context.Context, rawURL, host, repo string) (body []byte, digest, contentType string, err error) {
@@ -339,7 +358,7 @@ func selectPlatform(body []byte) (digest string, err error) {
 	return "", errors.New("registry: empty index")
 }
 
-func configCreated(ctx context.Context, c *RegistryClient, host, repo string, manifest []byte) (time.Time, error) {
+func configCreated(ctx context.Context, c *RegistryClient, scheme, host, repo string, manifest []byte) (time.Time, error) {
 	var man struct {
 		Config struct {
 			Digest string `json:"digest"`
@@ -348,7 +367,10 @@ func configCreated(ctx context.Context, c *RegistryClient, host, repo string, ma
 	if err := json.Unmarshal(manifest, &man); err != nil || man.Config.Digest == "" {
 		return time.Time{}, errors.New("registry: no config digest")
 	}
-	blobURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", host, repo, man.Config.Digest)
+	if scheme == "" {
+		scheme = registryScheme(host)
+	}
+	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", scheme, host, repo, man.Config.Digest)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, blobURL, nil)
 	if err != nil {
 		return time.Time{}, err

@@ -208,7 +208,15 @@ func (g *Gateway) handleImageCandidates(ctx context.Context, s *session, c *agen
 		cand.Status = status
 		cand.Error = clipLen(cand.GetError(), maxDetailLen)
 
-		u := updates.ApplyCandidate(s.orgID, s.hostID, cand, g.findings, now)
+		findingsImageID := ""
+		if full, ok := g.store.(interface {
+			LatestScanForContainer(context.Context, uuid.UUID, uuid.UUID, string) (store.Scan, error)
+		}); ok {
+			if sc, err := full.LatestScanForContainer(ctx, s.orgID, s.hostID, cid); err == nil && sc.Status == store.ScanOK && sc.ImageID != "" {
+				findingsImageID = sc.ImageID
+			}
+		}
+		u := updates.ApplyCandidate(s.orgID, s.hostID, cand, g.findings, now, findingsImageID)
 		if err := st.UpsertImageUpdate(ctx, u); err != nil {
 			g.log.Error("store image update", "host_id", s.hostID, "err", err)
 		}

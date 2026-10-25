@@ -1,4 +1,4 @@
-//go:build deploy || e2e_deploy || e2e_alerts
+//go:build deploy || e2e_deploy || e2e_alerts || e2e_security
 
 // Package dockerclean removes leftover Docker resources from deploy integration
 // tests and fails the package if any remain after TestMain.
@@ -54,10 +54,13 @@ func ForceRemove(prefixes ...string) error {
 	for _, name := range listVolumes(ctx, prefixes) {
 		setErr(docker(ctx, "volume", "rm", "-f", name))
 	}
+	for _, ref := range listImages(ctx, prefixes) {
+		setErr(docker(ctx, "image", "rm", "-f", ref))
+	}
 	return first
 }
 
-// List returns names of containers, networks, and volumes matching prefixes.
+// List returns names of containers, networks, volumes, and images matching prefixes.
 func List(prefixes ...string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -65,6 +68,7 @@ func List(prefixes ...string) []string {
 	out = append(out, listContainers(ctx, prefixes)...)
 	out = append(out, listNetworks(ctx, prefixes)...)
 	out = append(out, listVolumes(ctx, prefixes)...)
+	out = append(out, listImages(ctx, prefixes)...)
 	return out
 }
 
@@ -87,6 +91,11 @@ func listNetworks(ctx context.Context, prefixes []string) []string {
 
 func listVolumes(ctx context.Context, prefixes []string) []string {
 	return filterNames(dockerLines(ctx, "volume", "ls", "--format", "{{.Name}}"), prefixes)
+}
+
+func listImages(ctx context.Context, prefixes []string) []string {
+	// repository:tag lines; also match repository-only when tag is empty.
+	return filterNames(dockerLines(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}"), prefixes)
 }
 
 func dockerLines(ctx context.Context, args ...string) []string {

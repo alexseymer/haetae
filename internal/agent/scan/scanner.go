@@ -209,7 +209,8 @@ func (s *Scanner) syncRunning(ctx context.Context, running map[string]string) {
 }
 
 // OnDeployHealthy enqueues inventories for currently running containers of project
-// (or all running when project is empty).
+// (or all running when project is empty). Deploy scans are forced so a concurrent
+// start-triggered inventory of the same image does not drop the deploy row.
 func (s *Scanner) OnDeployHealthy(project string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -219,7 +220,7 @@ func (s *Scanner) OnDeployHealthy(project string) {
 			// labels which we may not have here. Enqueue all running for deploy.
 			_ = project
 		}
-		s.enqueueLocked(job{
+		s.enqueueForcedLocked(job{
 			scanID:      uuid.NewString(),
 			containerID: info.ID,
 			image:       info.Image,
@@ -234,7 +235,8 @@ func (s *Scanner) enqueueDaily() {
 	defer s.mu.Unlock()
 	s.lastDaily = s.cfg.Now()
 	for _, info := range s.running {
-		s.enqueueLocked(job{
+		// Forced so a concurrent start/forced job does not drop the daily row.
+		s.enqueueForcedLocked(job{
 			scanID:      uuid.NewString(),
 			containerID: info.ID,
 			image:       info.Image,

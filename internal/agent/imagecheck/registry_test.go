@@ -201,7 +201,7 @@ func (c *RegistryClient) lookupHost(ctx context.Context, host, repo, tag string)
 	if digest == "" {
 		digest = "sha256:" + sha256hex(body)
 	}
-	created, _ := configCreated(ctx, c, host, repo, body)
+	created, _ := configCreated(ctx, c, "https", host, repo, body)
 	return ManifestInfo{Digest: digest, CreatedAt: created}, nil
 }
 
