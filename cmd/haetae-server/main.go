@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/alexseymer/haetae/internal/api"
 	"github.com/alexseymer/haetae/internal/auth"
 	"github.com/alexseymer/haetae/internal/gateway"
+	"github.com/alexseymer/haetae/internal/installer"
 	"github.com/alexseymer/haetae/internal/pki"
 	"github.com/alexseymer/haetae/internal/server"
 	"github.com/alexseymer/haetae/internal/store"
@@ -28,12 +30,14 @@ import (
 
 const usage = `usage:
   haetae-server serve                     run the control plane
+  haetae-server setup-code                print the first-run setup code
   haetae-server token create --name NAME  create a single-use enrollment token
   haetae-server --version
 
 Configuration (environment):
   HAETAE_DATABASE_URL    PostgreSQL URL (required)
   HAETAE_DATA_DIR        state directory, holds the agent CA (default /var/lib/haetae)
+  HAETAE_DIST_DIR        directory of agent binaries served at /download/ (default /usr/share/haetae/dist)
   HAETAE_GATEWAY_ADDR    agent gateway listen address (default :8443)
   HAETAE_GATEWAY_URL     URL agents dial (default https://<hostname>:8443)
   HAETAE_GATEWAY_NAMES   extra comma-separated names for the gateway and web certificates
@@ -148,6 +152,10 @@ func main() {
 	switch args := flag.Args(); {
 	case len(args) == 1 && args[0] == "serve":
 		err = serve(ctx, log)
+	case len(args) == 1 && args[0] == "setup-code":
+		err = printSetupCode()
+	case len(args) == 1 && args[0] == "healthcheck":
+		err = healthcheck()
 	case len(args) >= 2 && args[0] == "token" && args[1] == "create":
 		err = tokenCreate(ctx, args[2:])
 	default:
@@ -158,6 +166,45 @@ func main() {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
+}
+
+// printSetupCode writes DATA_DIR/setup-code to stdout. The file is only present
+// while first-run setup is still required.
+func printSetupCode() error {
+	dataDir := envOr("HAETAE_DATA_DIR", "/var/lib/haetae")
+	b, err := os.ReadFile(filepath.Join(dataDir, "setup-code"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("no setup code: setup is already done")
+		}
+		return err
+	}
+	_, err = os.Stdout.Write(b)
+	return err
+}
+
+// healthcheck probes the local web interface (used as the container HEALTHCHECK).
+func healthcheck() error {
+	addr := envOr("HAETAE_WEB_ADDR", ":8080")
+	port := "8080"
+	if i := strings.LastIndex(addr, ":"); i >= 0 && i+1 < len(addr) {
+		port = addr[i+1:]
+	}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local probe of our own listener
+		},
+	}
+	resp, err := client.Get("https://127.0.0.1:" + port + "/healthz")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthz returned %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func serve(ctx context.Context, log *slog.Logger) error {
@@ -269,7 +316,9 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 			_ = os.Remove(codeFile)
 		},
 	})
-	ws, err := server.ListenWeb(cfg.webAddr, server.Routes(a.Handler(), nil, webui.Handler()), cert)
+	distDir := envOr("HAETAE_DIST_DIR", "/usr/share/haetae/dist")
+	inst := installer.New(distDir)
+	ws, err := server.ListenWeb(cfg.webAddr, server.Routes(a.Handler(), inst, webui.Handler()), cert)
 	if err != nil {
 		return nil, err
 	}

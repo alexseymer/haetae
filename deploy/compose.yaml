@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: ${HAETAE_DB_PASSWORD:?HAETAE_DB_PASSWORD is required}
+      POSTGRES_DB: haetae
+      POSTGRES_USER: haetae
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haetae -d haetae"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+  server:
+    image: ${HAETAE_IMAGE:?HAETAE_IMAGE is required}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      HAETAE_DATABASE_URL: postgres://haetae:${HAETAE_DB_PASSWORD:?HAETAE_DB_PASSWORD is required}@db:5432/haetae?sslmode=disable
+      HAETAE_WEB_ADDR: ":8080"
+      HAETAE_GATEWAY_ADDR: ":8443"
+      HAETAE_WEB_URL: https://${HAETAE_HOST:?HAETAE_HOST is required}:${HAETAE_WEB_PORT:?HAETAE_WEB_PORT is required}
+      HAETAE_GATEWAY_URL: https://${HAETAE_HOST:?HAETAE_HOST is required}:${HAETAE_GATEWAY_PORT:?HAETAE_GATEWAY_PORT is required}
+      HAETAE_GATEWAY_NAMES: ${HAETAE_HOST:?HAETAE_HOST is required}
+    ports:
+      - "${HAETAE_WEB_PORT:?HAETAE_WEB_PORT is required}:8080"
+      - "${HAETAE_GATEWAY_PORT:?HAETAE_GATEWAY_PORT is required}:8443"
+    volumes:
+      - data:/var/lib/haetae
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  db:
+  data:

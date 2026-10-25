@@ -6,13 +6,7 @@ LDFLAGS := -s -w -X github.com/alexseymer/haetae/internal/version.Version=$(VERS
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
 
-.PHONY: web build test test-integration test-e2e test-load lint vuln fmt generate clean
-
-# Builds the web interface and embeds it into the next server build.
-web:
-	cd web && npm ci && npm run build
-	find internal/webui/app -mindepth 1 ! -name .gitkeep -delete
-	cp -r web/dist/. internal/webui/app/
+.PHONY: build test test-integration test-e2e test-load test-selfhost web dist docker-image lint vuln fmt generate clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
@@ -32,6 +26,27 @@ test-e2e:
 # HAETAE_LOAD_DURATION overrides the default 2m.
 test-load:
 	go test -count=1 -tags 'integration load' -timeout 30m -run TestAgentMemoryUnderLoad -v ./test/integration/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'
+
+# Self-hosted install (spec S11 / M4): needs Docker. Builds the image once inside the test.
+test-selfhost:
+	go test -count=1 -tags selfhost -timeout 30m -v ./test/selfhost/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'
+
+# Build the web UI into internal/webui/app for embedding.
+web:
+	cd web && npm ci && npm run build
+	find internal/webui/app -mindepth 1 ! -name .gitkeep -delete
+	cp -r web/dist/. internal/webui/app/
+	touch internal/webui/app/.gitkeep
+
+# Cross-compile agent binaries published at /download/.
+dist:
+	mkdir -p bin/dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-agent-linux-amd64 ./cmd/haetae-agent
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-agent-linux-arm64 ./cmd/haetae-agent
+	cd bin/dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 > SHA256SUMS
+
+docker-image:
+	DOCKER_BUILDKIT=0 docker build --build-arg VERSION=$(VERSION) -t haetae-server:dev .
 
 # Regenerates internal/gen from proto/ (needs buf, protoc-gen-go, protoc-gen-connect-go on PATH).
 generate:
