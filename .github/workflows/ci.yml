@@ -148,3 +148,6 @@ jobs:
       - name: Measurements
         if: always()
         run: grep MEASURE selfhost.log || true
+      - name: Full log of the failing test
+        if: failure()
+        run: tail -n 150 selfhost-full.log || true

@@ -30,7 +30,7 @@ test-load:
 
 # Self-hosted install (spec S11 / M4): needs Docker. Builds the image once inside the test.
 test-selfhost:
-	bash -o pipefail -c "go test -count=1 -tags selfhost -timeout 30m -v ./test/selfhost/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
+	bash -o pipefail -c "go test -count=1 -tags selfhost -timeout 30m -v ./test/selfhost/ 2>&1 | tee selfhost-full.log | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
 # Build the web UI into internal/webui/app for embedding.
 web:
 	cd web && npm ci && npm run build

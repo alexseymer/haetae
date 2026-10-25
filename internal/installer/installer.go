@@ -83,7 +83,7 @@ func (h *handler) serveDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is built from the download allowlist, never from user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.NotFound(w, r)
@@ -92,7 +92,7 @@ func (h *handler) serveDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
 	if err != nil || st.IsDir() {
 		http.NotFound(w, r)
