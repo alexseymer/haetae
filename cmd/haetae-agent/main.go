@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/alexseymer/haetae/internal/agent"
+	"github.com/alexseymer/haetae/internal/agent/deploy"
+	"github.com/alexseymer/haetae/internal/redact"
 	"github.com/alexseymer/haetae/internal/version"
 )
 
@@ -122,6 +124,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	procRoot := fs.String("proc-root", "/proc", "proc filesystem to read host metrics from")
 	diskPath := fs.String("disk-path", "/", "filesystem whose usage is reported")
 	interval := fs.Duration("interval", 10*time.Second, "metrics sampling interval")
+	httpPort := fs.Int("ingress-http-port", 80, "host port published for HTTP ingress")
+	httpsPort := fs.Int("ingress-https-port", 443, "host port published for HTTPS ingress")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -131,6 +135,9 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	}
 	log = log.With("host_id", id.HostID)
 	log.Info("agent starting", "server", id.ServerURL, "version", version.Version)
+
+	allowLocalGit := os.Getenv("HAETAE_AGENT_ALLOW_LOCAL_GIT") == "1"
+	tlsInternal := os.Getenv("HAETAE_AGENT_CADDY_TLS") == "internal"
 
 	// 30 batches at the default interval keep five minutes of metrics while
 	// the control plane is unreachable.
@@ -143,6 +150,42 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	}, out, log.With("component", "monitor"))
 	logs := agent.NewLogManager(agent.LogConfig{}, mon.Docker(), out, log.With("component", "logs"))
 	mon.OnRunning = func(running map[string]string) { logs.Sync(ctx, running) }
+
+	runner := deploy.ExecRunner{}
+	ing, err := newIngress(ingressConfig{
+		StateDir:    *stateDir,
+		HTTPPort:    *httpPort,
+		HTTPSPort:   *httpsPort,
+		Runner:      runner,
+		TLSInternal: tlsInternal,
+	})
+	if err != nil {
+		return err
+	}
+	redactor := redact.New()
+	deploys := deploy.New(deploy.Config{
+		StateDir:      *stateDir,
+		AllowLocalGit: allowLocalGit,
+		Runner:        runner,
+		Ingress:       ing,
+		Emit:          out,
+		Redact: func(ctx context.Context, lines []string) ([]string, error) {
+			res, err := redactor.RedactBatch(ctx, lines, 500*time.Millisecond)
+			if err != nil {
+				return nil, err
+			}
+			return res.Lines, nil
+		},
+	})
+	defer deploys.Close()
+
+	watcher := &deploy.Watcher{
+		Runner:        runner,
+		AllowLocalGit: allowLocalGit,
+		Log:           log.With("component", "watch"),
+	}
+	go watcher.Run(ctx, out.PutBranchUpdate)
+
 	go mon.Run(ctx)
 	go logs.Run(ctx)
 
@@ -152,5 +195,7 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		DockerVersion: mon.DockerVersion,
 		OnGreen:       logs.SetGreen,
 		Handler:       logs.Handle,
+		Deploys:       deploys,
+		Watcher:       watcher,
 	})
 }

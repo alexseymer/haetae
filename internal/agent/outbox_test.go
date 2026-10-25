@@ -41,3 +41,54 @@ func TestOutboxIsBoundedAndSnapshotFirst(t *testing.T) {
 		t.Fatal("Next on empty outbox returned without waiting")
 	}
 }
+
+func TestOutboxNeverDropsDeployEvents(t *testing.T) {
+	o := NewOutbox(3)
+	events := []*agentv1.DeployEvent{
+		{DeployId: "e1", Phase: agentv1.DeployPhase_DEPLOY_PHASE_FETCHING},
+		{DeployId: "e2", Phase: agentv1.DeployPhase_DEPLOY_PHASE_BUILDING},
+		{DeployId: "e3", Phase: agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY},
+	}
+	o.Event(events[0])
+	for i := 0; i < 15000; i++ {
+		o.Log(&agentv1.DeployLog{DeployId: "d", Seq: uint32(i), Text: "x"})
+	}
+	o.Event(events[1])
+	for i := 0; i < 15000; i++ {
+		o.Log(&agentv1.DeployLog{DeployId: "d", Seq: uint32(15000 + i), Text: "y"})
+	}
+	o.Event(events[2])
+
+	if n := o.DeployQueueLen(); n > maxDeployMsgs {
+		t.Fatalf("queue len %d exceeds cap %d", n, maxDeployMsgs)
+	}
+
+	var gotEvents []*agentv1.DeployEvent
+	var gotLogs int
+	ctx := context.Background()
+	for o.DeployQueueLen() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case msg.GetDeployEvent() != nil:
+			gotEvents = append(gotEvents, msg.GetDeployEvent())
+		case msg.GetDeployLog() != nil:
+			gotLogs++
+		default:
+			t.Fatalf("unexpected msg %#v", msg.GetMsg())
+		}
+	}
+	if len(gotEvents) != 3 {
+		t.Fatalf("events = %d, want 3 (never dropped); logs kept=%d", len(gotEvents), gotLogs)
+	}
+	for i, e := range events {
+		if gotEvents[i].GetDeployId() != e.GetDeployId() {
+			t.Fatalf("event[%d] = %v, want %v", i, gotEvents[i].GetDeployId(), e.GetDeployId())
+		}
+	}
+	if gotLogs > maxDeployMsgs-3 {
+		t.Fatalf("too many logs kept: %d", gotLogs)
+	}
+}

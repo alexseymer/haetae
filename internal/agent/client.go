@@ -15,6 +15,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/alexseymer/haetae/internal/agent/deploy"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/gen/haetae/agent/v1/agentv1connect"
 	"github.com/alexseymer/haetae/internal/pki"
@@ -125,6 +126,10 @@ type RunOptions struct {
 	// Handler runs commands other than Ping, e.g. QueryLogs. It returns nil
 	// for kinds it does not know, which the agent then refuses.
 	Handler func(ctx context.Context, cmd *agentv1.Command) *agentv1.CommandResult
+	// Deploys handles Deploy and RemoveProject commands when set.
+	Deploys *deploy.Manager
+	// Watcher receives WatchSet updates when set.
+	Watcher *deploy.Watcher
 }
 
 // Run keeps a session to the control plane until ctx is cancelled,
@@ -276,6 +281,12 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 			}
 			continue
 		}
+		if w := msg.GetWatch(); w != nil {
+			if opts.Watcher != nil {
+				opts.Watcher.SetWatchSet(w)
+			}
+			continue
+		}
 		cmd := msg.GetCommand()
 		if cmd == nil {
 			continue
@@ -289,18 +300,41 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			res := dispatch(ctx, cmd, opts.Handler)
+			res := dispatch(ctx, cmd, opts)
 			// A failed send means the session is ending; Receive reports it.
 			_ = send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Result{Result: res}})
 		}()
 	}
 }
 
-// dispatch runs a command: Ping itself, the rest through the handler. Kinds
-// neither knows are refused, so this stays the agent's command allowlist.
-func dispatch(ctx context.Context, cmd *agentv1.Command, h func(context.Context, *agentv1.Command) *agentv1.CommandResult) *agentv1.CommandResult {
-	if _, ok := cmd.GetKind().(*agentv1.Command_Ping); !ok && h != nil {
-		if res := h(ctx, cmd); res != nil {
+// dispatch runs a command: Deploy/Remove through Deploys, Ping itself, the
+// rest through the handler. Kinds none of them know are refused, so this
+// stays the agent's command allowlist.
+func dispatch(ctx context.Context, cmd *agentv1.Command, opts RunOptions) *agentv1.CommandResult {
+	if d := cmd.GetDeploy(); d != nil {
+		res := &agentv1.CommandResult{CommandId: cmd.GetId()}
+		if opts.Deploys == nil {
+			res.Error = "unsupported command"
+			return res
+		}
+		if err := opts.Deploys.Handle(ctx, d); err != nil {
+			res.Error = err.Error()
+		}
+		return res
+	}
+	if r := cmd.GetRemoveProject(); r != nil {
+		res := &agentv1.CommandResult{CommandId: cmd.GetId()}
+		if opts.Deploys == nil {
+			res.Error = "unsupported command"
+			return res
+		}
+		if err := opts.Deploys.Remove(ctx, r.GetProject()); err != nil {
+			res.Error = err.Error()
+		}
+		return res
+	}
+	if _, ok := cmd.GetKind().(*agentv1.Command_Ping); !ok && opts.Handler != nil {
+		if res := opts.Handler(ctx, cmd); res != nil {
 			res.CommandId = cmd.GetId()
 			return res
 		}

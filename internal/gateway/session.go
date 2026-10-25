@@ -23,8 +23,18 @@ type session struct {
 	orgID    uuid.UUID
 	cancel   context.CancelCauseFunc
 	outbox   chan *agentv1.Command
-	green    chan []string // latest green set; a newer one replaces an unsent one
-	lastSeen atomic.Int64  // unix nanoseconds
+	green    chan []string          // latest green set; a newer one replaces an unsent one
+	watch    chan *agentv1.WatchSet // latest watch set; replace-latest
+	lastSeen atomic.Int64           // unix nanoseconds
+
+	eventLim *tokenBucket
+	logLim   *tokenBucket
+
+	droppedEvents atomic.Int64
+	droppedLogs   atomic.Int64
+
+	warnMu          sync.Mutex
+	lastUnknownWarn time.Time
 
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.CommandResult
@@ -33,11 +43,14 @@ type session struct {
 
 func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 	s := &session{
-		hostID:  hostID,
-		cancel:  cancel,
-		outbox:  make(chan *agentv1.Command, 16),
-		green:   make(chan []string, 1),
-		pending: make(map[string]chan *agentv1.CommandResult),
+		hostID:   hostID,
+		cancel:   cancel,
+		outbox:   make(chan *agentv1.Command, 16),
+		green:    make(chan []string, 1),
+		watch:    make(chan *agentv1.WatchSet, 1),
+		eventLim: newTokenBucket(deployEventRate, deployEventRate),
+		logLim:   newTokenBucket(deployLogRate, deployLogRate),
+		pending:  make(map[string]chan *agentv1.CommandResult),
 	}
 	s.touch()
 	return s
@@ -53,6 +66,24 @@ func (s *session) setGreen(ids []string) {
 		}
 		select {
 		case <-s.green:
+		default:
+		}
+	}
+}
+
+// setWatch queues a watch set, replacing one that has not been sent yet.
+func (s *session) setWatch(ws *agentv1.WatchSet) {
+	if ws == nil {
+		ws = &agentv1.WatchSet{}
+	}
+	for {
+		select {
+		case s.watch <- ws:
+			return
+		default:
+		}
+		select {
+		case <-s.watch:
 		default:
 		}
 	}

@@ -25,6 +25,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/alexseymer/haetae/internal/auth"
+	"github.com/alexseymer/haetae/internal/deploys"
+	"github.com/alexseymer/haetae/internal/secrets"
 	"github.com/alexseymer/haetae/internal/store"
 )
 
@@ -71,6 +73,13 @@ type Config struct {
 
 	// Now is the clock; default time.Now.
 	Now func() time.Time
+
+	// Deploys starts and rolls back deploys. Nil disables those endpoints.
+	Deploys *deploys.Service
+	// Secrets seals git tokens at rest. Required to create projects with tokens.
+	Secrets *secrets.Box
+	// RefreshWatch pushes a new WatchSet to a connected agent after project changes.
+	RefreshWatch func(hostID uuid.UUID)
 }
 
 // API serves the JSON endpoints.
@@ -142,6 +151,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /api/users", a.authenticate(http.HandlerFunc(a.handleListUsers)))
 	mux.Handle("POST /api/users", a.authenticate(a.requireAdmin(http.HandlerFunc(a.handleCreateUser))))
 	a.registerData(mux)
+	a.registerProjects(mux)
 
 	// Anything else under /api is a 404 in JSON, never the web app.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
