@@ -364,6 +364,97 @@ func TestInstallScriptShellcheck(t *testing.T) {
 	}
 }
 
+func TestInstallScriptSystemdReloadEnableRestart(t *testing.T) {
+	requireDocker(t)
+	dist := buildDist(t)
+	p := startServer(t, "HAETAE_DIST_DIR="+dist)
+	command := setupAdminAndEnrollment(t, p, "systemd-host")
+
+	shimDir := writeSystemdShims(t)
+	script := command +
+		` && test -f /etc/systemd/system/haetae-agent.service` +
+		` && grep -F "ExecStart='/usr/local/bin/haetae-agent' run --state-dir '/var/lib/haetae-agent'" /etc/systemd/system/haetae-agent.service` +
+		` && grep -F "ReadWritePaths='/var/lib/haetae-agent'" /etc/systemd/system/haetae-agent.service` +
+		` && test "$(tr '\n' ' ' </tmp/systemctl.log)" = "daemon-reload enable haetae-agent restart haetae-agent is-active --quiet haetae-agent "` +
+		` && echo SYSTEMD_OK`
+	out, err := dockerInstallWithShims(t, shimDir, false, script)
+	if err != nil {
+		t.Fatalf("systemd install failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "SYSTEMD_OK") {
+		t.Fatalf("missing success marker:\n%s", out)
+	}
+	if !strings.Contains(out, "docker group grants root-equivalent") {
+		t.Fatalf("expected docker-group warning:\n%s", out)
+	}
+}
+
+func TestInstallScriptRefusesPrefixWithSystemd(t *testing.T) {
+	requireDocker(t)
+	dist := buildDist(t)
+	p := startServer(t, "HAETAE_DIST_DIR="+dist)
+	command := setupAdminAndEnrollment(t, p, "prefix-refuse-host")
+
+	shimDir := writeSystemdShims(t)
+	script := `set +e; ` + command +
+		`; ec=$?; if [ -f /tmp/systemctl.log ]; then echo SYSTEMCTL_CALLED; fi` +
+		`; echo "$ec"; exit 0`
+	out, err := dockerInstallWithShims(t, shimDir, true, script)
+	if err != nil {
+		t.Fatalf("docker run failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "prefix installs are for tests/packaging") {
+		t.Fatalf("expected prefix refuse message:\n%s", out)
+	}
+	if strings.Contains(out, "SYSTEMCTL_CALLED") {
+		t.Fatalf("systemctl should not run when PREFIX is set:\n%s", out)
+	}
+	if !strings.Contains(out, "\n1\n") && !strings.HasSuffix(strings.TrimSpace(out), "1") {
+		// install exits 1; script echoes $ec
+		if !strings.Contains(out, "1") {
+			t.Fatalf("expected non-zero install exit:\n%s", out)
+		}
+	}
+}
+
+func writeSystemdShims(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeShim := func(name, body string) {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeShim("systemctl", "#!/bin/sh\nprintf '%s' \"$*\" >>/tmp/systemctl.log\nprintf '\\n' >>/tmp/systemctl.log\ncase \"$1\" in\nis-active) exit 0 ;;\n*) exit 0 ;;\nesac\n")
+	writeShim("useradd", "#!/bin/sh\nexit 0\n")
+	writeShim("usermod", "#!/bin/sh\nexit 0\n")
+	writeShim("chown", "#!/bin/sh\nexit 0\n")
+	writeShim("getent", "#!/bin/sh\ncase \"$1 $2\" in\n\"passwd haetae-agent\") echo 'haetae-agent:x:999:999::/:/sbin/nologin'; exit 0 ;;\n\"group docker\") echo 'docker:x:998:'; exit 0 ;;\n*) exit 2 ;;\nesac\n")
+	return dir
+}
+
+// dockerInstallWithShims runs the install command in the curl image with a
+// PATH directory of shims. If withPrefix is false, HAETAE_PREFIX is unset so
+// the systemd unit path runs against real /usr/local and /var/lib paths.
+func dockerInstallWithShims(t *testing.T, shimDir string, withPrefix bool, script string) (string, error) {
+	t.Helper()
+	args := []string{
+		"run", "--rm", "--network", "host", "--user", "root",
+		"-v", shimDir + ":/haetae-shim:ro",
+		"-e", "PATH=/haetae-shim:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
+	if withPrefix {
+		args = append(args, "-e", "HAETAE_PREFIX=/root-fs")
+	}
+	// Intentionally no HAETAE_SKIP_SYSTEMD so the unit path runs.
+	args = append(args, curlImage, "sh", "-c", script)
+	cmd := exec.Command("docker", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // replaceQuotedFlag replaces the single-quoted value of flag (e.g. --web-pin '...') with want.
 func replaceQuotedFlag(cmd, flag, want string) string {
 	needle := flag + " '"

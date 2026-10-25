@@ -48,6 +48,56 @@ func TestComposeMatchesInstallScript(t *testing.T) {
 	}
 }
 
+func TestInstallServerRefusesHostileEnv(t *testing.T) {
+	skipWithoutDocker(t)
+	root := repoRoot(t)
+	script := filepath.Join(root, "deploy", "install-server.sh")
+
+	cases := []struct {
+		key, val string
+	}{
+		{"HAETAE_HOST", "bad host"},
+		{"HAETAE_HOST", "line1\nline2"},
+		{"HAETAE_HOST", "evil#comment"},
+		{"HAETAE_HOST", "$(id)"},
+		{"HAETAE_HOST", "`id`"},
+		{"HAETAE_HOST", "quo'te"},
+		{"HAETAE_IMAGE", "ghcr.io/x/y:latest $(id)"},
+		{"HAETAE_WEB_PORT", "80;rm"},
+		{"HAETAE_GATEWAY_PORT", "0"},
+		{"COMPOSE_PROJECT_NAME", "Bad_Name"},
+		{"COMPOSE_PROJECT_NAME", "has space"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key+"="+strings.ReplaceAll(tc.val, "\n", "\\n"), func(t *testing.T) {
+			dir := t.TempDir()
+			cmd := exec.Command("sh", script)
+			env := append(os.Environ(),
+				"HAETAE_DIR="+dir,
+				"HAETAE_IMAGE="+devImage,
+				"HAETAE_NO_PULL=1",
+				"HAETAE_HOST=127.0.0.1",
+				"HAETAE_WEB_PORT=18080",
+				"HAETAE_GATEWAY_PORT=18443",
+				"COMPOSE_PROJECT_NAME=haetae-hostile",
+			)
+			// Override the hostile key last.
+			env = append(env, tc.key+"="+tc.val)
+			cmd.Env = env
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("expected refusal; out:\n%s", out)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+				t.Fatalf(".env was written despite hostile %s; out:\n%s", tc.key, out)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "compose.yaml")); !os.IsNotExist(err) {
+				t.Fatalf("compose.yaml was written despite hostile %s; out:\n%s", tc.key, out)
+			}
+		})
+	}
+}
+
 func TestInstallScriptShellcheck(t *testing.T) {
 	if _, err := exec.LookPath("shellcheck"); err != nil {
 		t.Skip("shellcheck not installed")

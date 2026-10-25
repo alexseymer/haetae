@@ -35,8 +35,90 @@ port_in_use() {
 	ss -ltnH "sport = :$1" 2>/dev/null | grep -q .
 }
 
+# POSIX single-quote for .env values (escape ' as '\'').
+env_quote() {
+	printf "'"
+	rest=$1
+	while [ -n "$rest" ]; do
+		case "$rest" in
+		*"'"*)
+			printf '%s' "${rest%%\'*}"
+			printf "'\\''"
+			rest=${rest#*\'}
+			;;
+		*)
+			printf '%s' "$rest"
+			rest=
+			;;
+		esac
+	done
+	printf "'"
+}
+
+# Undo env_quote / Compose single-quoted .env values (including '\'' → ').
+env_unquote() {
+	v=$1
+	case "$v" in
+	\'*\')
+		v=${v#\'}
+		v=${v%\'}
+		;;
+	esac
+	out=
+	while [ -n "$v" ]; do
+		case "$v" in
+		*"'\\''"*)
+			out=$out${v%%\'\\\'\'*}
+			out=$out\'
+			v=${v#*\'\\\'\'}
+			;;
+		*)
+			out=$out$v
+			v=
+			;;
+		esac
+	done
+	printf '%s' "$out"
+}
+
+valid_host() {
+	# Hostname labels, IPv4, or IPv6 characters (colons, hex, dots, percent zone).
+	case "$1" in
+	'' | *[!A-Za-z0-9._:\[\]%-]*) return 1 ;;
+	esac
+	return 0
+}
+
+valid_image() {
+	# Docker image reference: registry/name:tag@sha256:… characters only.
+	case "$1" in
+	'' | *[!A-Za-z0-9._/:@-]*) return 1 ;;
+	esac
+	return 0
+}
+
+valid_port() {
+	case "$1" in
+	'' | *[!0-9]*) return 1 ;;
+	esac
+	[ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+valid_project() {
+	case "$1" in
+	'' | *[!a-z0-9_-]*) return 1 ;;
+	esac
+	return 0
+}
+
 need_cmd docker
 docker compose version >/dev/null 2>&1 || die "haetae: 'docker compose' (Compose v2) is required"
+
+valid_host "$HAETAE_HOST" || die "haetae: invalid HAETAE_HOST (hostname or IP characters only)"
+valid_image "$HAETAE_IMAGE" || die "haetae: invalid HAETAE_IMAGE (image reference characters only)"
+valid_port "$HAETAE_WEB_PORT" || die "haetae: invalid HAETAE_WEB_PORT (integer 1-65535)"
+valid_port "$HAETAE_GATEWAY_PORT" || die "haetae: invalid HAETAE_GATEWAY_PORT (integer 1-65535)"
+valid_project "$COMPOSE_PROJECT_NAME" || die "haetae: invalid COMPOSE_PROJECT_NAME (lowercase letters, digits, dash, underscore)"
 
 export COMPOSE_PROJECT_NAME
 compose() {
@@ -63,7 +145,7 @@ mkdir -p "$HAETAE_DIR"
 cat >"$HAETAE_DIR/compose.yaml" <<'COMPOSE'
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
     environment:
       POSTGRES_PASSWORD: ${HAETAE_DB_PASSWORD:?HAETAE_DB_PASSWORD is required}
       POSTGRES_DB: haetae
@@ -120,7 +202,8 @@ COMPOSE
 ENV_FILE="$HAETAE_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
 	# Keep the password generated on first run; refresh the other settings.
-	HAETAE_DB_PASSWORD=$(awk -F= '/^HAETAE_DB_PASSWORD=/{print substr($0, index($0,"=")+1); exit}' "$ENV_FILE")
+	raw=$(awk -F= '/^HAETAE_DB_PASSWORD=/{print substr($0, index($0,"=")+1); exit}' "$ENV_FILE")
+	HAETAE_DB_PASSWORD=$(env_unquote "$raw")
 	[ -n "$HAETAE_DB_PASSWORD" ] || die "haetae: corrupt .env: HAETAE_DB_PASSWORD missing"
 else
 	HAETAE_DB_PASSWORD=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 32)
@@ -128,13 +211,13 @@ else
 fi
 
 umask 077
-cat >"$ENV_FILE" <<EOF
-HAETAE_IMAGE=$HAETAE_IMAGE
-HAETAE_HOST=$HAETAE_HOST
-HAETAE_WEB_PORT=$HAETAE_WEB_PORT
-HAETAE_GATEWAY_PORT=$HAETAE_GATEWAY_PORT
-HAETAE_DB_PASSWORD=$HAETAE_DB_PASSWORD
-EOF
+{
+	printf 'HAETAE_IMAGE=%s\n' "$(env_quote "$HAETAE_IMAGE")"
+	printf 'HAETAE_HOST=%s\n' "$(env_quote "$HAETAE_HOST")"
+	printf 'HAETAE_WEB_PORT=%s\n' "$(env_quote "$HAETAE_WEB_PORT")"
+	printf 'HAETAE_GATEWAY_PORT=%s\n' "$(env_quote "$HAETAE_GATEWAY_PORT")"
+	printf 'HAETAE_DB_PASSWORD=%s\n' "$(env_quote "$HAETAE_DB_PASSWORD")"
+} >"$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 
 if [ "$HAETAE_NO_PULL" != "1" ]; then

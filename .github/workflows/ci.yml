@@ -62,8 +62,10 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Integration tests
-        run: make test-integration 2>&1 | tee integration.log
         shell: bash
+        run: |
+          set -o pipefail
+          make test-integration 2>&1 | tee integration.log
       - name: Measurements
         if: always()
         run: grep MEASURE integration.log || true
@@ -139,8 +141,10 @@ jobs:
       - name: Installer script tests (agent)
         run: go test -count=1 -tags integration -timeout 20m ./test/install/
       - name: Self-hosted install and isolated-network tests
-        run: make test-selfhost 2>&1 | tee selfhost.log
         shell: bash
+        run: |
+          set -o pipefail
+          make test-selfhost 2>&1 | tee selfhost.log
       - name: Measurements
         if: always()
         run: grep MEASURE selfhost.log || true

@@ -1,13 +1,13 @@
 ARG VERSION=dev
 
-FROM node:20-alpine AS web
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.27.3-alpine AS go
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS go
 ARG VERSION=dev
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
@@ -29,7 +29,7 @@ RUN mkdir -p /var/lib/haetae /dist /out \
 		-o /dist/haetae-agent-linux-arm64 ./cmd/haetae-agent \
 	&& cd /dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 > SHA256SUMS
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 ARG VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/alexseymer/haetae" \
 	org.opencontainers.image.version="${VERSION}" \

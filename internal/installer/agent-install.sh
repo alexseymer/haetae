@@ -81,6 +81,8 @@ fi
 
 [ "$(uname -s)" = Linux ] || die "Linux is required (got $(uname -s))"
 command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required"
+command -v mktemp >/dev/null 2>&1 || die "mktemp is required"
 
 case "$(uname -m)" in
 x86_64) ARCH=amd64 ;;
@@ -112,6 +114,26 @@ download() {
 	else
 		curl -fsS --max-time 120 -o "$2" "$WEB/$1"
 	fi
+}
+
+# Single-quote a path for a systemd unit value (escape embedded ' as '\'').
+unit_quote() {
+	printf "'"
+	rest=$1
+	while [ -n "$rest" ]; do
+		case "$rest" in
+		*"'"*)
+			printf '%s' "${rest%%\'*}"
+			printf "'\\''"
+			rest=${rest#*\'}
+			;;
+		*)
+			printf '%s' "$rest"
+			rest=
+			;;
+		esac
+	done
+	printf "'"
 }
 
 progress "Downloading $AGENT_NAME"
@@ -160,7 +182,8 @@ if [ -f "$STATE_DIR/identity.json" ]; then
 	progress "Already enrolled at $STATE_DIR; skipping enroll (safe to re-run for upgrades)"
 else
 	progress "Enrolling with the control plane"
-	"$BIN" enroll --server "$SERVER" --token "$TOKEN" --ca-pin "$CA_PIN" --state-dir "$STATE_DIR"
+	# Pass the token via the environment so it does not appear on argv / ps.
+	HAETAE_ENROLL_TOKEN=$TOKEN "$BIN" enroll --server "$SERVER" --ca-pin "$CA_PIN" --state-dir "$STATE_DIR"
 fi
 
 if [ "${HAETAE_SKIP_SYSTEMD-}" = 1 ]; then
@@ -169,11 +192,16 @@ if [ "${HAETAE_SKIP_SYSTEMD-}" = 1 ]; then
 	exit 0
 fi
 
+if [ -n "$PREFIX" ]; then
+	die "HAETAE_PREFIX is set; prefix installs are for tests/packaging and cannot install a systemd unit"
+fi
+
 progress "Creating system user haetae-agent"
 if ! getent passwd haetae-agent >/dev/null 2>&1; then
 	useradd --system --no-create-home --shell /usr/sbin/nologin haetae-agent
 fi
 if getent group docker >/dev/null 2>&1; then
+	echo "warning: adding haetae-agent to the docker group grants root-equivalent access on this host; the agent can run containers with any privileges" >&2
 	usermod -aG docker haetae-agent
 fi
 if ! command -v docker >/dev/null 2>&1; then
@@ -184,7 +212,9 @@ chown -R haetae-agent:haetae-agent "$STATE_DIR"
 UNIT_DIR=$PREFIX/etc/systemd/system
 progress "Writing $UNIT_DIR/haetae-agent.service"
 mkdir -p "$UNIT_DIR"
-cat >"$UNIT_DIR/haetae-agent.service" <<'EOF'
+BIN_Q=$(unit_quote "$BIN")
+STATE_Q=$(unit_quote "$STATE_DIR")
+cat >"$UNIT_DIR/haetae-agent.service" <<EOF
 [Unit]
 Description=Haetae host agent
 After=network-online.target
@@ -193,14 +223,14 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=haetae-agent
-ExecStart=/usr/local/bin/haetae-agent run --state-dir /var/lib/haetae-agent
+ExecStart=$BIN_Q run --state-dir $STATE_Q
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/var/lib/haetae-agent
+ReadWritePaths=$STATE_Q
 MemoryHigh=60M
 MemoryMax=100M
 ProtectKernelModules=yes
@@ -214,7 +244,8 @@ EOF
 
 progress "Enabling and starting haetae-agent"
 systemctl daemon-reload
-systemctl enable --now haetae-agent
+systemctl enable haetae-agent
+systemctl restart haetae-agent
 
 i=0
 while [ "$i" -lt 30 ]; do

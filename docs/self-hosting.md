@@ -8,6 +8,8 @@ On a host with Docker (Compose v2):
 curl -fsSL https://raw.githubusercontent.com/alexseymer/haetae/main/deploy/install-server.sh | sh
 ```
 
+That one-liner trusts GitHub and TLS to deliver the script. For stricter setups, download `install-server.sh`, read it, verify it against the SHA256SUMS published with each release, then run it (`sh install-server.sh`). Releases will publish `install-server.sh` alongside SHA256SUMS.
+
 Or run the script from a checkout: `sh deploy/install-server.sh`.
 
 ### Requirements
@@ -21,6 +23,8 @@ It creates `/opt/haetae` (override with `HAETAE_DIR`), writes `compose.yaml` and
 
 Useful overrides: `HAETAE_IMAGE`, `HAETAE_HOST`, `COMPOSE_PROJECT_NAME`.
 
+Base images in `Dockerfile` and `deploy/compose.yaml` (Postgres) are pinned by digest (`image:tag@sha256:…`). Dependabot's `docker` ecosystem entry updates those digests.
+
 ## First login
 
 Open the printed URL. The browser will warn about the certificate: it is issued by the server's own CA unless you supply one. Enter the setup code, then create the first administrator (organisation name, email, password). The setup code file is removed after that; only someone with access to the server can have read it.
@@ -28,6 +32,8 @@ Open the printed URL. The browser will warn about the certificate: it is issued 
 ## Adding a host
 
 In the web UI, create an enrollment token. The UI shows a one-line command that downloads the agent install script from this server (with certificate pinning) and enrolls the host. Run that command on the host.
+
+The agent installer adds the `haetae-agent` user to the `docker` group when that group exists, and prints a warning: membership in the docker group is equivalent to root on the host, and the agent can run containers with any privileges.
 
 ## Your own certificate
 

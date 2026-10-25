@@ -24,13 +24,13 @@ test-e2e:
 
 # Agent memory under load (spec S10): 20 noisy containers, RSS sampled every second.
 # HAETAE_LOAD_DURATION overrides the default 2m.
+# pipefail: a failing go test must fail the target even though grep is last.
 test-load:
-	go test -count=1 -tags 'integration load' -timeout 30m -run TestAgentMemoryUnderLoad -v ./test/integration/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'
+	bash -o pipefail -c "go test -count=1 -tags 'integration load' -timeout 30m -run TestAgentMemoryUnderLoad -v ./test/integration/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
 
 # Self-hosted install (spec S11 / M4): needs Docker. Builds the image once inside the test.
 test-selfhost:
-	go test -count=1 -tags selfhost -timeout 30m -v ./test/selfhost/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'
-
+	bash -o pipefail -c "go test -count=1 -tags selfhost -timeout 30m -v ./test/selfhost/ | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
 # Build the web UI into internal/webui/app for embedding.
 web:
 	cd web && npm ci && npm run build
