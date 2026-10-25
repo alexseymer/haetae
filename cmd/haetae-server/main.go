@@ -91,6 +91,9 @@ func loadConfig() (config, error) {
 		}
 	}
 	c.gatewayNames = names
+	if os.Getenv("HAETAE_TRUST_PROXY") != "" {
+		return c, errors.New("HAETAE_TRUST_PROXY was replaced by HAETAE_TRUSTED_PROXIES (a list of proxy addresses or CIDRs); unset the old variable")
+	}
 	for _, p := range strings.Split(os.Getenv("HAETAE_TRUSTED_PROXIES"), ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {

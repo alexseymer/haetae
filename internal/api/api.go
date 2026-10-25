@@ -1,9 +1,11 @@
 // Package api is the control plane's JSON API for the web UI: accounts,
 // sessions, and read access to hosts, metrics and logs.
 //
-// Every request that needs a signed-in user passes through authenticate, and
-// everything it reads or writes goes through a Store.ForOrg view, so the
-// database restricts it to the user's organisation.
+// Every request that needs a signed-in user passes through authenticate.
+// Organisation data is read and written through a Store.ForOrg view, so the
+// database restricts it to the user's organisation; sign-in, sessions and
+// passwords use the server's own role, because the restricted role cannot
+// reach them.
 package api
 
 import (

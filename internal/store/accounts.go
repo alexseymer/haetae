@@ -165,6 +165,32 @@ func (s *Store) ListUsers(ctx context.Context, orgID uuid.UUID) ([]User, error) 
 	return out, rows.Err()
 }
 
+// ChangePassword replaces a user's password hash and ends all the user's other
+// sessions in one transaction, so a password change cannot succeed while old
+// sessions stay alive. keep is the token hash of the session making the
+// change. Server role only; the caller has checked who is asking.
+func (s *Store) ChangePassword(ctx context.Context, orgID, userID uuid.UUID, passwordHash string, keep []byte) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: ChangePassword: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE users SET password_hash = $3 WHERE org_id = $1 AND id = $2`, orgID, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("store: ChangePassword: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("store: ChangePassword: %w", ErrNotFound)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, userID, keep); err != nil {
+		return fmt.Errorf("store: ChangePassword: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: ChangePassword: %w", err)
+	}
+	return nil
+}
+
 // SetPassword replaces a user's password hash. It needs the server's own role
 // (the restricted role cannot update users); the caller has checked who is asking.
 func (s *Store) SetPassword(ctx context.Context, orgID, userID uuid.UUID, passwordHash string) error {

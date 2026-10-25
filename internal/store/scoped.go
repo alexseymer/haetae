@@ -48,11 +48,11 @@ func (p *scopedPool) begin(ctx context.Context) (pgx.Tx, error) {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+AppRole); err != nil {
-		_ = tx.Rollback(ctx)
+		rollback(tx)
 		return nil, fmt.Errorf("store: switch to %s: %w", AppRole, err)
 	}
 	if _, err := tx.Exec(ctx, "SELECT set_config('app.org_id', $1, true)", p.org.String()); err != nil {
-		_ = tx.Rollback(ctx)
+		rollback(tx)
 		return nil, fmt.Errorf("store: set organisation: %w", err)
 	}
 	return tx, nil
@@ -67,10 +67,10 @@ func (p *scopedPool) Exec(ctx context.Context, sql string, args ...any) (pgconn.
 	}
 	tag, err := tx.Exec(ctx, sql, args...)
 	if err != nil {
-		_ = tx.Rollback(ctx)
+		rollback(tx)
 		return tag, err
 	}
-	return tag, tx.Commit(ctx)
+	return tag, commit(tx)
 }
 
 func (p *scopedPool) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -80,7 +80,7 @@ func (p *scopedPool) Query(ctx context.Context, sql string, args ...any) (pgx.Ro
 	}
 	rows, err := tx.Query(ctx, sql, args...)
 	if err != nil {
-		_ = tx.Rollback(ctx)
+		rollback(tx)
 		return nil, err
 	}
 	return &txRows{Rows: rows, tx: tx, ctx: ctx}, nil
@@ -120,7 +120,20 @@ func (r *txRows) Close() {
 		rollback(r.tx)
 		return
 	}
-	_ = r.tx.Commit(r.ctx)
+	_ = commit(r.tx)
+}
+
+// commit ends a transaction with its own short deadline, for the same reason
+// as rollback: a request cancelled after the work was done must not leave the
+// connection stuck in an open transaction. On failure it rolls back.
+func commit(tx pgx.Tx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := tx.Commit(ctx); err != nil {
+		rollback(tx)
+		return err
+	}
+	return nil
 }
 
 // rollback ends a failed transaction with its own short deadline. The
@@ -170,7 +183,7 @@ func (b *txBatch) Close() error {
 		rollback(b.tx)
 		return err
 	}
-	return b.tx.Commit(b.ctx)
+	return commit(b.tx)
 }
 
 type errBatch struct{ err error }

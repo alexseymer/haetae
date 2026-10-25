@@ -272,3 +272,71 @@ func TestRestrictedRoleCannotReachSecrets(t *testing.T) {
 		t.Fatalf("UserByEmail lost the hash: %+v %v", full, err)
 	}
 }
+
+// A request cancelled mid-flight must not leave a connection stuck in an open
+// transaction or with the restricted role still set.
+func TestCancelledRequestsDoNotPoisonThePool(t *testing.T) {
+	o := seedTwoOrgs(t)
+	a := o.s.ForOrg(o.orgA.ID)
+	for range 40 {
+		ctx, cancel := context.WithCancel(context.Background())
+		rows, err := a.QueryRowForTest(ctx, "SELECT count(*) FROM hosts"), error(nil)
+		_ = err
+		cancel() // cancelled before and while the row is read
+		var n int
+		_ = rows.Scan(&n)
+		_ = a.ExecForTest(ctx, "SELECT 1") // fails: context already cancelled
+	}
+	// The pool still works, still scoped, and nothing is left open.
+	var n int
+	if err := a.QueryRowForTest(context.Background(), "SELECT count(*) FROM hosts").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("after cancelled requests: n=%d err=%v", n, err)
+	}
+	var idle, active int
+	if err := o.s.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FILTER (WHERE state = 'idle in transaction'), count(*) FILTER (WHERE state = 'active' AND pid <> pg_backend_pid())
+		 FROM pg_stat_activity WHERE datname = current_database()`).Scan(&idle, &active); err != nil {
+		t.Fatal(err)
+	}
+	if idle != 0 {
+		t.Fatalf("%d connections left idle in a transaction", idle)
+	}
+	// A plain query on the owner pool must not see a leftover restricted role.
+	var role string
+	if err := o.s.Pool().QueryRow(context.Background(), "SELECT current_user").Scan(&role); err != nil || role == store.AppRole {
+		t.Fatalf("a pooled connection kept role %q (err %v)", role, err)
+	}
+}
+
+// Changing a password and ending the other sessions are one step.
+func TestChangePasswordEndsOtherSessionsAtomically(t *testing.T) {
+	o := seedTwoOrgs(t)
+	ctx := context.Background()
+	u, err := o.s.UserByEmail(ctx, "a@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"keep", "other1", "other2"} {
+		if err := o.s.CreateSession(ctx, u.ID, o.orgA.ID, []byte(h), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := o.s.ChangePassword(ctx, o.orgA.ID, u.ID, "new-hash", []byte("keep")); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = o.s.Pool().QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id = $1`, u.ID).Scan(&n)
+	if n != 1 {
+		t.Fatalf("%d sessions left, want only the one making the change", n)
+	}
+	if got, _ := o.s.UserByEmail(ctx, "a@example.com"); got.PasswordHash != "new-hash" {
+		t.Fatal("password hash not changed")
+	}
+	// Another organisation's user cannot be changed by naming the wrong org.
+	if err := o.s.ChangePassword(ctx, o.orgB.ID, u.ID, "evil", []byte("x")); err == nil {
+		t.Fatal("ChangePassword with the wrong organisation succeeded")
+	}
+	if got, _ := o.s.UserByEmail(ctx, "a@example.com"); got.PasswordHash != "new-hash" {
+		t.Fatal("password changed through the wrong organisation")
+	}
+}

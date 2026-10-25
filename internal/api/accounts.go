@@ -273,16 +273,14 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "try again")
 		return
 	}
-	if err := a.st.SetPassword(r.Context(), p.OrgID, p.UserID, hash); err != nil {
-		a.log.Error("set password", "err", err)
+	// One transaction: the new password and the end of every other session
+	// of the user succeed or fail together.
+	if err := a.st.ChangePassword(r.Context(), p.OrgID, p.UserID, hash, p.tokenHash); err != nil {
+		a.log.Error("change password", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "try again")
 		return
 	}
 	a.loginByAccount.Reset("pw|" + p.UserID.String())
-	// A password change ends every other session of the user.
-	if err := a.st.DeleteUserSessions(r.Context(), p.UserID, p.tokenHash); err != nil {
-		a.log.Error("end other sessions", "err", err)
-	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed"})
 }
 
