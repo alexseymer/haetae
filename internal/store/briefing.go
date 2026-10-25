@@ -99,11 +99,16 @@ func (s *Store) BriefingFacts(ctx context.Context, orgID uuid.UUID, since time.T
 		return BriefingFacts{}, fmt.Errorf("store: BriefingFacts containers: %w", err)
 	}
 
+	// Open incidents are always included; resolved ones only if updated within
+	// the 24h window (since).
 	irows, err := s.pool.Query(ctx, `
 		SELECT i.severity, i.title, h.name
 		FROM incidents i
 		JOIN hosts h ON h.id = i.host_id
-		WHERE i.org_id = $1 AND i.state = 'open'
+		WHERE i.org_id = $1 AND (
+			i.state = 'open'
+			OR (i.state = 'resolved' AND i.updated_at >= $2)
+		)
 		ORDER BY
 			CASE i.severity
 				WHEN 'critical' THEN 4
@@ -113,7 +118,7 @@ func (s *Store) BriefingFacts(ctx context.Context, orgID uuid.UUID, since time.T
 				ELSE 0
 			END DESC,
 			i.opened_at DESC`,
-		orgID,
+		orgID, since,
 	)
 	if err != nil {
 		return BriefingFacts{}, fmt.Errorf("store: BriefingFacts incidents: %w", err)
@@ -180,6 +185,37 @@ func (s *Store) BriefingTryClaim(ctx context.Context, orgID uuid.UUID, localDate
 		return false, fmt.Errorf("store: BriefingTryClaim: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// BriefingReclaimUnenqueued returns true when a claim exists with enqueued_at
+// still NULL (crash between claim and enqueue), so the scheduler should finish it.
+func (s *Store) BriefingReclaimUnenqueued(ctx context.Context, orgID uuid.UUID, localDate time.Time) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE briefings SET created_at = created_at
+		WHERE org_id = $1 AND local_date = $2::date AND enqueued_at IS NULL`,
+		orgID, localDate.UTC().Format("2006-01-02"),
+	)
+	if err != nil {
+		return false, fmt.Errorf("store: BriefingReclaimUnenqueued: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// BriefingMarkEnqueued records that the briefing message was enqueued.
+func (s *Store) BriefingMarkEnqueued(ctx context.Context, orgID uuid.UUID, localDate time.Time) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE briefings SET enqueued_at = now()
+		WHERE org_id = $1 AND local_date = $2::date AND enqueued_at IS NULL`,
+		orgID, localDate.UTC().Format("2006-01-02"),
+	)
+	if err != nil {
+		return fmt.Errorf("store: BriefingMarkEnqueued: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Already marked or missing — not an error for idempotent callers.
+		return nil
+	}
+	return nil
 }
 
 // BriefingDelete removes a claim so a failed enqueue can be retried.

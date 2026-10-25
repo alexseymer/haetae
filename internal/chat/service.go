@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexseymer/haetae/internal/store"
@@ -40,6 +39,8 @@ type Config struct {
 }
 
 // Service delivers chat messages and handles inbound actions.
+// Delivery is at-least-once: after a successful Send, MarkDelivered is retried
+// in-process and claimed ids are remembered so a reclaim does not resend.
 type Service struct {
 	st         *store.Store
 	channels   map[string]Channel
@@ -51,6 +52,12 @@ type Service struct {
 	now        func() time.Time
 
 	wake chan struct{}
+
+	// delivered remembers message ids whose Send succeeded but MarkDelivered
+	// may still be pending (AC#6: no duplicate after successful send).
+	delivered sync.Map // uuid.UUID -> struct{}
+
+	unlinkedReplies *tokenBucketMap
 }
 
 // New builds a Service. Channels without configuration should be omitted by the caller.
@@ -74,15 +81,16 @@ func New(cfg Config) *Service {
 		}
 	}
 	return &Service{
-		st:         cfg.Store,
-		channels:   m,
-		secret:     append([]byte(nil), cfg.Secret...),
-		publicURL:  strings.TrimRight(cfg.PublicURL, "/"),
-		log:        cfg.Log,
-		pollEvery:  cfg.PollEvery,
-		claimLimit: cfg.ClaimLimit,
-		now:        cfg.Now,
-		wake:       make(chan struct{}, 1),
+		st:              cfg.Store,
+		channels:        m,
+		secret:          append([]byte(nil), cfg.Secret...),
+		publicURL:       strings.TrimRight(cfg.PublicURL, "/"),
+		log:             cfg.Log,
+		pollEvery:       cfg.PollEvery,
+		claimLimit:      cfg.ClaimLimit,
+		now:             cfg.Now,
+		wake:            make(chan struct{}, 1),
+		unlinkedReplies: newTokenBucketMap(5, time.Minute),
 	}
 }
 
@@ -254,19 +262,6 @@ func (s *Service) nudge() {
 	case s.wake <- struct{}{}:
 	default:
 	}
-}
-
-// LoadChatSecret returns HAETAE_CHAT_SECRET or the sealed-secrets key file bytes.
-func LoadChatSecret(dataDir string) ([]byte, error) {
-	if v := os.Getenv("HAETAE_CHAT_SECRET"); v != "" {
-		return []byte(v), nil
-	}
-	path := filepath.Join(dataDir, "secret.key")
-	b, err := os.ReadFile(path) //nolint:gosec // G304: operator data dir
-	if err != nil {
-		return nil, fmt.Errorf("chat: load secret: %w", err)
-	}
-	return b, nil
 }
 
 // Ensure Service implements the local Notifier and Enqueuer shapes.

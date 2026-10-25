@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"github.com/alexseymer/haetae/internal/chat"
 	"github.com/alexseymer/haetae/internal/store"
 )
 
@@ -27,9 +29,12 @@ type Channel struct {
 	AppToken string // xapp-...
 	BotToken string // xoxb-...
 	APIURL   string // default https://slack.com/api; override in tests
-	WSDial   func(ctx context.Context, url string) (*websocket.Conn, error)
-	Client   *http.Client
-	Handler  Handler
+	// ResponseURLHosts is the allowlist for interactive response_url hosts
+	// (default hooks.slack.com). Tests may set a fake host.
+	ResponseURLHosts []string
+	WSDial           func(ctx context.Context, url string) (*websocket.Conn, error)
+	Client           *http.Client
+	Handler          Handler
 }
 
 // Name returns store.ChannelSlack.
@@ -46,7 +51,14 @@ func (c *Channel) client() *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
-	return http.DefaultClient
+	return chat.NewHTTPClient(30 * time.Second)
+}
+
+func (c *Channel) responseHosts() []string {
+	if len(c.ResponseURLHosts) > 0 {
+		return c.ResponseURLHosts
+	}
+	return []string{"hooks.slack.com"}
 }
 
 // Send posts a chat message with interactive buttons.
@@ -242,18 +254,36 @@ func (c *Channel) handleEvents(ctx context.Context, payload json.RawMessage) {
 	}
 }
 
-func (c *Channel) postResponse(ctx context.Context, url, text string) {
+func (c *Channel) postResponse(ctx context.Context, rawURL, text string) {
+	if !allowedSlackResponseURL(rawURL, c.responseHosts()) {
+		return
+	}
 	body, _ := json.Marshal(map[string]any{"text": text, "replace_original": false})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
 	if err != nil {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client().Do(req)
+	cli := c.client()
+	resp, err := cli.Do(req)
 	if err != nil {
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+func allowedSlackResponseURL(raw string, hosts []string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, h := range hosts {
+		if host == strings.ToLower(h) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Channel) api(ctx context.Context, method, token string, body any, out any) error {

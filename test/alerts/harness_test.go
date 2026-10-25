@@ -148,8 +148,8 @@ func filterEnv(in []string, prefixes ...string) []string {
 				break
 			}
 		}
-		// Also drop any leftover briefing force from the parent shell.
-		if key == "HAETAE_BRIEFING_NOW" {
+		// Also drop leftover test-only briefing force from the parent shell.
+		if key == "HAETAE_BRIEFING_NOW" || key == "HAETAE_TEST_HOOKS" {
 			skip = true
 		}
 		if !skip {
@@ -183,6 +183,23 @@ func (h *harness) startServer(extra []string, waitSetupCode bool) {
 			_, err := os.Stat(setupCodeFile)
 			return err == nil
 		})
+	}
+}
+
+func (h *harness) clearBriefings() {
+	h.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, h.dbURL)
+	if err != nil {
+		h.t.Fatalf("clearBriefings connect: %v", err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `DELETE FROM briefings`); err != nil {
+		h.t.Fatalf("clearBriefings: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM chat_messages WHERE kind = 'briefing'`); err != nil {
+		h.t.Fatalf("clearBriefings messages: %v", err)
 	}
 }
 
@@ -344,8 +361,11 @@ func (h *harness) stopAgent() {
 
 func (h *harness) tuneSettings() {
 	h.t.Helper()
+	// Keep briefingHour away from "now" so the scheduler does not claim a day
+	// before Telegram is linked; quiet_day forces a tick via HAETAE_BRIEFING_NOW.
+	hour := (time.Now().UTC().Hour() + 12) % 24
 	body := map[string]any{
-		"timeZone": "UTC", "briefingHour": time.Now().UTC().Hour(),
+		"timeZone": "UTC", "briefingHour": hour,
 		"cpuPct": 90, "memPct": 90, "diskPct": 90,
 		"sustainedS": 10, "offlineAfterS": 30,
 	}

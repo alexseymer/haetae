@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexseymer/haetae/internal/chat"
 	"github.com/alexseymer/haetae/internal/store"
 )
 
@@ -44,7 +45,7 @@ func (c *Channel) client() *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
-	return http.DefaultClient
+	return chat.NewHTTPClient(30 * time.Second)
 }
 
 // Send posts a message with an optional inline keyboard of action tokens.

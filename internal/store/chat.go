@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -399,23 +398,13 @@ func (s *Store) DeleteChatAccount(ctx context.Context, orgID, id uuid.UUID) erro
 }
 
 // CreateLinkCode creates a one-time link code for a user and channel. The
-// plaintext code is returned once; only its SHA-256 is stored. Server role.
+// plaintext code is returned once; only its SHA-256 is stored. Rate limit is
+// enforced atomically (advisory lock per user). Server role.
 func (s *Store) CreateLinkCode(ctx context.Context, orgID, userID uuid.UUID, channel string) (code string, err error) {
 	switch channel {
 	case ChannelTelegram, ChannelSlack, ChannelEmail, ChannelSignal:
 	default:
 		return "", fmt.Errorf("store: CreateLinkCode: unsupported channel %q", channel)
-	}
-	var n int
-	// Codes expire 10 minutes after creation, so expires_at > now() means
-	// created within the rate window.
-	if err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FROM chat_link_codes
-		WHERE user_id = $1 AND expires_at > now()`, userID).Scan(&n); err != nil {
-		return "", fmt.Errorf("store: CreateLinkCode: %w", err)
-	}
-	if n >= LinkCodeRateMax {
-		return "", ErrLinkCodeRateLimit
 	}
 	code, err = newLinkCode(LinkCodeLen)
 	if err != nil {
@@ -423,48 +412,111 @@ func (s *Store) CreateLinkCode(ctx context.Context, orgID, userID uuid.UUID, cha
 	}
 	sum := sha256.Sum256([]byte(strings.ToUpper(code)))
 	expires := time.Now().UTC().Add(LinkCodeTTL)
-	_, err = s.pool.Exec(ctx, `
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("store: CreateLinkCode: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Per-user advisory lock so concurrent POSTs cannot exceed the rate.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`, userID.String()); err != nil {
+		return "", fmt.Errorf("store: CreateLinkCode: lock: %w", err)
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM chat_link_codes
+		WHERE user_id = $1 AND expires_at > now()`, userID).Scan(&n); err != nil {
+		return "", fmt.Errorf("store: CreateLinkCode: %w", err)
+	}
+	if n >= LinkCodeRateMax {
+		return "", ErrLinkCodeRateLimit
+	}
+	_, err = tx.Exec(ctx, `
 		INSERT INTO chat_link_codes (code_hash, org_id, user_id, channel, expires_at)
 		VALUES ($1,$2,$3,$4,$5)`, sum[:], orgID, userID, channel, expires)
 	if err != nil {
 		return "", fmt.Errorf("store: CreateLinkCode: %w", err)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("store: CreateLinkCode: %w", err)
+	}
 	return code, nil
 }
 
-// ConsumeLinkCode atomically consumes a valid unused code and returns the
-// user and org it was issued for. Server role.
+// ConsumeLinkCode looks up a valid unused code without marking it used.
+// Prefer LinkChatAccount, which validates channel and creates the account in
+// one transaction so a mismatch or insert failure leaves the code usable.
 func (s *Store) ConsumeLinkCode(ctx context.Context, code string) (orgID, userID uuid.UUID, channel string, err error) {
 	sum := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(code))))
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, "", fmt.Errorf("store: ConsumeLinkCode: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	err = tx.QueryRow(ctx, `
+	err = s.pool.QueryRow(ctx, `
 		SELECT org_id, user_id, channel FROM chat_link_codes
-		WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
-		FOR UPDATE`, sum[:]).Scan(&orgID, &userID, &channel)
+		WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()`,
+		sum[:]).Scan(&orgID, &userID, &channel)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, uuid.Nil, "", ErrLinkCodeInvalid
 		}
 		return uuid.Nil, uuid.Nil, "", fmt.Errorf("store: ConsumeLinkCode: %w", err)
 	}
+	return orgID, userID, channel, nil
+}
+
+// LinkChatAccount validates channel match, creates the chat account, and marks
+// the link code used in one transaction. Wrong channel or insert failure leaves
+// the code unused.
+func (s *Store) LinkChatAccount(ctx context.Context, code, channel, externalID string) (ChatAccount, error) {
+	sum := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(code))))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ChatAccount{}, fmt.Errorf("store: LinkChatAccount: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var orgID, userID uuid.UUID
+	var wantChannel string
+	err = tx.QueryRow(ctx, `
+		SELECT org_id, user_id, channel FROM chat_link_codes
+		WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
+		FOR UPDATE`, sum[:]).Scan(&orgID, &userID, &wantChannel)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ChatAccount{}, ErrLinkCodeInvalid
+		}
+		return ChatAccount{}, fmt.Errorf("store: LinkChatAccount: %w", err)
+	}
+	if wantChannel != channel {
+		// Do not mark used — caller may retry on the correct channel.
+		return ChatAccount{}, ErrLinkCodeInvalid
+	}
+
+	var a ChatAccount
+	err = tx.QueryRow(ctx, `
+		INSERT INTO chat_accounts (org_id, user_id, channel, external_id)
+		VALUES ($1,$2,$3,$4)
+		RETURNING id, org_id, user_id, channel, external_id, verified_at, created_at`,
+		orgID, userID, channel, externalID,
+	).Scan(&a.ID, &a.OrgID, &a.UserID, &a.Channel, &a.ExternalID, &a.VerifiedAt, &a.CreatedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ChatAccount{}, ErrAccountTaken
+		}
+		return ChatAccount{}, fmt.Errorf("store: LinkChatAccount: %w", err)
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE chat_link_codes SET used_at = now()
 		WHERE code_hash = $1 AND used_at IS NULL`, sum[:])
 	if err != nil {
-		return uuid.Nil, uuid.Nil, "", fmt.Errorf("store: ConsumeLinkCode: %w", err)
+		return ChatAccount{}, fmt.Errorf("store: LinkChatAccount: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return uuid.Nil, uuid.Nil, "", ErrLinkCodeInvalid
+		return ChatAccount{}, ErrLinkCodeInvalid
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return uuid.Nil, uuid.Nil, "", fmt.Errorf("store: ConsumeLinkCode: %w", err)
+		return ChatAccount{}, fmt.Errorf("store: LinkChatAccount: %w", err)
 	}
-	return orgID, userID, channel, nil
+	return a, nil
 }
 
 // FindOutboundByShortRef finds an outbound message whose id hex prefix matches
@@ -680,7 +732,10 @@ func VerifyActionToken(secret []byte, token string, now time.Time) (messageID uu
 		return uuid.Nil, "", ErrActionRejected
 	}
 	gotMAC := hmacSHA256(secret, payload)
-	if subtle.ConstantTimeCompare(gotMAC, wantMAC) != 1 {
+	// Compare fixed-size digests so length mismatch does not early-exit.
+	sumGot := sha256.Sum256(gotMAC)
+	sumWant := sha256.Sum256(wantMAC)
+	if !hmac.Equal(sumGot[:], sumWant[:]) {
 		return uuid.Nil, "", ErrActionRejected
 	}
 	fields := strings.Split(string(payload), "|")

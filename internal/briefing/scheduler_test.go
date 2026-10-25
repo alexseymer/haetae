@@ -36,17 +36,19 @@ func (c *memClock) Set(t time.Time) {
 }
 
 type memStore struct {
-	mu      sync.Mutex
-	orgs    []store.BriefingOrg
-	facts   map[uuid.UUID]store.BriefingFacts
-	claimed map[string]struct{}
+	mu       sync.Mutex
+	orgs     []store.BriefingOrg
+	facts    map[uuid.UUID]store.BriefingFacts
+	claimed  map[string]struct{}
+	enqueued map[string]struct{}
 }
 
 func newMemStore(orgs ...store.BriefingOrg) *memStore {
 	return &memStore{
-		orgs:    orgs,
-		facts:   map[uuid.UUID]store.BriefingFacts{},
-		claimed: map[string]struct{}{},
+		orgs:     orgs,
+		facts:    map[uuid.UUID]store.BriefingFacts{},
+		claimed:  map[string]struct{}{},
+		enqueued: map[string]struct{}{},
 	}
 }
 
@@ -81,10 +83,32 @@ func (m *memStore) BriefingTryClaim(_ context.Context, orgID uuid.UUID, localDat
 	return true, nil
 }
 
+func (m *memStore) BriefingReclaimUnenqueued(_ context.Context, orgID uuid.UUID, localDate time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := claimKey(orgID, localDate)
+	if _, ok := m.claimed[k]; !ok {
+		return false, nil
+	}
+	if _, done := m.enqueued[k]; done {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (m *memStore) BriefingMarkEnqueued(_ context.Context, orgID uuid.UUID, localDate time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.enqueued[claimKey(orgID, localDate)] = struct{}{}
+	return nil
+}
+
 func (m *memStore) BriefingDelete(_ context.Context, orgID uuid.UUID, localDate time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.claimed, claimKey(orgID, localDate))
+	k := claimKey(orgID, localDate)
+	delete(m.claimed, k)
+	delete(m.enqueued, k)
 	return nil
 }
 

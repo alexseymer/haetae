@@ -28,8 +28,12 @@ func testNoAIOutbound(t *testing.T, h *harness) {
 }
 
 func testQuietDayBriefing(t *testing.T, h *harness) {
+	// Clear any accidental early claim (default hour 8 can fire during harness
+	// setup when wall-clock is inside the catch-up window) so the forced tick
+	// is the first real briefing after Telegram is linked.
+	h.clearBriefings()
 	// Force a briefing tick immediately (test-only env). Exactly-once via briefings PK.
-	h.restartServer([]string{"HAETAE_BRIEFING_NOW=1"})
+	h.restartServer([]string{"HAETAE_TEST_HOOKS=1", "HAETAE_BRIEFING_NOW=1"})
 	since := time.Now().Add(-5 * time.Second)
 
 	isBriefing := func(m map[string]any) bool {
@@ -61,7 +65,7 @@ func testQuietDayBriefing(t *testing.T, h *harness) {
 	}
 
 	// Trigger again (another forced Check via restart) — still exactly one.
-	h.restartServer([]string{"HAETAE_BRIEFING_NOW=1"})
+	h.restartServer([]string{"HAETAE_TEST_HOOKS=1", "HAETAE_BRIEFING_NOW=1"})
 	time.Sleep(3 * time.Second)
 	webN = h.countWebMessages(isBriefing)
 	tgN = h.tg.CountSince(adminTgID, time.Time{}, tgPred)

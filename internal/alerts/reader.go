@@ -30,4 +30,8 @@ type Reader interface {
 	ResolveAlert(ctx context.Context, orgID uuid.UUID, dedupeKey string) (store.Alert, error)
 	ListFiringAlerts(ctx context.Context, orgID uuid.UUID) ([]store.Alert, error)
 	GetIncident(ctx context.Context, orgID, id uuid.UUID) (store.Incident, []store.Alert, error)
+
+	LoadAlertEvalState(ctx context.Context, orgID uuid.UUID) ([]store.AlertEvalState, error)
+	UpsertAlertEvalState(ctx context.Context, st store.AlertEvalState) error
+	DeleteAlertEvalState(ctx context.Context, orgID uuid.UUID, kind, key string) error
 }

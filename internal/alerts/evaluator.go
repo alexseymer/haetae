@@ -29,12 +29,14 @@ type Evaluator struct {
 	mu sync.Mutex
 	// consecutiveFalse[orgID][dedupeKey] counts consecutive evaluations where
 	// the condition was false while the alert was still considered active.
-	// Rebuilt empty after process restart (resolution may take 2 more evals).
+	// Seeded from alert_eval_state so restarts do not false-resolve.
 	consecutiveFalse map[uuid.UUID]map[string]int
 	// unhealthySince tracks when a container first became unhealthy.
 	unhealthySince map[uuid.UUID]map[string]time.Time
 	// restartSamples[orgID][host|cid] holds recent restart_count observations.
 	restartSamples map[uuid.UUID]map[string][]restartSample
+	// seededOrgs remembers orgs whose DB trackers have been loaded into memory.
+	seededOrgs map[uuid.UUID]bool
 }
 
 type restartSample struct {
@@ -62,6 +64,7 @@ func NewEvaluator(r Reader, n Notifier, cfg Config, log *slog.Logger) *Evaluator
 		consecutiveFalse: make(map[uuid.UUID]map[string]int),
 		unhealthySince:   make(map[uuid.UUID]map[string]time.Time),
 		restartSamples:   make(map[uuid.UUID]map[string][]restartSample),
+		seededOrgs:       make(map[uuid.UUID]bool),
 	}
 }
 
@@ -109,6 +112,9 @@ func (e *Evaluator) evalOrgSafe(ctx context.Context, orgID uuid.UUID) {
 }
 
 func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
+	if err := e.seedFromDB(ctx, orgID); err != nil {
+		return err
+	}
 	now := e.now().UTC()
 	snap, err := e.buildSnapshot(ctx, orgID, now)
 	if err != nil {
@@ -148,12 +154,16 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 			e.mu.Lock()
 			delete(falseMap, key)
 			e.mu.Unlock()
+			_ = e.r.DeleteAlertEvalState(ctx, orgID, store.EvalKindFalseStreak, key)
 			continue
 		}
 		e.mu.Lock()
 		falseMap[key]++
 		n := falseMap[key]
 		e.mu.Unlock()
+		_ = e.r.UpsertAlertEvalState(ctx, store.AlertEvalState{
+			OrgID: orgID, Kind: store.EvalKindFalseStreak, Key: key, FalseStreak: n,
+		})
 		if n < 2 {
 			continue
 		}
@@ -164,6 +174,7 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 		e.mu.Lock()
 		delete(falseMap, key)
 		e.mu.Unlock()
+		_ = e.r.DeleteAlertEvalState(ctx, orgID, store.EvalKindFalseStreak, key)
 		if err := e.afterAlertResolved(ctx, orgID, a.IncidentID, mutes); err != nil {
 			e.log.Error("after resolve", "org_id", orgID, "err", err)
 		}
@@ -207,7 +218,6 @@ func (e *Evaluator) applyHost(
 	}
 	prevSev := inc.Severity
 
-	var joinedNew bool
 	var notifyUnmuted bool
 	for _, c := range cands {
 		_, wasFiring := existingByKey[c.DedupeKey]
@@ -226,11 +236,10 @@ func (e *Evaluator) applyHost(
 		if err != nil {
 			return err
 		}
-		isNew := created || !wasFiring
-		if isNew {
-			joinedNew = true
-		}
-		if (opened || isNew) && !ruleMuted(mutes, hostID, c.Rule) {
+		// Notify only when INSERT says newly created (xmax=0), or later on
+		// severity escalation. Concurrent evaluators must not both fan out.
+		_ = wasFiring
+		if created && !ruleMuted(mutes, hostID, c.Rule) {
 			notifyUnmuted = true
 		}
 	}
@@ -257,9 +266,7 @@ func (e *Evaluator) applyHost(
 	if escalated && !allFiringMuted(mutes, hostID, firingOnly) {
 		notifyUnmuted = true
 	}
-	if !opened && !escalated && !joinedNew {
-		return nil
-	}
+	_ = opened // incident open without a new alert/escalation does not notify
 	if !notifyUnmuted {
 		return nil
 	}
@@ -432,6 +439,7 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 		samples = samples[i:]
 		rsMap[key] = samples
 		delta := 0
+		var restartPersist *store.AlertEvalState
 		if len(samples) > 0 {
 			minC, maxC := samples[0].count, samples[0].count
 			for _, s := range samples[1:] {
@@ -449,23 +457,46 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 			if delta == 0 && r.RestartCount >= crashLoopMinCount && r.StartedAt != nil && !r.StartedAt.Before(cut) {
 				delta = r.RestartCount
 			}
+			baseline := minC
+			at0 := samples[0].at
+			restartPersist = &store.AlertEvalState{
+				OrgID: orgID, Kind: store.EvalKindRestart, Key: key, RestartBaseline: &baseline,
+				FirstSeen: &at0,
+			}
 		}
 		e.mu.Unlock()
+		if restartPersist != nil {
+			_ = e.r.UpsertAlertEvalState(ctx, *restartPersist)
+		}
 
 		var unhealthyFor time.Duration
 		hf, ok := healthByKey[key]
+		var uhPersist *store.AlertEvalState
+		var uhDelete bool
 		e.mu.Lock()
 		if ok && hf.Health == "unhealthy" {
 			since, exists := uhMap[key]
 			if !exists {
 				uhMap[key] = now
 				since = now
+				uhPersist = &store.AlertEvalState{
+					OrgID: orgID, Kind: store.EvalKindUnhealthy, Key: key, FirstSeen: &now,
+				}
 			}
 			unhealthyFor = now.Sub(since)
 		} else {
+			if _, existed := uhMap[key]; existed {
+				uhDelete = true
+			}
 			delete(uhMap, key)
 		}
 		e.mu.Unlock()
+		if uhPersist != nil {
+			_ = e.r.UpsertAlertEvalState(ctx, *uhPersist)
+		}
+		if uhDelete {
+			_ = e.r.DeleteAlertEvalState(ctx, orgID, store.EvalKindUnhealthy, key)
+		}
 
 		containers = append(containers, ContainerFact{
 			HostID:           r.HostID,
@@ -515,6 +546,60 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 	}, nil
 }
 
+func (e *Evaluator) seedFromDB(ctx context.Context, orgID uuid.UUID) error {
+	e.mu.Lock()
+	if e.seededOrgs[orgID] {
+		e.mu.Unlock()
+		return nil
+	}
+	e.mu.Unlock()
+
+	rows, err := e.r.LoadAlertEvalState(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.seededOrgs[orgID] {
+		return nil
+	}
+	falseMap := e.consecutiveFalse[orgID]
+	if falseMap == nil {
+		falseMap = make(map[string]int)
+		e.consecutiveFalse[orgID] = falseMap
+	}
+	uhMap := e.unhealthySince[orgID]
+	if uhMap == nil {
+		uhMap = make(map[string]time.Time)
+		e.unhealthySince[orgID] = uhMap
+	}
+	rsMap := e.restartSamples[orgID]
+	if rsMap == nil {
+		rsMap = make(map[string][]restartSample)
+		e.restartSamples[orgID] = rsMap
+	}
+	for _, st := range rows {
+		switch st.Kind {
+		case store.EvalKindFalseStreak:
+			falseMap[st.Key] = st.FalseStreak
+		case store.EvalKindUnhealthy:
+			if st.FirstSeen != nil {
+				uhMap[st.Key] = st.FirstSeen.UTC()
+			}
+		case store.EvalKindRestart:
+			if st.RestartBaseline != nil {
+				at := e.now().UTC()
+				if st.FirstSeen != nil {
+					at = st.FirstSeen.UTC()
+				}
+				rsMap[st.Key] = []restartSample{{at: at, count: *st.RestartBaseline}}
+			}
+		}
+	}
+	e.seededOrgs[orgID] = true
+	return nil
+}
+
 // FalseCount returns the consecutive-false counter for tests.
 func (e *Evaluator) FalseCount(orgID uuid.UUID, dedupeKey string) int {
 	e.mu.Lock()
@@ -535,6 +620,9 @@ func (e *Evaluator) SetNowFunc(f func() time.Time) {
 // ApplyCandidates is a test helper that runs grouping/notify for a pre-built
 // candidate set without building a snapshot from the Reader.
 func (e *Evaluator) ApplyCandidates(ctx context.Context, orgID uuid.UUID, firing []Candidate, mutes []store.Mute) error {
+	if err := e.seedFromDB(ctx, orgID); err != nil {
+		return err
+	}
 	existing, err := e.r.ListFiringAlerts(ctx, orgID)
 	if err != nil {
 		return err

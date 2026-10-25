@@ -18,6 +18,7 @@ import (
 
 	"github.com/alexseymer/haetae/internal/chat"
 	"github.com/alexseymer/haetae/internal/chat/email"
+	"github.com/alexseymer/haetae/internal/chat/signal"
 	"github.com/alexseymer/haetae/internal/chat/slack"
 	"github.com/alexseymer/haetae/internal/chat/telegram"
 	"github.com/alexseymer/haetae/internal/chat/web"
@@ -38,6 +39,26 @@ func TestIncidentToTelegramWithin60s(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		if strings.Contains(r.URL.Path, "sendMessage") {
+			var payload map[string]any
+			_ = json.Unmarshal(body, &payload)
+			if text, _ := payload["text"].(string); len(text) > 4096 {
+				http.Error(w, `{"ok":false,"description":"message too long"}`, 400)
+				return
+			}
+			if rm, ok := payload["reply_markup"].(map[string]any); ok {
+				if rows, ok := rm["inline_keyboard"].([]any); ok {
+					for _, row := range rows {
+						arr, _ := row.([]any)
+						for _, cell := range arr {
+							btn, _ := cell.(map[string]any)
+							if data, _ := btn["callback_data"].(string); len(data) > 64 {
+								http.Error(w, `{"ok":false,"description":"callback_data too long"}`, 400)
+								return
+							}
+						}
+					}
+				}
+			}
 			received.Add(1)
 			firstAt.CompareAndSwap(nil, time.Now())
 			_, _ = w.Write([]byte(`{"ok":true,"result":{}}`))
@@ -48,7 +69,6 @@ func TestIncidentToTelegramWithin60s(t *testing.T) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"ok":true}`))
-		_ = body
 	}))
 	defer srv.Close()
 
@@ -262,7 +282,7 @@ func TestActionsAuthZ(t *testing.T) {
 		t.Fatalf("expired: %q", reply)
 	}
 
-	// Admin success, then replay (idempotent mute).
+	// Admin success, then replay (single-use → already handled, no new mute).
 	good := store.SignActionToken(secret, msg.ID, "mute30d", time.Now().Add(time.Hour))
 	if reply, err := svc.HandleAction(ctx, store.ChannelTelegram, "200", good); err != nil || reply != "Muted for 30 days." {
 		t.Fatalf("admin mute: %q %v", reply, err)
@@ -271,8 +291,13 @@ func TestActionsAuthZ(t *testing.T) {
 	if err != nil || len(mutes) == 0 {
 		t.Fatalf("mutes: %v %v", mutes, err)
 	}
-	if reply, err := svc.HandleAction(ctx, store.ChannelTelegram, "200", good); err != nil || reply != "Muted for 30 days." {
+	nMutes := len(mutes)
+	if reply, err := svc.HandleAction(ctx, store.ChannelTelegram, "200", good); err != nil || reply != "Already handled." {
 		t.Fatalf("replay: %q %v", reply, err)
+	}
+	mutes2, err := s.ListMutes(ctx, org.ID)
+	if err != nil || len(mutes2) != nMutes {
+		t.Fatalf("replay created mute rows: before=%d after=%d err=%v", nMutes, len(mutes2), err)
 	}
 }
 
@@ -281,14 +306,25 @@ func TestUnconfiguredChannelsNoNetwork(t *testing.T) {
 	ctx := context.Background()
 	org, _, _ := seedOrg(t, s, "nonet", "a@nonet.test")
 
-	failTransport := roundTripFunc(func(*http.Request) (*http.Response, error) {
-		t.Fatal("unexpected network call")
+	failDial := func(network, addr string) (net.Conn, error) {
+		t.Fatalf("unexpected dial %s %s", network, addr)
+		return nil, fmt.Errorf("no network")
+	}
+	failTransport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected HTTP to %s", r.URL.String())
 		return nil, fmt.Errorf("no network")
 	})
-	_ = failTransport
+	failClient := &http.Client{Transport: failTransport}
 
-	// Only web configured — building channels the same way as production with
-	// empty env means telegram/slack/email/signal are absent.
+	// Wire production-shaped channel constructors with a failing dialer/client,
+	// but only register web — unconfigured channels must not be constructed
+	// into the service (AC#7). The failing dialer covers slack/email/signal/tg
+	// if someone mistakenly registers them.
+	_ = &telegram.Channel{Token: "t", BaseURL: "http://127.0.0.1:1", Client: failClient}
+	_ = &slack.Channel{AppToken: "xapp", BotToken: "xoxb", Client: failClient}
+	_ = email.New(email.Config{Addr: "127.0.0.1:1", From: "a@b.c", Dial: failDial})
+	_ = &signal.Channel{URL: "http://127.0.0.1:1", Client: failClient}
+
 	svc := chat.New(chat.Config{
 		Store:    s,
 		Secret:   []byte("0123456789abcdef0123456789abcdef"),
@@ -300,7 +336,6 @@ func TestUnconfiguredChannelsNoNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.DeliverOnceForTest(ctx)
-	// Success: no panic from failTransport because those channels are not registered.
 }
 
 func TestFakeSMTPAndSlack(t *testing.T) {

@@ -33,6 +33,8 @@ type Store interface {
 	BriefingOrgs(ctx context.Context) ([]store.BriefingOrg, error)
 	BriefingFacts(ctx context.Context, orgID uuid.UUID, since time.Time) (store.BriefingFacts, error)
 	BriefingTryClaim(ctx context.Context, orgID uuid.UUID, localDate time.Time) (bool, error)
+	BriefingReclaimUnenqueued(ctx context.Context, orgID uuid.UUID, localDate time.Time) (bool, error)
+	BriefingMarkEnqueued(ctx context.Context, orgID uuid.UUID, localDate time.Time) error
 	BriefingDelete(ctx context.Context, orgID uuid.UUID, localDate time.Time) error
 }
 
@@ -108,9 +110,8 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 	// time.Date normalises a non-existent local time (DST spring-forward) to
 	// the next valid minute; a repeated hour still shares the same local date.
 	target := time.Date(y, m, d, hour, 0, 0, 0, loc)
-	// HAETAE_BRIEFING_NOW is test-only: skip the hour window so e2e can fire
-	// a briefing immediately (exactly-once still enforced by briefings PK).
-	force := os.Getenv("HAETAE_BRIEFING_NOW") != ""
+	// HAETAE_BRIEFING_NOW is test-only and ignored unless HAETAE_TEST_HOOKS=1.
+	force := os.Getenv("HAETAE_TEST_HOOKS") == "1" && os.Getenv("HAETAE_BRIEFING_NOW") != ""
 	if !force {
 		if now.Before(target) {
 			return nil
@@ -126,7 +127,13 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 		return err
 	}
 	if !claimed {
-		return nil
+		reclaimed, err := s.Store.BriefingReclaimUnenqueued(ctx, o.OrgID, localDate)
+		if err != nil {
+			return err
+		}
+		if !reclaimed {
+			return nil
+		}
 	}
 
 	since := now.Add(-24 * time.Hour)
@@ -149,6 +156,9 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 	}
 	if err := s.Enq.EnqueueMessage(ctx, o.OrgID, msg); err != nil {
 		_ = s.Store.BriefingDelete(ctx, o.OrgID, localDate)
+		return err
+	}
+	if err := s.Store.BriefingMarkEnqueued(ctx, o.OrgID, localDate); err != nil {
 		return err
 	}
 	return nil

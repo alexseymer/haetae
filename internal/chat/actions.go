@@ -14,28 +14,20 @@ import (
 const (
 	replyLinkOK         = "Linked. You will receive alerts here."
 	replyLinkBad        = "That link code is not valid."
-	replyUnlinked       = "Link your account first with /link CODE from the web UI."
 	replyActionRejected = "Action not allowed."
 	replyActionLater    = "Snoozed."
 	replyActionMuted    = "Muted for 30 days."
 	replyActionAck      = "Acknowledged."
-	replyAlreadyMuted   = "Already muted."
+	replyAlreadyHandled = "Already handled."
+	replyStartUnlinked  = "Send /link CODE from the web UI to link this account."
 )
 
 // HandleLink consumes a /link CODE from an external identity.
 func (s *Service) HandleLink(ctx context.Context, channel, externalID, code string) (string, error) {
-	orgID, userID, wantChannel, err := s.st.ConsumeLinkCode(ctx, code)
+	_, err := s.st.LinkChatAccount(ctx, code, channel, externalID)
 	if err != nil {
-		s.auditReject(channel, externalID, "link_invalid", err)
-		return replyLinkBad, nil
-	}
-	if wantChannel != channel {
-		s.auditReject(channel, externalID, "link_wrong_channel", nil)
-		return replyLinkBad, nil
-	}
-	if _, err := s.st.CreateChatAccount(ctx, orgID, userID, channel, externalID); err != nil {
-		if errors.Is(err, store.ErrAccountTaken) {
-			s.auditReject(channel, externalID, "link_takeover_refused", err)
+		if errors.Is(err, store.ErrLinkCodeInvalid) || errors.Is(err, store.ErrAccountTaken) {
+			s.auditReject(channel, externalID, "link_invalid", err)
 			return replyLinkBad, nil
 		}
 		return "", err
@@ -43,14 +35,22 @@ func (s *Service) HandleLink(ctx context.Context, channel, externalID, code stri
 	return replyLinkOK, nil
 }
 
-// HandleAction processes a signed button token from a channel identity.
+// HandleAction processes a button token (opaque "a:…" ref or HMAC) from a channel identity.
 func (s *Service) HandleAction(ctx context.Context, channel, externalID, token string) (string, error) {
-	messageID, action, err := store.VerifyActionToken(s.secret, token, s.now())
+	messageID, action, err := s.resolveActionToken(ctx, token)
 	if err != nil {
 		s.auditReject(channel, externalID, "action_token_invalid", err)
 		return replyActionRejected, nil
 	}
 	return s.applyAction(ctx, channel, externalID, messageID, action)
+}
+
+func (s *Service) resolveActionToken(ctx context.Context, token string) (uuid.UUID, string, error) {
+	if strings.HasPrefix(token, store.ActionRefPrefix) {
+		ref := strings.TrimPrefix(token, store.ActionRefPrefix)
+		return s.st.ResolveActionRef(ctx, ref)
+	}
+	return store.VerifyActionToken(s.secret, token, s.now())
 }
 
 // HandleSignalKeyword handles later/mute/ack with a short message ref.
@@ -107,6 +107,14 @@ func (s *Service) applyAction(ctx context.Context, channel, externalID string, m
 	role, err := s.st.UserRole(ctx, acc.OrgID, acc.UserID)
 	if err != nil || role != "admin" {
 		s.auditReject(channel, externalID, "action_not_admin", err)
+		return replyActionRejected, nil
+	}
+
+	if err := s.st.ConsumeActionRef(ctx, messageID, action); err != nil {
+		if errors.Is(err, store.ErrActionAlreadyUsed) {
+			return replyAlreadyHandled, nil
+		}
+		s.auditReject(channel, externalID, "action_consume", err)
 		return replyActionRejected, nil
 	}
 
@@ -172,7 +180,6 @@ func (s *Service) muteIncident(ctx context.Context, acc store.ChatAccount, msg s
 			return "", err
 		}
 	}
-	// Idempotent marker row.
 	if _, err := s.st.InsertInbound(ctx, store.ChatMessage{
 		OrgID:      msg.OrgID,
 		Channel:    acc.Channel,
@@ -183,7 +190,6 @@ func (s *Service) muteIncident(ctx context.Context, acc store.ChatAccount, msg s
 	}); err != nil {
 		return "", err
 	}
-	_ = replyAlreadyMuted // reserved for future mute-exists check
 	return replyActionMuted, nil
 }
 
@@ -204,10 +210,15 @@ func uniqueRules(alerts []store.Alert) []string {
 }
 
 // HandleInboundText stores free text from a linked account and returns the
-// fixed operator-disabled reply. Unlinked senders get only a generic reply.
+// fixed operator-disabled reply. Unlinked senders are ignored except /link and
+// /start (rate-limited replies).
 func (s *Service) HandleInboundText(ctx context.Context, channel, externalID, text string) (string, error) {
 	text = strings.TrimSpace(text)
-	if strings.HasPrefix(strings.ToLower(text), "/link") {
+	lower := strings.ToLower(text)
+	if strings.HasPrefix(lower, "/link") {
+		if !s.allowUnlinkedReply(channel, externalID) {
+			return "", nil
+		}
 		parts := strings.Fields(text)
 		if len(parts) < 2 {
 			return replyLinkBad, nil
@@ -216,8 +227,15 @@ func (s *Service) HandleInboundText(ctx context.Context, channel, externalID, te
 	}
 	acc, err := s.st.GetChatAccountByExternal(ctx, channel, externalID)
 	if err != nil {
-		s.auditReject(channel, externalID, "inbound_unlinked", err)
-		return replyUnlinked, nil
+		if strings.HasPrefix(lower, "/start") {
+			if !s.allowUnlinkedReply(channel, externalID) {
+				return "", nil
+			}
+			return replyStartUnlinked, nil
+		}
+		// Unlinked non-/link: ignore silently (no confirmation of bot purpose).
+		s.auditReject(channel, externalID, "inbound_unlinked_ignored", err)
+		return "", nil
 	}
 	if _, err := s.st.InsertInbound(ctx, store.ChatMessage{
 		OrgID:     acc.OrgID,
@@ -229,6 +247,13 @@ func (s *Service) HandleInboundText(ctx context.Context, channel, externalID, te
 		return "", err
 	}
 	return OperatorDisabledReply, nil
+}
+
+func (s *Service) allowUnlinkedReply(channel, externalID string) bool {
+	if s.unlinkedReplies == nil {
+		return true
+	}
+	return s.unlinkedReplies.allow(channel+":"+externalID, s.now())
 }
 
 func (s *Service) auditReject(channel, externalID, reason string, err error) {

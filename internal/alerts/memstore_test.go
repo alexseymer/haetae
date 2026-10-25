@@ -32,6 +32,8 @@ type memStore struct {
 	diskPct   map[uuid.UUID]float64
 	offline   []store.Host
 	deploys   []store.Deploy
+
+	evalState map[string]store.AlertEvalState // org|kind|key
 }
 
 func newMemStore(orgID uuid.UUID) *memStore {
@@ -44,6 +46,7 @@ func newMemStore(orgID uuid.UUID) *memStore {
 		alerts:     map[string]*store.Alert{},
 		sustained:  map[string]bool{},
 		diskPct:    map[uuid.UUID]float64{},
+		evalState:  map[string]store.AlertEvalState{},
 	}
 }
 
@@ -240,6 +243,36 @@ func (m *memStore) GetIncident(_ context.Context, orgID, id uuid.UUID) (store.In
 		}
 	}
 	return *inc, alerts, nil
+}
+
+func (m *memStore) evalKey(orgID uuid.UUID, kind, key string) string {
+	return orgID.String() + "|" + kind + "|" + key
+}
+
+func (m *memStore) LoadAlertEvalState(_ context.Context, orgID uuid.UUID) ([]store.AlertEvalState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []store.AlertEvalState
+	for _, st := range m.evalState {
+		if st.OrgID == orgID {
+			out = append(out, st)
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) UpsertAlertEvalState(_ context.Context, st store.AlertEvalState) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.evalState[m.evalKey(st.OrgID, st.Kind, st.Key)] = st
+	return nil
+}
+
+func (m *memStore) DeleteAlertEvalState(_ context.Context, orgID uuid.UUID, kind, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.evalState, m.evalKey(orgID, kind, key))
+	return nil
 }
 
 func (m *memStore) openCount() int {

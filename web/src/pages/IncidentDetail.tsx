@@ -112,7 +112,7 @@ export function IncidentDetailPage() {
                     name="days"
                     type="number"
                     min={1}
-                    max={365}
+                    max={90}
                     value={muteDays}
                     onChange={(e) => setMuteDays(Number(e.target.value))}
                     required

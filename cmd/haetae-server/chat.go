@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -18,13 +19,15 @@ import (
 // delivery / inbound loops until ctx ends. Channels without env config are
 // omitted and make no network calls. The returned service implements
 // alerts.Notifier and briefing.Enqueuer.
-func startChat(ctx context.Context, st *store.Store, dataDir string, log *slog.Logger) *chat.Service {
-	secret, err := chat.LoadChatSecret(dataDir)
+func startChat(ctx context.Context, st *store.Store, dataDir string, log *slog.Logger) (*chat.Service, error) {
+	secret, err := chat.LoadOrCreateChatSecret(dataDir)
 	if err != nil {
-		log.Warn("chat secret", "err", err)
-		secret = []byte("haetae-chat-dev-secret-change-me!!")
+		return nil, fmt.Errorf("chat secret: %w", err)
 	}
 	publicURL := envOr("HAETAE_PUBLIC_URL", envOr("HAETAE_WEB_URL", ""))
+	if err := chat.ValidatePublicURL(publicURL); err != nil {
+		return nil, err
+	}
 
 	channels, attach := buildChatChannels(publicURL)
 	svc := chat.New(chat.Config{
@@ -42,7 +45,7 @@ func startChat(ctx context.Context, st *store.Store, dataDir string, log *slog.L
 		}
 	}()
 	log.Info("chat service started", "channels", svc.ChannelNames())
-	return svc
+	return svc, nil
 }
 
 func buildChatChannels(publicURL string) (channels []chat.Channel, attach func(*chat.Service)) {
@@ -57,13 +60,14 @@ func buildChatChannels(publicURL string) (channels []chat.Channel, attach func(*
 		tg = &telegram.Channel{
 			Token:   tok,
 			BaseURL: os.Getenv("HAETAE_TELEGRAM_BASE_URL"), // empty → api.telegram.org; tests point at a fake
+			Client:  chat.NewHTTPClient(0),
 		}
 		channels = append(channels, tg)
 	}
 	appTok := os.Getenv("HAETAE_SLACK_APP_TOKEN")
 	botTok := os.Getenv("HAETAE_SLACK_BOT_TOKEN")
 	if appTok != "" && botTok != "" {
-		sl = &slack.Channel{AppToken: appTok, BotToken: botTok}
+		sl = &slack.Channel{AppToken: appTok, BotToken: botTok, Client: chat.NewHTTPClient(0)}
 		channels = append(channels, sl)
 	}
 	if addr := os.Getenv("HAETAE_SMTP_ADDR"); addr != "" && os.Getenv("HAETAE_SMTP_FROM") != "" {
@@ -77,7 +81,7 @@ func buildChatChannels(publicURL string) (channels []chat.Channel, attach func(*
 		}))
 	}
 	if u := os.Getenv("HAETAE_SIGNAL_URL"); u != "" {
-		sig = &signal.Channel{URL: u}
+		sig = &signal.Channel{URL: u, Client: chat.NewHTTPClient(0)}
 		channels = append(channels, sig)
 	}
 

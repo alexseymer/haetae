@@ -42,16 +42,26 @@ func EscapeTelegram(s string) string {
 	return html.EscapeString(s)
 }
 
-// EscapeSlack escapes for Slack mrkdwn.
+// EscapeSlack escapes for Slack mrkdwn and neutralises mention sequences
+// (<!channel>, <@U…>, <#C…>) so untrusted values cannot ping the channel.
 func EscapeSlack(s string) string {
 	s = stripControls(s)
 	s = LimitRunes(s, maxFieldRunes)
+	return escapeSlackMarkup(s)
+}
+
+func escapeSlackMarkup(s string) string {
 	replacer := strings.NewReplacer(
 		"&", "&amp;",
 		"<", "&lt;",
 		">", "&gt;",
 	)
-	return replacer.Replace(s)
+	s = replacer.Replace(s)
+	// Break mention sequences after escaping so they cannot ping the channel.
+	s = strings.ReplaceAll(s, "&lt;!", "&lt;\u200b!")
+	s = strings.ReplaceAll(s, "&lt;@", "&lt;\u200b@")
+	s = strings.ReplaceAll(s, "&lt;#", "&lt;\u200b#")
+	return s
 }
 
 // EscapeBody applies channel-specific escaping and a body length limit.
@@ -61,7 +71,7 @@ func EscapeBody(channel, s string) string {
 	case storeChannelTelegram:
 		s = html.EscapeString(LimitRunes(s, maxBodyRunes))
 	case storeChannelSlack:
-		s = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(LimitRunes(s, maxBodyRunes))
+		s = escapeSlackMarkup(LimitRunes(s, maxBodyRunes))
 	default:
 		s = LimitRunes(s, maxBodyRunes)
 	}

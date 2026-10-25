@@ -116,14 +116,19 @@ func TestLinkCodeSingleUseExpiryRateLimitTakeover(t *testing.T) {
 	if len(code) != store.LinkCodeLen {
 		t.Fatalf("len=%d", len(code))
 	}
+	// Peek does not burn the code.
 	orgID, userID, ch, err := s.ConsumeLinkCode(ctx, code)
 	if err != nil || orgID != org.ID || userID != u.ID || ch != store.ChannelTelegram {
-		t.Fatalf("consume: %v %v %v %v", orgID, userID, ch, err)
+		t.Fatalf("peek: %v %v %v %v", orgID, userID, ch, err)
 	}
-	if _, _, _, err := s.ConsumeLinkCode(ctx, code); !errors.Is(err, store.ErrLinkCodeInvalid) {
+	acc, err := s.LinkChatAccount(ctx, code, store.ChannelTelegram, "4242")
+	if err != nil || acc.UserID != u.ID {
+		t.Fatalf("link: %v %+v", err, acc)
+	}
+	if _, err := s.LinkChatAccount(ctx, code, store.ChannelTelegram, "4243"); !errors.Is(err, store.ErrLinkCodeInvalid) {
 		t.Fatalf("reuse: %v", err)
 	}
-	if _, _, _, err := s.ConsumeLinkCode(ctx, "ZZZZZZZZ"); !errors.Is(err, store.ErrLinkCodeInvalid) {
+	if _, err := s.LinkChatAccount(ctx, "ZZZZZZZZ", store.ChannelTelegram, "1"); !errors.Is(err, store.ErrLinkCodeInvalid) {
 		t.Fatalf("wrong: %v", err)
 	}
 
@@ -135,7 +140,7 @@ func TestLinkCodeSingleUseExpiryRateLimitTakeover(t *testing.T) {
 	if _, err := s.Pool().Exec(ctx, `UPDATE chat_link_codes SET expires_at = now() - interval '1 minute'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := s.ConsumeLinkCode(ctx, expired); !errors.Is(err, store.ErrLinkCodeInvalid) {
+	if _, err := s.LinkChatAccount(ctx, expired, store.ChannelTelegram, "9"); !errors.Is(err, store.ErrLinkCodeInvalid) {
 		t.Fatalf("expired: %v", err)
 	}
 
@@ -149,33 +154,26 @@ func TestLinkCodeSingleUseExpiryRateLimitTakeover(t *testing.T) {
 		t.Fatalf("rate limit: %v", err)
 	}
 
-	// Takeover refused.
+	// Takeover refused: code stays valid when account insert fails.
+	_, _ = s.Pool().Exec(ctx, `DELETE FROM chat_link_codes WHERE user_id = $1`, u2.ID)
 	code2, err := s.CreateLinkCode(ctx, org.ID, u2.ID, store.ChannelTelegram)
 	if err != nil {
 		t.Fatal(err)
 	}
-	o2, uid2, _, err := s.ConsumeLinkCode(ctx, code2)
-	if err != nil {
+	if _, err := s.LinkChatAccount(ctx, code2, store.ChannelTelegram, "111"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateChatAccount(ctx, o2, uid2, store.ChannelTelegram, "111"); err != nil {
-		t.Fatal(err)
-	}
+	_, _ = s.Pool().Exec(ctx, `DELETE FROM chat_link_codes WHERE user_id = $1`, u.ID)
 	code3, err := s.CreateLinkCode(ctx, org.ID, u.ID, store.ChannelTelegram)
 	if err != nil {
-		// may hit rate limit from earlier; clear codes for this user
-		_, _ = s.Pool().Exec(ctx, `DELETE FROM chat_link_codes WHERE user_id = $1`, u.ID)
-		code3, err = s.CreateLinkCode(ctx, org.ID, u.ID, store.ChannelTelegram)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	o3, uid3, _, err := s.ConsumeLinkCode(ctx, code3)
-	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateChatAccount(ctx, o3, uid3, store.ChannelTelegram, "111"); !errors.Is(err, store.ErrAccountTaken) {
+	if _, err := s.LinkChatAccount(ctx, code3, store.ChannelTelegram, "111"); !errors.Is(err, store.ErrAccountTaken) {
 		t.Fatalf("takeover: %v", err)
+	}
+	// Code still usable on a free external id after takeover refusal.
+	if _, err := s.LinkChatAccount(ctx, code3, store.ChannelTelegram, "222"); err != nil {
+		t.Fatalf("code should remain after failed takeover: %v", err)
 	}
 }
 

@@ -161,10 +161,14 @@ describe("ChatPage", () => {
           messages: [
             msg("e1", {
               evidence: [
-                { label: "ok", path: "/incidents/x" },
+                {
+                  label: "ok",
+                  path: "/incidents/550e8400-e29b-41d4-a716-446655440000",
+                },
                 { label: "js", path: "javascript:alert(1)" },
                 { label: "proto", path: "//evil" },
                 { label: "abs", path: "https://evil.example/" },
+                { label: "prefix", path: "/incidents/not-a-uuid" },
               ],
             }),
           ],
@@ -175,11 +179,15 @@ describe("ChatPage", () => {
     );
     renderChat(admin, fetchMock as unknown as typeof fetch);
     const ok = await screen.findByRole("link", { name: "ok" });
-    expect(ok).toHaveAttribute("href", "/incidents/x");
+    expect(ok).toHaveAttribute(
+      "href",
+      "/incidents/550e8400-e29b-41d4-a716-446655440000",
+    );
     expect(screen.queryByRole("link", { name: "js" })).not.toBeInTheDocument();
     expect(screen.getByText("js: javascript:alert(1)")).toBeInTheDocument();
     expect(screen.getByText("proto: //evil")).toBeInTheDocument();
     expect(screen.getByText("abs: https://evil.example/")).toBeInTheDocument();
+    expect(screen.getByText("prefix: /incidents/not-a-uuid")).toBeInTheDocument();
   });
 
   it("hides action buttons for members", async () => {

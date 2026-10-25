@@ -61,7 +61,11 @@ func (f *fakeTelegram) serve(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case strings.Contains(path, "sendMessage"):
-		f.recordSend(body)
+		if errMsg := f.recordSend(body); errMsg != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"ok": false, "error_code": 400, "description": errMsg})
+			return
+		}
 		writeJSON(w, map[string]any{"ok": true, "result": map[string]any{"message_id": 1}})
 	case strings.Contains(path, "getUpdates"):
 		f.serveUpdates(w, body)
@@ -72,11 +76,14 @@ func (f *fakeTelegram) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (f *fakeTelegram) recordSend(body []byte) {
+func (f *fakeTelegram) recordSend(body []byte) string {
 	var payload map[string]any
 	_ = json.Unmarshal(body, &payload)
 	chatID, _ := asInt64(payload["chat_id"])
 	text, _ := payload["text"].(string)
+	if len(text) > 4096 {
+		return "message is too long"
+	}
 	var keys []tgButton
 	if rm, ok := payload["reply_markup"].(map[string]any); ok {
 		if rows, ok := rm["inline_keyboard"].([]any); ok {
@@ -84,9 +91,13 @@ func (f *fakeTelegram) recordSend(body []byte) {
 				arr, _ := row.([]any)
 				for _, cell := range arr {
 					btn, _ := cell.(map[string]any)
+					data := str(btn["callback_data"])
+					if len(data) > 64 {
+						return "callback_data is too long (max 64)"
+					}
 					keys = append(keys, tgButton{
 						Text: str(btn["text"]),
-						Data: str(btn["callback_data"]),
+						Data: data,
 					})
 				}
 			}
@@ -97,6 +108,7 @@ func (f *fakeTelegram) recordSend(body []byte) {
 		At: time.Now(), ChatID: chatID, Text: text, Keyboard: keys, Raw: payload,
 	})
 	f.mu.Unlock()
+	return ""
 }
 
 func (f *fakeTelegram) serveUpdates(w http.ResponseWriter, body []byte) {

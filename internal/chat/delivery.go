@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alexseymer/haetae/internal/store"
+	"github.com/google/uuid"
 )
 
 // Run starts the delivery loop and each channel's inbound Run until ctx ends.
@@ -143,10 +144,15 @@ func (s *Service) deliverChannel(ctx context.Context, channel string, batch []st
 
 func (s *Service) deliverOne(ctx context.Context, ch Channel, m store.ChatMessage) {
 	now := s.now()
+
+	// Already sent successfully in this process: only retry MarkDelivered.
+	if _, ok := s.delivered.Load(m.ID); ok {
+		s.markDeliveredRetry(ctx, m.ID, now)
+		return
+	}
+
 	if m.Channel == store.ChannelWeb {
-		if err := s.st.MarkDelivered(ctx, m.ID, now); err != nil {
-			s.log.Error("mark web delivered", "id", m.ID, "err", err)
-		}
+		s.markDeliveredRetry(ctx, m.ID, now)
 		return
 	}
 	if ch == nil {
@@ -166,13 +172,10 @@ func (s *Service) deliverOne(ctx context.Context, ch Channel, m store.ChatMessag
 
 	msg := m
 	if len(msg.Actions) > 0 && len(s.secret) > 0 {
-		exp := now.Add(store.ActionTokenTTL)
-		actions := make([]store.ChatAction, len(msg.Actions))
-		for i, a := range msg.Actions {
-			actions[i] = store.ChatAction{
-				ID:    store.SignActionToken(s.secret, m.ID, a.ID, exp),
-				Label: a.Label,
-			}
+		actions, err := s.attachActionPayloads(ctx, m, now)
+		if err != nil {
+			_ = s.st.MarkFailed(ctx, m.ID, m.Attempts+1, err.Error(), now)
+			return
 		}
 		msg.Actions = actions
 	}
@@ -182,12 +185,68 @@ func (s *Service) deliverOne(ctx context.Context, ch Channel, m store.ChatMessag
 		s.log.Warn("chat delivery failed", "channel", m.Channel, "id", m.ID, "attempt", m.Attempts+1, "err", err)
 		return
 	}
-	if err := s.st.MarkDelivered(ctx, m.ID, now); err != nil {
-		s.log.Error("mark delivered", "id", m.ID, "err", err)
+	s.delivered.Store(m.ID, struct{}{})
+	s.markDeliveredRetry(ctx, m.ID, now)
+}
+
+// attachActionPayloads builds channel-safe action values: Telegram/Signal get
+// short opaque refs; Slack/web keep HMAC tokens (size allows).
+func (s *Service) attachActionPayloads(ctx context.Context, m store.ChatMessage, now time.Time) ([]store.ChatAction, error) {
+	exp := now.Add(store.ActionTokenTTL)
+	ids := make([]string, len(m.Actions))
+	for i, a := range m.Actions {
+		ids[i] = a.ID
 	}
+	refs, err := s.st.CreateActionRefs(ctx, m.OrgID, m.ID, ids, exp)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.ChatAction, len(m.Actions))
+	for i, a := range m.Actions {
+		label := a.Label
+		switch m.Channel {
+		case store.ChannelTelegram:
+			ref := refs[a.ID]
+			out[i] = store.ChatAction{ID: store.ActionRefPrefix + ref, Label: label}
+		default:
+			// Slack action value ≤ 2000; web uses the same HMAC form.
+			out[i] = store.ChatAction{
+				ID:    store.SignActionToken(s.secret, m.ID, a.ID, exp),
+				Label: label,
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) markDeliveredRetry(ctx context.Context, id uuid.UUID, at time.Time) {
+	backoff := []time.Duration{0, 50 * time.Millisecond, 200 * time.Millisecond, time.Second, 2 * time.Second}
+	var err error
+	for i, d := range backoff {
+		if d > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(d):
+			}
+		}
+		err = s.st.MarkDelivered(ctx, id, at)
+		if err == nil {
+			s.delivered.Delete(id)
+			return
+		}
+		s.log.Error("mark delivered", "id", id, "attempt", i+1, "err", err)
+	}
+	// Keep id in delivered set so a reclaim will not resend; next claim will
+	// only retry MarkDelivered.
 }
 
 // DeliverOnceForTest runs one delivery pass (tests).
 func (s *Service) DeliverOnceForTest(ctx context.Context) {
 	s.deliverOnce(ctx)
+}
+
+// RememberDeliveredForTest marks an id as already sent (tests).
+func (s *Service) RememberDeliveredForTest(id uuid.UUID) {
+	s.delivered.Store(id, struct{}{})
 }

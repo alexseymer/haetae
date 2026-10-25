@@ -49,3 +49,14 @@ func TestLimitRunes(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestEscapeSlackMentions(t *testing.T) {
+	hostile := "ping <!channel> and <@U123> & more"
+	got := EscapeSlack(hostile)
+	if strings.Contains(got, "<!channel>") || strings.Contains(got, "<@U") {
+		t.Fatalf("mention leaked: %q", got)
+	}
+	if !strings.Contains(got, "&amp;") || !strings.Contains(got, "&lt;") {
+		t.Fatalf("expected entity escape: %q", got)
+	}
+}

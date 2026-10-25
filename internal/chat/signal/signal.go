@@ -36,7 +36,7 @@ func (c *Channel) client() *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return chat.NewHTTPClient(30 * time.Second)
 }
 
 // Send delivers a plain-text message with a short ref for keyword replies.

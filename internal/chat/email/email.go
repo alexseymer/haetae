@@ -6,9 +6,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/alexseymer/haetae/internal/store"
 )
@@ -62,6 +64,19 @@ func (c *Channel) Send(ctx context.Context, msg store.ChatMessage, account *stor
 }
 
 func (c *Channel) sendMail(ctx context.Context, to, subject, body string) error {
+	fromHeader, err := sanitizeAddress(c.cfg.From)
+	if err != nil {
+		return fmt.Errorf("email: from: %w", err)
+	}
+	toHeader, err := sanitizeAddress(to)
+	if err != nil {
+		return fmt.Errorf("email: to: %w", err)
+	}
+	subj, err := sanitizeHeaderValue(subject)
+	if err != nil {
+		return fmt.Errorf("email: subject: %w", err)
+	}
+
 	addr := c.cfg.Addr
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -103,10 +118,10 @@ func (c *Channel) sendMail(ctx context.Context, to, subject, body string) error 
 			return fmt.Errorf("email: auth: %w", err)
 		}
 	}
-	if err := client.Mail(c.cfg.From); err != nil {
+	if err := client.Mail(fromHeader); err != nil {
 		return err
 	}
-	if err := client.Rcpt(to); err != nil {
+	if err := client.Rcpt(toHeader); err != nil {
 		return err
 	}
 	w, err := client.Data()
@@ -114,7 +129,7 @@ func (c *Channel) sendMail(ctx context.Context, to, subject, body string) error 
 		return err
 	}
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		c.cfg.From, to, subject, body)
+		fromHeader, toHeader, subj, body)
 	if _, err := w.Write([]byte(msg)); err != nil {
 		return err
 	}
@@ -122,4 +137,34 @@ func (c *Channel) sendMail(ctx context.Context, to, subject, body string) error 
 		return err
 	}
 	return client.Quit()
+}
+
+func sanitizeAddress(raw string) (string, error) {
+	if err := rejectHeaderControls(raw); err != nil {
+		return "", err
+	}
+	addr, err := mail.ParseAddress(raw)
+	if err != nil {
+		return "", err
+	}
+	if err := rejectHeaderControls(addr.Address); err != nil {
+		return "", err
+	}
+	return addr.Address, nil
+}
+
+func sanitizeHeaderValue(v string) (string, error) {
+	if err := rejectHeaderControls(v); err != nil {
+		return "", err
+	}
+	return v, nil
+}
+
+func rejectHeaderControls(s string) error {
+	for _, r := range s {
+		if r == '\r' || r == '\n' || (unicode.IsControl(r) && r != '\t') {
+			return fmt.Errorf("header contains control characters")
+		}
+	}
+	return nil
 }
