@@ -4,7 +4,10 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -444,5 +447,140 @@ func TestHealthzAndUnknownAPIRoutes(t *testing.T) {
 	s, h, b := c.do(http.MethodGet, "/api/does-not-exist", nil)
 	if s != 404 || !strings.HasPrefix(h.Get("Content-Type"), "application/json") || !strings.Contains(string(b), "not found") {
 		t.Fatalf("unknown route: %d %s %s", s, h.Get("Content-Type"), b)
+	}
+}
+
+// The browser's cookie must be renewed together with the server-side session,
+// or an active user is signed out when the first cookie lapses.
+func TestActiveSessionCookieIsRenewed(t *testing.T) {
+	var mu sync.Mutex
+	clock := time.Now()
+	now := func() time.Time { mu.Lock(); defer mu.Unlock(); return clock }
+	e := newEnv(t, func(c *Config) { c.Now = now })
+	c := signedIn(t, e, "admin@example.com")
+
+	mu.Lock()
+	clock = clock.Add(2 * time.Minute) // past the touch interval
+	mu.Unlock()
+	_, h, _ := c.do(http.MethodGet, "/api/me", nil)
+	cookie := h.Get("Set-Cookie")
+	if !strings.Contains(cookie, "haetae_session=") || !strings.Contains(cookie, "Expires=") {
+		t.Fatalf("an active session did not renew its cookie: %q", cookie)
+	}
+	// The renewed cookie expires about sessionIdle after now, never beyond the absolute limit.
+	var expires time.Time
+	for _, part := range strings.Split(cookie, ";") {
+		part = strings.TrimSpace(part)
+		if v, ok := strings.CutPrefix(part, "Expires="); ok {
+			expires, _ = time.Parse(http.TimeFormat, v)
+		}
+	}
+	want := now().Add(sessionIdle)
+	if d := expires.Sub(want); d < -2*time.Second || d > 2*time.Second {
+		t.Fatalf("renewed cookie expires %v, want about %v", expires, want)
+	}
+	// Within the touch interval nothing is renewed (no needless Set-Cookie).
+	_, h, _ = c.do(http.MethodGet, "/api/me", nil)
+	if h.Get("Set-Cookie") != "" {
+		t.Errorf("cookie re-sent on every request: %q", h.Get("Set-Cookie"))
+	}
+}
+
+func prefixes(t *testing.T, cidrs ...string) []netip.Prefix {
+	t.Helper()
+	var out []netip.Prefix
+	for _, c := range cidrs {
+		out = append(out, netip.MustParsePrefix(c))
+	}
+	return out
+}
+
+func TestClientAddressOnlyTrustsConfiguredProxies(t *testing.T) {
+	req := func(remote, xff string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = remote
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		return r
+	}
+	none := New(Config{})
+	proxied := New(Config{TrustedProxies: prefixes(t, "10.0.0.0/8", "127.0.0.1/32")})
+
+	for _, tc := range []struct {
+		name string
+		api  *API
+		r    *http.Request
+		want string
+	}{
+		{"no proxies configured: header ignored", none, req("203.0.113.9:1234", "1.2.3.4"), "203.0.113.9"},
+		{"direct client forging the header", proxied, req("203.0.113.9:1234", "1.2.3.4"), "203.0.113.9"},
+		{"proxy appends the real client", proxied, req("10.0.0.5:1234", "198.51.100.7"), "198.51.100.7"},
+		{"client-supplied prefix is ignored", proxied, req("10.0.0.5:1234", "6.6.6.6, 198.51.100.7"), "198.51.100.7"},
+		{"chain of trusted proxies", proxied, req("10.0.0.5:1234", "198.51.100.7, 10.0.0.9"), "198.51.100.7"},
+		{"garbage in the chain: do not trust", proxied, req("10.0.0.5:1234", "not-an-ip"), "10.0.0.5"},
+		{"header missing", proxied, req("10.0.0.5:1234", ""), "10.0.0.5"},
+		{"IPv6 peer", none, req("[2001:db8::1]:443", ""), "2001:db8::1"},
+	} {
+		if got := tc.api.clientAddr(tc.r); got != tc.want {
+			t.Errorf("%s: clientAddr = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Guesses against one account from many addresses still add up.
+func TestLoginGuessesAcrossAddressesAreLimitedPerAccount(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.TrustedProxies = prefixes(t, "127.0.0.0/8") })
+	signedIn(t, e, "admin@example.com")
+
+	login := func(ip string) int {
+		req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/api/login", strings.NewReader(`{"email":"admin@example.com","password":"wrong password here"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Haetae-Request", "1")
+		req.Header.Set("X-Forwarded-For", ip) // the test server is on loopback, a trusted proxy
+		resp, err := e.newClient().hc.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	var limited int
+	for i := range 45 {
+		if login(fmt.Sprintf("198.51.100.%d", i+1)) == http.StatusTooManyRequests {
+			limited++
+		}
+	}
+	if limited == 0 {
+		t.Fatal("45 wrong guesses from 45 different addresses were all answered normally")
+	}
+	// The right password is refused from yet another address while the account is limited.
+	req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/api/login", strings.NewReader(`{"email":"admin@example.com","password":"`+testPassword+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Haetae-Request", "1")
+	req.Header.Set("X-Forwarded-For", "203.0.113.200")
+	resp, err := e.newClient().hc.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("right password while the account is limited = %d, want 429", resp.StatusCode)
+	}
+}
+
+func TestAPINeverReturnsSecrets(t *testing.T) {
+	e := newEnv(t)
+	c := signedIn(t, e, "admin@example.com")
+	for _, path := range []string{"/api/me", "/api/users", "/api/hosts", "/api/status"} {
+		status, _, body := c.do(http.MethodGet, path, nil)
+		if status != 200 {
+			t.Fatalf("%s = %d", path, status)
+		}
+		for _, secret := range []string{"argon2id", "password_hash", "passwordHash", "token_hash", "tokenHash"} {
+			if strings.Contains(string(body), secret) {
+				t.Errorf("%s leaks %q: %s", path, secret, body)
+			}
+		}
 	}
 }

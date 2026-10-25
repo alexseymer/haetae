@@ -16,5 +16,19 @@ func Routes(api, installer, ui http.Handler) http.Handler {
 		mux.Handle("/download/", installer)
 	}
 	mux.Handle("/", ui)
-	return mux
+	return securityHeaders(mux)
+}
+
+// securityHeaders sets the headers every response should carry, so none of the
+// routes (API, installer, interface) can forget them. The web server is
+// HTTPS-only, hence HSTS everywhere.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Strict-Transport-Security", "max-age=31536000")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }

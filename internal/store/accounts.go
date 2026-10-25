@@ -47,7 +47,12 @@ type Session struct {
 
 func normalizeEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
 
-const userCols = `id, org_id, email, password_hash, role, created_at, disabled_at`
+// userCols includes the password hash and is only for the server's own role
+// (sign-in); publicUserCols is what the restricted role may read.
+const (
+	userCols       = `id, org_id, email, password_hash, role, created_at, disabled_at`
+	publicUserCols = `id, org_id, email, role, created_at, disabled_at`
+)
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
@@ -55,12 +60,21 @@ func scanUser(row pgx.Row) (User, error) {
 	return u, err
 }
 
+func scanPublicUser(row pgx.Row) (User, error) {
+	var u User
+	err := row.Scan(&u.ID, &u.OrgID, &u.Email, &u.Role, &u.CreatedAt, &u.DisabledAt)
+	return u, err
+}
+
 // CreateUser adds a user to an organisation. passwordHash is an already
 // hashed password (see internal/auth).
+//
+// The returned User has no PasswordHash: it works through the restricted role,
+// which may not read it.
 func (s *Store) CreateUser(ctx context.Context, orgID uuid.UUID, email, passwordHash, role string) (User, error) {
-	u, err := scanUser(s.pool.QueryRow(ctx, `
+	u, err := scanPublicUser(s.pool.QueryRow(ctx, `
 		INSERT INTO users (org_id, email, password_hash, role) VALUES ($1,$2,$3,$4)
-		RETURNING `+userCols, orgID, normalizeEmail(email), passwordHash, role))
+		RETURNING `+publicUserCols, orgID, normalizeEmail(email), passwordHash, role))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -133,16 +147,16 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (User, error) {
 	return u, nil
 }
 
-// ListUsers returns the organisation's users by email.
+// ListUsers returns the organisation's users by email, without password hashes.
 func (s *Store) ListUsers(ctx context.Context, orgID uuid.UUID) ([]User, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+userCols+` FROM users WHERE org_id = $1 ORDER BY email`, orgID)
+	rows, err := s.pool.Query(ctx, `SELECT `+publicUserCols+` FROM users WHERE org_id = $1 ORDER BY email`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("store: ListUsers: %w", err)
 	}
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		u, err := scanUser(rows)
+		u, err := scanPublicUser(rows)
 		if err != nil {
 			return nil, fmt.Errorf("store: ListUsers: %w", err)
 		}
@@ -151,7 +165,8 @@ func (s *Store) ListUsers(ctx context.Context, orgID uuid.UUID) ([]User, error) 
 	return out, rows.Err()
 }
 
-// SetPassword replaces a user's password hash, scoped to the organisation.
+// SetPassword replaces a user's password hash. It needs the server's own role
+// (the restricted role cannot update users); the caller has checked who is asking.
 func (s *Store) SetPassword(ctx context.Context, orgID, userID uuid.UUID, passwordHash string) error {
 	tag, err := s.pool.Exec(ctx, `UPDATE users SET password_hash = $3 WHERE org_id = $1 AND id = $2`, orgID, userID, passwordHash)
 	if err != nil {

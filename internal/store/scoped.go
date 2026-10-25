@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -116,10 +117,19 @@ func (r *txRows) Close() {
 	r.done = true
 	r.Rows.Close()
 	if r.Err() != nil {
-		_ = r.tx.Rollback(r.ctx)
+		rollback(r.tx)
 		return
 	}
 	_ = r.tx.Commit(r.ctx)
+}
+
+// rollback ends a failed transaction with its own short deadline. The
+// request's context may be cancelled already (client gone, timeout), and a
+// rollback sent with a cancelled context would be skipped.
+func rollback(tx pgx.Tx) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = tx.Rollback(ctx)
 }
 
 // txRow adapts rows to pgx.Row.
@@ -157,7 +167,7 @@ func (b *txBatch) Close() error {
 	}
 	b.done = true
 	if err := b.BatchResults.Close(); err != nil {
-		_ = b.tx.Rollback(b.ctx)
+		rollback(b.tx)
 		return err
 	}
 	return b.tx.Commit(b.ctx)

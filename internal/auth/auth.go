@@ -77,7 +77,7 @@ func VerifyPassword(password, encoded string) (bool, error) {
 	}
 	// Refuse parameters far above ours: a tampered hash must not make the
 	// server allocate gigabytes.
-	if mem > maxArgonMemory || t > 10 || p == 0 || p > 8 {
+	if mem < 8 || mem > maxArgonMemory || t < 1 || t > 10 || p == 0 || p > 8 {
 		return false, errors.New("auth: argon2 parameters out of range")
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
@@ -169,14 +169,22 @@ func HashToken(token string) []byte {
 // aloud (no look-alike characters), for the first-run setup code.
 func NewCode(n int) (string, error) {
 	const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("auth: code: %w", err)
+	out := make([]byte, 0, n)
+	buf := make([]byte, n*2)
+	// Rejection sampling: bytes at or above the largest multiple of the
+	// alphabet size are discarded, so every character is equally likely.
+	limit := byte(256 - 256%len(alphabet))
+	for len(out) < n {
+		if _, err := rand.Read(buf); err != nil {
+			return "", fmt.Errorf("auth: code: %w", err)
+		}
+		for _, b := range buf {
+			if b < limit && len(out) < n {
+				out = append(out, alphabet[int(b)%len(alphabet)])
+			}
+		}
 	}
-	for i := range b {
-		b[i] = alphabet[int(b[i])%len(alphabet)]
-	}
-	return string(b), nil
+	return string(out), nil
 }
 
 // Limiter counts failed sign-ins per key in a sliding window. Safe for

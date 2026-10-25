@@ -35,7 +35,10 @@ BEGIN
     EXECUTE format(
       'CREATE POLICY tenant_isolation ON %I USING (org_id = %s) WITH CHECK (org_id = %s)',
       t, cond, cond);
-    EXECUTE format('GRANT SELECT ON %I TO haetae_app', t);
+    -- Tables with secrets get column-level grants below instead.
+    IF t NOT IN ('users', 'sessions', 'enrollment_tokens') THEN
+      EXECUTE format('GRANT SELECT ON %I TO haetae_app', t);
+    END IF;
   END LOOP;
 
   ALTER TABLE orgs ENABLE ROW LEVEL SECURITY;
@@ -44,7 +47,17 @@ BEGIN
 END
 $$;
 
--- What signed-in users may write. Everything else is read-only for them;
--- agents' data arrives through the server's own role.
-GRANT INSERT ON enrollment_tokens TO haetae_app;
-GRANT INSERT, UPDATE ON users TO haetae_app;
+-- Least privilege for the tables holding secrets:
+--  * sessions: no access at all (sign-in and session lookup use the server's
+--    own role, before an organisation is known);
+--  * users: no access to password_hash, and no UPDATE (password changes use the
+--    server's own role after the handler has checked who is asking);
+--  * enrollment_tokens: no access to token_hash.
+GRANT SELECT (id, org_id, email, role, created_at, disabled_at) ON users TO haetae_app;
+GRANT INSERT (org_id, email, password_hash, role) ON users TO haetae_app;
+GRANT SELECT (id, org_id, host_name, created_at, expires_at, used_at, host_id) ON enrollment_tokens TO haetae_app;
+GRANT INSERT (org_id, token_hash, host_name, expires_at) ON enrollment_tokens TO haetae_app;
+
+-- What signed-in users may write: new users and new enrollment tokens, within
+-- their organisation. Everything else is read-only for them; agents' data
+-- arrives through the server's own role.

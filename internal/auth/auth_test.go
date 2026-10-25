@@ -51,6 +51,8 @@ func TestVerifyRefusesMaliciousOrBrokenHashes(t *testing.T) {
 		"", "plain", "$argon2id$v=19$m=4294967295,t=1,p=1$c2FsdHNhbHRzYWx0$aGFzaA", // 4 TiB of memory
 		"$argon2id$v=19$m=65536,t=999,p=1$c2FsdHNhbHRzYWx0$aGFzaA",
 		"$argon2id$v=19$m=65536,t=2,p=0$c2FsdHNhbHRzYWx0$aGFzaA",
+		"$argon2id$v=19$m=65536,t=0,p=1$c2FsdHNhbHRzYWx0$aGFzaA", // zero rounds would panic inside argon2
+		"$argon2id$v=19$m=0,t=2,p=1$c2FsdHNhbHRzYWx0$aGFzaA",
 		"$argon2i$v=19$m=65536,t=2,p=1$c2FsdHNhbHRzYWx0$aGFzaA",
 		"$argon2id$v=19$m=65536,t=2,p=1$!!!$aGFzaA",
 	} {
@@ -140,5 +142,35 @@ func TestNewCode(t *testing.T) {
 	c, err := NewCode(12)
 	if err != nil || len(c) != 12 || strings.ContainsAny(c, "il1o0") {
 		t.Fatalf("code %q err %v", c, err)
+	}
+}
+
+func TestNewCodeIsUniform(t *testing.T) {
+	counts := map[byte]int{}
+	const codes, length = 4000, 12
+	for range codes {
+		c, err := NewCode(length)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < len(c); i++ {
+			counts[c[i]]++
+		}
+	}
+	if len(counts) != 31 {
+		t.Fatalf("saw %d distinct symbols, want 31", len(counts))
+	}
+	// Modulo bias (256 mod 31 = 8) would make the first 8 alphabet symbols
+	// appear with probability 9/256 instead of 8/256 each, a group share of
+	// 0.281 instead of 8/31 = 0.258 (+9%). The group count has a standard
+	// deviation of under 1%, so a 4% margin separates the two reliably; a
+	// per-symbol check would fail by chance about once in seven runs.
+	first8 := 0
+	for _, sym := range []byte("abcdefgh") {
+		first8 += counts[sym]
+	}
+	share := float64(first8) / float64(codes*length)
+	if want := 8.0 / 31; share < want*0.96 || share > want*1.04 {
+		t.Fatalf("the first 8 symbols make up %.4f of the code, want about %.4f (modulo bias would give 0.281)", share, want)
 	}
 }

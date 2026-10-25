@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -60,9 +61,11 @@ type Config struct {
 
 	// InsecureCookies drops the Secure flag, for plain-HTTP development only.
 	InsecureCookies bool
-	// TrustProxy takes the client address from X-Forwarded-For (use only
-	// behind a reverse proxy that sets it).
-	TrustProxy bool
+	// TrustedProxies are the addresses of reverse proxies in front of the
+	// server. Only a request that arrives from one of them has its
+	// X-Forwarded-For honoured; from anyone else the header is ignored, so a
+	// client cannot pick its own address for rate limiting.
+	TrustedProxies []netip.Prefix
 
 	// Now is the clock; default time.Now.
 	Now func() time.Time
@@ -80,6 +83,7 @@ type API struct {
 
 	loginByAccount *auth.Limiter // email + address
 	loginByAddr    *auth.Limiter // address only
+	loginByEmail   *auth.Limiter // email only: many addresses cannot add up to unlimited guesses
 }
 
 // New returns an API.
@@ -98,6 +102,7 @@ func New(cfg Config) *API {
 		setupCode:      cfg.SetupCode,
 		loginByAccount: auth.NewLimiter(8, 15*time.Minute),
 		loginByAddr:    auth.NewLimiter(40, 15*time.Minute),
+		loginByEmail:   auth.NewLimiter(30, 15*time.Minute),
 	}
 }
 
@@ -200,6 +205,11 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 			exp := minTime(s.CreatedAt.Add(sessionMax), now.Add(sessionIdle))
 			if err := a.st.TouchSession(r.Context(), s.ID, now, exp); err != nil {
 				a.log.Warn("touch session", "err", err)
+			} else {
+				// Move the browser's cookie along with the server-side expiry,
+				// or an active user would be signed out when the first cookie
+				// lapses.
+				a.setCookie(w, c.Value, exp)
 			}
 		}
 		p := Principal{SessionID: s.ID, UserID: s.UserID, OrgID: s.OrgID, Email: s.Email, Role: s.Role, tokenHash: hash}
@@ -237,21 +247,46 @@ func (a *API) clearCookie(w http.ResponseWriter) {
 	})
 }
 
-// clientAddr is the address used for rate limiting.
+// clientAddr is the address used for rate limiting. X-Forwarded-For is used
+// only when the request comes from a trusted proxy, and then the right-most
+// entry that is not itself a trusted proxy is taken: the proxies append the
+// address they saw, so anything a client wrote earlier in the list is ignored.
 func (a *API) clientAddr(r *http.Request) string {
-	if a.cfg.TrustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
-				return ip
-			}
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		peer = host
+	}
+	if len(a.cfg.TrustedProxies) == 0 || !a.trusted(peer) {
+		return peer
+	}
+	parts := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip := strings.TrimSpace(parts[i])
+		if ip == "" {
+			continue
+		}
+		if _, err := netip.ParseAddr(ip); err != nil {
+			return peer // garbage from the proxy chain: do not trust the header at all
+		}
+		if !a.trusted(ip) {
+			return ip
 		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	return peer
+}
+
+func (a *API) trusted(addr string) bool {
+	ip, err := netip.ParseAddr(addr)
 	if err != nil {
-		return r.RemoteAddr
+		return false
 	}
-	return host
+	ip = ip.Unmap()
+	for _, p := range a.cfg.TrustedProxies {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func minTime(a, b time.Time) time.Time {

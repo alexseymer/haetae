@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -40,20 +41,20 @@ Configuration (environment):
   HAETAE_WEB_URL         URL users open (default https://<hostname>:8080)
   HAETAE_WEB_TLS_CERT    certificate file for the web interface (with HAETAE_WEB_TLS_KEY);
                          default: one issued by the server's own CA
-  HAETAE_TRUST_PROXY     set to 1 behind a reverse proxy that sets X-Forwarded-For
+  HAETAE_TRUSTED_PROXIES comma-separated addresses/CIDRs of reverse proxies whose X-Forwarded-For is trusted
 `
 
 type config struct {
-	databaseURL  string
-	dataDir      string
-	gatewayAddr  string
-	gatewayURL   string
-	gatewayNames []string
-	webAddr      string
-	webURL       string
-	webCertFile  string
-	webKeyFile   string
-	trustProxy   bool
+	databaseURL    string
+	dataDir        string
+	gatewayAddr    string
+	gatewayURL     string
+	gatewayNames   []string
+	webAddr        string
+	webURL         string
+	webCertFile    string
+	webKeyFile     string
+	trustedProxies []netip.Prefix
 }
 
 func loadConfig() (config, error) {
@@ -67,7 +68,6 @@ func loadConfig() (config, error) {
 		webURL:      envOr("HAETAE_WEB_URL", "https://"+hostname+":8080"),
 		webCertFile: os.Getenv("HAETAE_WEB_TLS_CERT"),
 		webKeyFile:  os.Getenv("HAETAE_WEB_TLS_KEY"),
-		trustProxy:  os.Getenv("HAETAE_TRUST_PROXY") == "1",
 	}
 	if (c.webCertFile == "") != (c.webKeyFile == "") {
 		return c, errors.New("HAETAE_WEB_TLS_CERT and HAETAE_WEB_TLS_KEY must be set together")
@@ -91,6 +91,21 @@ func loadConfig() (config, error) {
 		}
 	}
 	c.gatewayNames = names
+	for _, p := range strings.Split(os.Getenv("HAETAE_TRUSTED_PROXIES"), ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(p)
+		if err != nil {
+			addr, aerr := netip.ParseAddr(p)
+			if aerr != nil {
+				return c, fmt.Errorf("HAETAE_TRUSTED_PROXIES: %q is not an address or CIDR", p)
+			}
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		c.trustedProxies = append(c.trustedProxies, prefix)
+	}
 	return c, nil
 }
 
@@ -238,15 +253,15 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 	}
 
 	a := api.New(api.Config{
-		Store:      st,
-		Log:        log.With("component", "api"),
-		Version:    version.Version,
-		SetupCode:  setupCode,
-		WebURL:     cfg.webURL,
-		GatewayURL: cfg.gatewayURL,
-		CAPin:      pki.Fingerprint(ca.DER),
-		WebPin:     webPin,
-		TrustProxy: cfg.trustProxy,
+		Store:          st,
+		Log:            log.With("component", "api"),
+		Version:        version.Version,
+		SetupCode:      setupCode,
+		WebURL:         cfg.webURL,
+		GatewayURL:     cfg.gatewayURL,
+		CAPin:          pki.Fingerprint(ca.DER),
+		WebPin:         webPin,
+		TrustedProxies: cfg.trustedProxies,
 		OnSetupDone: func() {
 			_ = os.Remove(codeFile)
 		},

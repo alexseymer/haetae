@@ -79,7 +79,7 @@ func seedTwoOrgs(t *testing.T) twoOrgs {
 var tenantTables = []string{
 	"hosts", "enrollment_tokens", "containers", "host_metrics", "container_metrics",
 	"host_metrics_1m", "host_metrics_1h", "container_metrics_1m", "container_metrics_1h",
-	"log_templates", "log_events", "log_stats", "users", "sessions", "orgs",
+	"log_templates", "log_events", "log_stats", "users", "orgs",
 }
 
 // A query with no WHERE clause at all, run as the scoped role, returns only
@@ -100,7 +100,7 @@ func TestRowLevelSecurityHidesOtherOrganisations(t *testing.T) {
 			t.Fatalf("%s: %v", table, err)
 		}
 		total, other := rows[0], rows[1]
-		if total == 0 && table != "sessions" && table != "enrollment_tokens" {
+		if total == 0 && table != "enrollment_tokens" {
 			t.Errorf("%s: the scoped role sees none of its own rows; the isolation test would be vacuous", table)
 		}
 		if other != 0 {
@@ -109,7 +109,7 @@ func TestRowLevelSecurityHidesOtherOrganisations(t *testing.T) {
 		// Sanity: the unscoped connection sees both organisations on seeded tables.
 		var all int
 		_ = o.s.Pool().QueryRow(ctx, "SELECT count(DISTINCT "+idCol+") FROM "+table).Scan(&all)
-		if table != "sessions" && table != "enrollment_tokens" && all < 2 {
+		if table != "enrollment_tokens" && all < 2 {
 			t.Errorf("%s: test data missing (unscoped sees %d organisations)", table, all)
 		}
 	}
@@ -142,14 +142,14 @@ func TestScopedStoreRefusesCrossOrganisationAccess(t *testing.T) {
 	if evs, _ := a.ListLogEvents(ctx, o.orgB.ID, o.hostB.ID, time.Now().Add(-time.Hour), time.Now().Add(time.Hour), 0, 10); len(evs) != 0 {
 		t.Fatalf("ListLogEvents(B) as A = %v", evs)
 	}
-	if _, pts, _ := a.HostSeries(ctx, o.orgB.ID, o.hostB.ID, "cpu_pct", time.Now().Add(-time.Hour), time.Now().Add(time.Hour)); len(pts) != 0 {
+	if _, pts, _ := a.HostSeries(ctx, o.orgB.ID, o.hostB.ID, "cpu_pct", time.Now().Add(-10*time.Minute), time.Now().Add(time.Hour)); len(pts) != 0 {
 		t.Fatalf("HostSeries(B) as A = %v", pts)
 	}
 	// ...and the same calls for its own organisation work.
 	if hosts, err := a.ListHosts(ctx, o.orgA.ID); err != nil || len(hosts) != 1 {
 		t.Fatalf("ListHosts(A) as A = %v, %v", hosts, err)
 	}
-	if _, pts, err := a.HostSeries(ctx, o.orgA.ID, o.hostA.ID, "cpu_pct", time.Now().Add(-time.Hour), time.Now().Add(time.Hour)); err != nil || len(pts) != 1 {
+	if _, pts, err := a.HostSeries(ctx, o.orgA.ID, o.hostA.ID, "cpu_pct", time.Now().Add(-10*time.Minute), time.Now().Add(time.Hour)); err != nil || len(pts) != 1 {
 		t.Fatalf("HostSeries(A) as A = %v, %v", pts, err)
 	}
 }
@@ -209,5 +209,66 @@ func TestScopeIsFailClosed(t *testing.T) {
 		if err != nil || rows[0] != 0 {
 			t.Errorf("%s: %v rows for an unknown organisation, err %v", table, rows, err)
 		}
+	}
+}
+
+// The restricted role has no access to secrets at all: not to sessions, not to
+// password hashes, not to enrollment token hashes, and it cannot change users.
+func TestRestrictedRoleCannotReachSecrets(t *testing.T) {
+	o := seedTwoOrgs(t)
+	ctx := context.Background()
+	a := o.s.ForOrg(o.orgA.ID)
+
+	// Make sure there is something to protect.
+	if err := o.s.CreateSession(ctx, uuid.New(), o.orgA.ID, []byte("hash"), time.Now().Add(time.Hour)); err == nil {
+		t.Log("unexpected: session for unknown user was accepted")
+	}
+	u, err := o.s.UserByEmail(ctx, "a@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.s.CreateSession(ctx, u.ID, o.orgA.ID, []byte("a-session-hash"), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, stmt := range []string{
+		"SELECT * FROM sessions",
+		"SELECT token_hash FROM sessions",
+		"SELECT count(*) FROM sessions",
+		"SELECT password_hash FROM users",
+		"SELECT * FROM users",
+		"SELECT token_hash FROM enrollment_tokens",
+		"SELECT * FROM enrollment_tokens",
+		"UPDATE users SET role = 'admin'",
+		"UPDATE users SET password_hash = 'x'",
+		"DELETE FROM users",
+		"DELETE FROM sessions",
+		"INSERT INTO sessions (token_hash, user_id, org_id, expires_at) SELECT 'x'::bytea, id, org_id, now() FROM users",
+	} {
+		err := a.ExecForTest(ctx, stmt)
+		if err == nil {
+			t.Errorf("the restricted role was allowed: %s", stmt)
+		} else if !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("%s: want permission denied, got %v", stmt, err)
+		}
+	}
+
+	// What it may read is the safe columns.
+	var n int
+	if err := a.QueryRowForTest(ctx, "SELECT count(email), count(role) FROM users").Scan(&n, new(int)); err != nil || n != 1 {
+		t.Fatalf("reading safe user columns: n=%d err=%v", n, err)
+	}
+	// The users it lists never carry a hash.
+	users, err := a.ListUsers(ctx, o.orgA.ID)
+	if err != nil || len(users) != 1 || users[0].PasswordHash != "" {
+		t.Fatalf("ListUsers = %+v, %v", users, err)
+	}
+	created, err := a.CreateUser(ctx, o.orgA.ID, "new@example.com", "a-long-enough-password", "member")
+	if err != nil || created.PasswordHash != "" {
+		t.Fatalf("CreateUser = %+v, %v", created, err)
+	}
+	// ...and the server's own role still sees the hash it needs to sign people in.
+	if full, err := o.s.UserByEmail(ctx, "new@example.com"); err != nil || full.PasswordHash == "" {
+		t.Fatalf("UserByEmail lost the hash: %+v %v", full, err)
 	}
 }

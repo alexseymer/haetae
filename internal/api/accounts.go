@@ -176,6 +176,13 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		tooManyAttempts(w, retry)
 		return
 	}
+	// Guesses against one account add up across all addresses. A determined
+	// attacker can therefore make an account's sign-in unavailable for a while;
+	// that is the price of not allowing unlimited guessing from many addresses.
+	if ok, retry := a.loginByEmail.Allowed(email); !ok {
+		tooManyAttempts(w, retry)
+		return
+	}
 
 	// Always do the same work, whether or not the user exists, so response
 	// time does not reveal which addresses have accounts.
@@ -196,10 +203,12 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !known || !match {
 		a.loginByAccount.Fail(acct)
 		a.loginByAddr.Fail(addr)
+		a.loginByEmail.Fail(email)
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
 	a.loginByAccount.Reset(acct)
+	a.loginByEmail.Reset(email)
 	if !a.startSession(w, r, u) {
 		return
 	}
@@ -237,13 +246,15 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	st, p := a.scoped(r)
+	_, p := a.scoped(r)
 	if ok, retry := a.loginByAccount.Allowed("pw|" + p.UserID.String()); !ok {
 		tooManyAttempts(w, retry)
 		return
 	}
+	// The password hash is not readable by the restricted role, so this uses
+	// the server's own store, and checks that it found the signed-in user.
 	u, err := a.st.UserByEmail(r.Context(), p.Email)
-	if err != nil {
+	if err != nil || u.ID != p.UserID || u.OrgID != p.OrgID {
 		writeError(w, http.StatusServiceUnavailable, "try again")
 		return
 	}
@@ -262,11 +273,12 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "try again")
 		return
 	}
-	if err := st.SetPassword(r.Context(), p.OrgID, p.UserID, hash); err != nil {
+	if err := a.st.SetPassword(r.Context(), p.OrgID, p.UserID, hash); err != nil {
 		a.log.Error("set password", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "try again")
 		return
 	}
+	a.loginByAccount.Reset("pw|" + p.UserID.String())
 	// A password change ends every other session of the user.
 	if err := a.st.DeleteUserSessions(r.Context(), p.UserID, p.tokenHash); err != nil {
 		a.log.Error("end other sessions", "err", err)
