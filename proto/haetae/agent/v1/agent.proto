@@ -54,6 +54,9 @@ message ConnectRequest {
     StateSnapshot state = 4;
     MetricsBatch metrics = 5;
     LogBatch logs = 6;
+    DeployEvent deploy_event = 7;
+    DeployLog deploy_log = 8;
+    BranchUpdate branch_update = 9;
   }
 }
 
@@ -62,6 +65,7 @@ message ConnectResponse {
     Welcome welcome = 1;
     Command command = 2;
     GreenSet green = 3;
+    WatchSet watch = 4;
   }
 }
 
@@ -88,6 +92,8 @@ message Command {
   oneof kind {
     Ping ping = 2;
     QueryLogs query_logs = 3;
+    Deploy deploy = 4;
+    RemoveProject remove_project = 5;
   }
 }
 
@@ -245,4 +251,109 @@ enum LogLevel {
 // set for warn, error, fatal and unknown lines.
 message GreenSet {
   repeated string template_ids = 1;
+}
+
+// ---- Deploys (see docs/design/m5-deploys.md) ----
+
+// Deploy asks the agent to make a project run a version. The command result
+// only acknowledges that the deploy was accepted; progress arrives as
+// DeployEvent and DeployLog messages. A project has at most one deploy at a
+// time; a second one is refused while the first runs.
+message Deploy {
+  string deploy_id = 1;
+  // ^[a-z0-9][a-z0-9-]{0,39}$ ; validated again by the agent.
+  string project = 2;
+  oneof source {
+    GitSource git = 3;
+    InlineCompose inline = 4;
+  }
+  // Optional HTTPS ingress: the service and port that serve the domain.
+  string domain = 5;
+  string service = 6;
+  uint32 port = 7;
+  // True when this deploy restores an earlier version (manual rollback).
+  bool is_rollback = 8;
+  // The last version known to be healthy, used for automatic rollback when
+  // this one fails to start. Empty for a first deploy.
+  Version last_healthy = 9;
+}
+
+// Version identifies what runs: a Git commit (cloned by the agent) or the
+// inline compose content.
+message Version {
+  oneof kind {
+    GitSource git = 1;
+    InlineCompose inline = 2;
+  }
+}
+
+message GitSource {
+  string url = 1;          // https:// only
+  string ref = 2;          // branch name or 40-hex commit
+  string compose_path = 3; // path inside the repository, default compose.yaml
+  string token = 4;        // optional HTTPS access token; never logged
+}
+
+message InlineCompose {
+  string content = 1;
+}
+
+// RemoveProject stops a project's containers. It never removes volumes.
+message RemoveProject {
+  string project = 1;
+}
+
+enum DeployPhase {
+  DEPLOY_PHASE_UNSPECIFIED = 0;
+  DEPLOY_PHASE_QUEUED = 1;
+  DEPLOY_PHASE_FETCHING = 2;
+  DEPLOY_PHASE_BUILDING = 3;
+  DEPLOY_PHASE_STARTING = 4;
+  DEPLOY_PHASE_CHECKING = 5;
+  DEPLOY_PHASE_HEALTHY = 6;
+  DEPLOY_PHASE_FAILED = 7;
+  DEPLOY_PHASE_ROLLING_BACK = 8;
+  DEPLOY_PHASE_ROLLED_BACK = 9;
+  DEPLOY_PHASE_ROLLBACK_FAILED = 10;
+}
+
+// DeployEvent reports a phase change. Text fields are redacted on the host.
+message DeployEvent {
+  string deploy_id = 1;
+  DeployPhase phase = 2;
+  string message = 3;
+  string commit = 4; // resolved commit, once known
+  string url = 5;    // HTTPS address, with HEALTHY
+  string error = 6;  // the failing step's raw (redacted) error, with FAILED
+  int64 ts_unix_ms = 7;
+}
+
+// DeployLog is a chunk of build or start output, redacted on the host. If
+// redaction of a chunk fails, it is replaced by an empty text with withheld
+// set.
+message DeployLog {
+  string deploy_id = 1;
+  uint32 seq = 2;
+  string stream = 3; // "stdout" or "stderr"
+  string text = 4;
+  bool withheld = 5;
+}
+
+// BranchUpdate tells the server that a watched branch moved.
+message BranchUpdate {
+  string project = 1;
+  string commit = 2;
+}
+
+// WatchSet replaces the list of branches the agent polls for auto-deploy.
+message WatchSet {
+  repeated WatchedBranch branches = 1;
+}
+
+message WatchedBranch {
+  string project = 1;
+  string url = 2;
+  string ref = 3;
+  string token = 4;
+  string last_commit = 5; // the commit last deployed; report only newer
 }
