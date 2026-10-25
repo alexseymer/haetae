@@ -3,12 +3,14 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/alexseymer/haetae/internal/deploys"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 )
 
@@ -23,8 +25,20 @@ type session struct {
 	orgID    uuid.UUID
 	cancel   context.CancelCauseFunc
 	outbox   chan *agentv1.Command
-	green    chan []string // latest green set; a newer one replaces an unsent one
-	lastSeen atomic.Int64  // unix nanoseconds
+	green    chan []string          // latest green set; a newer one replaces an unsent one
+	watch    chan *agentv1.WatchSet // latest watch set; replace-latest
+	lastSeen atomic.Int64           // unix nanoseconds
+
+	eventLim  *tokenBucket
+	logLim    *tokenBucket
+	branchLim *tokenBucket
+
+	droppedEvents atomic.Int64
+	droppedLogs   atomic.Int64
+	droppedBranch atomic.Int64
+
+	warnMu          sync.Mutex
+	lastUnknownWarn time.Time
 
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.CommandResult
@@ -33,11 +47,15 @@ type session struct {
 
 func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 	s := &session{
-		hostID:  hostID,
-		cancel:  cancel,
-		outbox:  make(chan *agentv1.Command, 16),
-		green:   make(chan []string, 1),
-		pending: make(map[string]chan *agentv1.CommandResult),
+		hostID:    hostID,
+		cancel:    cancel,
+		outbox:    make(chan *agentv1.Command, 16),
+		green:     make(chan []string, 1),
+		watch:     make(chan *agentv1.WatchSet, 1),
+		eventLim:  newTokenBucket(deployEventRate, deployEventRate),
+		logLim:    newTokenBucket(deployLogRate, deployLogRate),
+		branchLim: newTokenBucketRate(float64(deployBranchPerMin)/60.0, float64(deployBranchPerMin)),
+		pending:   make(map[string]chan *agentv1.CommandResult),
 	}
 	s.touch()
 	return s
@@ -58,6 +76,24 @@ func (s *session) setGreen(ids []string) {
 	}
 }
 
+// setWatch queues a watch set, replacing one that has not been sent yet.
+func (s *session) setWatch(ws *agentv1.WatchSet) {
+	if ws == nil {
+		ws = &agentv1.WatchSet{}
+	}
+	for {
+		select {
+		case s.watch <- ws:
+			return
+		default:
+		}
+		select {
+		case <-s.watch:
+		default:
+		}
+	}
+}
+
 func (s *session) touch() { s.lastSeen.Store(time.Now().UnixNano()) }
 
 func (s *session) idle() time.Duration {
@@ -72,11 +108,11 @@ func (s *session) call(ctx context.Context, cmd *agentv1.Command) (*agentv1.Comm
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return nil, errSessionClosed
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, errSessionClosed)
 	}
 	if len(s.pending) >= maxPending {
 		s.mu.Unlock()
-		return nil, errors.New("gateway: too many commands in flight for host")
+		return nil, fmt.Errorf("%w: gateway: too many commands in flight for host", deploys.ErrNotDelivered)
 	}
 	s.pending[id] = ch
 	s.mu.Unlock()
@@ -90,18 +126,21 @@ func (s *session) call(ctx context.Context, cmd *agentv1.Command) (*agentv1.Comm
 	select {
 	case s.outbox <- cmd:
 	case <-ch: // closed by close(): the session ended while the outbox was full
-		return nil, errSessionClosed
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, errSessionClosed)
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		// Timed out before enqueue — command never left the server.
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, ctx.Err())
 	}
 
 	select {
 	case res, ok := <-ch:
 		if !ok {
+			// Session closed after enqueue; agent may still have the command.
 			return nil, errSessionClosed
 		}
 		return res, nil
 	case <-ctx.Done():
+		// Ack wait timed out after enqueue — not ErrNotDelivered.
 		return nil, ctx.Err()
 	}
 }

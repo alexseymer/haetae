@@ -17,6 +17,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
+	"github.com/alexseymer/haetae/internal/deploys"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/gen/haetae/agent/v1/agentv1connect"
 	"github.com/alexseymer/haetae/internal/pki"
@@ -37,6 +38,8 @@ type Store interface {
 	MarkConnected(ctx context.Context, id uuid.UUID, info store.HostInfo, at time.Time) error
 	MarkSeen(ctx context.Context, id uuid.UUID, at time.Time) error
 	MarkDisconnected(ctx context.Context, id uuid.UUID) error
+	ApplyDeployEvent(ctx context.Context, orgID, hostID, deployID uuid.UUID, ev store.DeployEvent) error
+	AppendDeployLog(ctx context.Context, orgID, hostID, deployID uuid.UUID, log store.DeployLogChunk) error
 	ingestStore
 	logStore
 }
@@ -90,6 +93,7 @@ type Gateway struct {
 
 	mu       sync.Mutex
 	sessions map[uuid.UUID]*session
+	deploys  DeployService
 
 	judgeMu sync.Mutex
 	judge   judgeThrottle
@@ -229,6 +233,7 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	} else if len(ids) > 0 {
 		s.setGreen(ids)
 	}
+	g.pushWatch(ctx, s)
 
 	recvErr := make(chan error, 1)
 	go func() { recvErr <- g.receiveLoop(ctx, stream, s) }()
@@ -329,6 +334,12 @@ func (g *Gateway) receiveLoop(ctx context.Context, stream *connect.BidiStream[ag
 			g.ingestLogs(ctx, s, m.Logs)
 		case *agentv1.ConnectRequest_Result:
 			s.deliver(m.Result)
+		case *agentv1.ConnectRequest_DeployEvent:
+			g.handleDeployEvent(ctx, s, m.DeployEvent)
+		case *agentv1.ConnectRequest_DeployLog:
+			g.handleDeployLog(ctx, s, m.DeployLog)
+		case *agentv1.ConnectRequest_BranchUpdate:
+			g.handleBranchUpdate(ctx, s, m.BranchUpdate)
 		case *agentv1.ConnectRequest_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate hello"))
 		default:
@@ -354,6 +365,11 @@ func (g *Gateway) sendLoop(ctx context.Context, stream *connect.BidiStream[agent
 			}
 		case ids := <-s.green:
 			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Green{Green: &agentv1.GreenSet{TemplateIds: ids}}}
+			if err := stream.Send(msg); err != nil {
+				return err
+			}
+		case ws := <-s.watch:
+			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Watch{Watch: ws}}
 			if err := stream.Send(msg); err != nil {
 				return err
 			}
@@ -414,12 +430,15 @@ func (g *Gateway) Connected(hostID uuid.UUID) bool {
 }
 
 // Send delivers a command to a connected host and waits for its result.
+// Returns deploys.ErrNotDelivered when the command never reached the session
+// outbox (no session, closed before enqueue, or enqueue failed). A timeout
+// after enqueue returns context.DeadlineExceeded without ErrNotDelivered.
 func (g *Gateway) Send(ctx context.Context, hostID uuid.UUID, cmd *agentv1.Command) (*agentv1.CommandResult, error) {
 	g.mu.Lock()
 	s := g.sessions[hostID]
 	g.mu.Unlock()
 	if s == nil {
-		return nil, ErrNotConnected
+		return nil, fmt.Errorf("%w: %w", deploys.ErrNotDelivered, ErrNotConnected)
 	}
 	return s.call(ctx, cmd)
 }

@@ -19,7 +19,17 @@ const (
 	LogTemplateRetention = 90 * 24 * time.Hour
 )
 
-// MetricsMaintainer is the store work done on a schedule (metrics, logs and sessions).
+// StaleDeployAge is how long a running deploy may go without an event before
+// it is marked failed ("agent stopped reporting").
+//
+// Must exceed agent DefaultBuildTimeout + DefaultStartTimeout plus a rollback
+// budget: a quiet image pull or `compose up --wait` can leave last_event_at
+// idle for the full build/start window, and rollback emits no intermediate
+// phases. 45 minutes covers build (15m) + start (3m) + rollback headroom.
+const StaleDeployAge = 45 * time.Minute
+
+// MetricsMaintainer is the store work done on a schedule (metrics, logs,
+// sessions and deploys).
 type MetricsMaintainer interface {
 	EnsurePartitions(ctx context.Context, now time.Time) error
 	DropExpiredPartitions(ctx context.Context, now time.Time, rawRetention time.Duration) (int, error)
@@ -27,6 +37,8 @@ type MetricsMaintainer interface {
 	PruneRollups(ctx context.Context, now time.Time) error
 	PruneLogs(ctx context.Context, now time.Time, eventRetention, templateRetention time.Duration) error
 	PruneSessions(ctx context.Context, now time.Time) error
+	ExpireStaleDeploys(ctx context.Context, now time.Time, olderThan time.Duration) (int, error)
+	PruneDeploys(ctx context.Context) error
 }
 
 // MaintainMetrics runs partition management, rollups and retention once, then
@@ -65,5 +77,13 @@ func maintainOnce(ctx context.Context, m MetricsMaintainer, log *slog.Logger) {
 	}
 	if err := m.PruneSessions(ctx, now); err != nil {
 		log.Error("prune sessions", "err", err)
+	}
+	if n, err := m.ExpireStaleDeploys(ctx, now, StaleDeployAge); err != nil {
+		log.Error("expire stale deploys", "err", err)
+	} else if n > 0 {
+		log.Info("expired stale deploys", "count", n)
+	}
+	if err := m.PruneDeploys(ctx); err != nil {
+		log.Error("prune deploys", "err", err)
 	}
 }

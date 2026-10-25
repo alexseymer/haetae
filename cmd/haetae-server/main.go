@@ -19,9 +19,11 @@ import (
 
 	"github.com/alexseymer/haetae/internal/api"
 	"github.com/alexseymer/haetae/internal/auth"
+	"github.com/alexseymer/haetae/internal/deploys"
 	"github.com/alexseymer/haetae/internal/gateway"
 	"github.com/alexseymer/haetae/internal/installer"
 	"github.com/alexseymer/haetae/internal/pki"
+	"github.com/alexseymer/haetae/internal/secrets"
 	"github.com/alexseymer/haetae/internal/server"
 	"github.com/alexseymer/haetae/internal/store"
 	"github.com/alexseymer/haetae/internal/version"
@@ -237,14 +239,20 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 	go server.MaintainMetrics(ctx, st, time.Minute, log.With("component", "metrics"))
 
+	box, err := secrets.Open(cfg.dataDir)
+	if err != nil {
+		return err
+	}
 	gw := gateway.New(st, ca, gateway.Config{}, log)
+	deploySvc := &deploys.Service{Store: st, Sender: gw, Box: box}
+	gw.SetDeploys(deploySvc)
 	gs, err := server.ListenGateway(cfg.gatewayAddr, gw, ca, cfg.gatewayNames)
 	if err != nil {
 		return err
 	}
 	log.Info("agent gateway listening", "addr", gs.Addr(), "url", cfg.gatewayURL, "ca_pin", pki.Fingerprint(ca.DER))
 
-	ws, err := startWeb(ctx, cfg, st, ca, log)
+	ws, err := startWeb(ctx, cfg, st, ca, log, box, deploySvc, gw)
 	if err != nil {
 		_ = gs.Close()
 		return err
@@ -267,7 +275,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 // creates a one-time setup code, logs it and keeps it in DATA_DIR/setup-code
 // (readable only by the server's user), so only someone with access to the
 // server can create the first administrator.
-func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger) (*server.WebServer, error) {
+func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger, box *secrets.Box, deploySvc *deploys.Service, gw *gateway.Gateway) (*server.WebServer, error) {
 	var (
 		cert   tls.Certificate
 		webPin string
@@ -316,6 +324,9 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		CAPin:          pki.Fingerprint(ca.DER),
 		WebPin:         webPin,
 		TrustedProxies: cfg.trustedProxies,
+		Deploys:        deploySvc,
+		Secrets:        box,
+		RefreshWatch:   gw.RefreshWatch,
 		OnSetupDone: func() {
 			_ = os.Remove(codeFile)
 		},

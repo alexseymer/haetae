@@ -1,6 +1,10 @@
 import type {
   ContainersResponse,
+  CreateProjectRequest,
   CreateUserRequest,
+  DeployLogsResponse,
+  DeployResponse,
+  DeploysResponse,
   EnrollmentRequest,
   EnrollmentResponse,
   HostDetailResponse,
@@ -12,6 +16,9 @@ import type {
   MeResponse,
   MetricsResponse,
   PasswordRequest,
+  PatchProjectRequest,
+  ProjectResponse,
+  ProjectsResponse,
   SetupRequest,
   SetupResponse,
   StatusResponse,
@@ -158,6 +165,60 @@ export const api = {
 
   enroll: (body: EnrollmentRequest) =>
     request<EnrollmentResponse>("/api/hosts/enrollment", { method: "POST", body }),
+
+  projects: (hostId?: string) =>
+    request<ProjectsResponse>(
+      hostId
+        ? `/api/projects?hostId=${encodeURIComponent(hostId)}`
+        : "/api/projects",
+    ),
+
+  createProject: (hostId: string, body: CreateProjectRequest) =>
+    request<ProjectResponse>(`/api/hosts/${encodeURIComponent(hostId)}/projects`, {
+      method: "POST",
+      body,
+    }),
+
+  project: (pid: string) =>
+    request<ProjectResponse>(`/api/projects/${encodeURIComponent(pid)}`),
+
+  patchProject: (pid: string, body: PatchProjectRequest) =>
+    request<ProjectResponse>(`/api/projects/${encodeURIComponent(pid)}`, {
+      method: "PATCH",
+      body,
+    }),
+
+  deleteProject: (pid: string, force = false) =>
+    request<void>(
+      `/api/projects/${encodeURIComponent(pid)}${force ? "?force=1" : ""}`,
+      { method: "DELETE", body: {} },
+    ),
+
+  startDeploy: (pid: string) =>
+    request<DeployResponse>(`/api/projects/${encodeURIComponent(pid)}/deploy`, {
+      method: "POST",
+      body: {},
+    }),
+
+  projectDeploys: (pid: string) =>
+    request<DeploysResponse>(`/api/projects/${encodeURIComponent(pid)}/deploys`),
+
+  deploy: (did: string) =>
+    request<DeployResponse>(`/api/deploys/${encodeURIComponent(did)}`),
+
+  deployLogs: (did: string, after: number, limit?: number) => {
+    const params = new URLSearchParams({ after: String(after) });
+    if (limit != null) params.set("limit", String(limit));
+    return request<DeployLogsResponse>(
+      `/api/deploys/${encodeURIComponent(did)}/logs?${params.toString()}`,
+    );
+  },
+
+  rollbackDeploy: (did: string) =>
+    request<DeployResponse>(`/api/deploys/${encodeURIComponent(did)}/rollback`, {
+      method: "POST",
+      body: {},
+    }),
 };
 
 interface UserLike {

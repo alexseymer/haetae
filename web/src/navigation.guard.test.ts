@@ -14,6 +14,10 @@ describe("navigation targets", () => {
     const allowed = [
       /^"\/[a-z-]*"$/, // "/login", "/", "/setup", "/settings"
       /^`\/hosts\/\$\{[a-z]+\.id\}`$/, // `/hosts/${h.id}`
+      /^`\/hosts\/\$\{[a-z]+\.hostId\}`$/, // `/hosts/${project.hostId}`
+      /^`\/projects\/\$\{[a-z]+\.id\}`$/, // `/projects/${p.id}`
+      /^`\/projects\/\$\{[a-z]+\.projectId\}`$/, // `/projects/${deploy.projectId}`
+      /^`\/deploys\/\$\{[a-z]+\.id\}`$/, // `/deploys/${d.id}`
       /^setupRequired \? "\/setup" : user \? "\/" : "\/login"$/,
     ];
     const found: string[] = [];

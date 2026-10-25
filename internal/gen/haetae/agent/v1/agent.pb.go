@@ -91,6 +91,79 @@ func (LogLevel) EnumDescriptor() ([]byte, []int) {
 	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{0}
 }
 
+type DeployPhase int32
+
+const (
+	DeployPhase_DEPLOY_PHASE_UNSPECIFIED     DeployPhase = 0
+	DeployPhase_DEPLOY_PHASE_QUEUED          DeployPhase = 1
+	DeployPhase_DEPLOY_PHASE_FETCHING        DeployPhase = 2
+	DeployPhase_DEPLOY_PHASE_BUILDING        DeployPhase = 3
+	DeployPhase_DEPLOY_PHASE_STARTING        DeployPhase = 4
+	DeployPhase_DEPLOY_PHASE_CHECKING        DeployPhase = 5
+	DeployPhase_DEPLOY_PHASE_HEALTHY         DeployPhase = 6
+	DeployPhase_DEPLOY_PHASE_FAILED          DeployPhase = 7
+	DeployPhase_DEPLOY_PHASE_ROLLING_BACK    DeployPhase = 8
+	DeployPhase_DEPLOY_PHASE_ROLLED_BACK     DeployPhase = 9
+	DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED DeployPhase = 10
+)
+
+// Enum value maps for DeployPhase.
+var (
+	DeployPhase_name = map[int32]string{
+		0:  "DEPLOY_PHASE_UNSPECIFIED",
+		1:  "DEPLOY_PHASE_QUEUED",
+		2:  "DEPLOY_PHASE_FETCHING",
+		3:  "DEPLOY_PHASE_BUILDING",
+		4:  "DEPLOY_PHASE_STARTING",
+		5:  "DEPLOY_PHASE_CHECKING",
+		6:  "DEPLOY_PHASE_HEALTHY",
+		7:  "DEPLOY_PHASE_FAILED",
+		8:  "DEPLOY_PHASE_ROLLING_BACK",
+		9:  "DEPLOY_PHASE_ROLLED_BACK",
+		10: "DEPLOY_PHASE_ROLLBACK_FAILED",
+	}
+	DeployPhase_value = map[string]int32{
+		"DEPLOY_PHASE_UNSPECIFIED":     0,
+		"DEPLOY_PHASE_QUEUED":          1,
+		"DEPLOY_PHASE_FETCHING":        2,
+		"DEPLOY_PHASE_BUILDING":        3,
+		"DEPLOY_PHASE_STARTING":        4,
+		"DEPLOY_PHASE_CHECKING":        5,
+		"DEPLOY_PHASE_HEALTHY":         6,
+		"DEPLOY_PHASE_FAILED":          7,
+		"DEPLOY_PHASE_ROLLING_BACK":    8,
+		"DEPLOY_PHASE_ROLLED_BACK":     9,
+		"DEPLOY_PHASE_ROLLBACK_FAILED": 10,
+	}
+)
+
+func (x DeployPhase) Enum() *DeployPhase {
+	p := new(DeployPhase)
+	*p = x
+	return p
+}
+
+func (x DeployPhase) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeployPhase) Descriptor() protoreflect.EnumDescriptor {
+	return file_haetae_agent_v1_agent_proto_enumTypes[1].Descriptor()
+}
+
+func (DeployPhase) Type() protoreflect.EnumType {
+	return &file_haetae_agent_v1_agent_proto_enumTypes[1]
+}
+
+func (x DeployPhase) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeployPhase.Descriptor instead.
+func (DeployPhase) EnumDescriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{1}
+}
+
 type EnrollRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Token string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
@@ -309,6 +382,9 @@ type ConnectRequest struct {
 	//	*ConnectRequest_State
 	//	*ConnectRequest_Metrics
 	//	*ConnectRequest_Logs
+	//	*ConnectRequest_DeployEvent
+	//	*ConnectRequest_DeployLog
+	//	*ConnectRequest_BranchUpdate
 	Msg           isConnectRequest_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -405,6 +481,33 @@ func (x *ConnectRequest) GetLogs() *LogBatch {
 	return nil
 }
 
+func (x *ConnectRequest) GetDeployEvent() *DeployEvent {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_DeployEvent); ok {
+			return x.DeployEvent
+		}
+	}
+	return nil
+}
+
+func (x *ConnectRequest) GetDeployLog() *DeployLog {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_DeployLog); ok {
+			return x.DeployLog
+		}
+	}
+	return nil
+}
+
+func (x *ConnectRequest) GetBranchUpdate() *BranchUpdate {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_BranchUpdate); ok {
+			return x.BranchUpdate
+		}
+	}
+	return nil
+}
+
 type isConnectRequest_Msg interface {
 	isConnectRequest_Msg()
 }
@@ -433,6 +536,18 @@ type ConnectRequest_Logs struct {
 	Logs *LogBatch `protobuf:"bytes,6,opt,name=logs,proto3,oneof"`
 }
 
+type ConnectRequest_DeployEvent struct {
+	DeployEvent *DeployEvent `protobuf:"bytes,7,opt,name=deploy_event,json=deployEvent,proto3,oneof"`
+}
+
+type ConnectRequest_DeployLog struct {
+	DeployLog *DeployLog `protobuf:"bytes,8,opt,name=deploy_log,json=deployLog,proto3,oneof"`
+}
+
+type ConnectRequest_BranchUpdate struct {
+	BranchUpdate *BranchUpdate `protobuf:"bytes,9,opt,name=branch_update,json=branchUpdate,proto3,oneof"`
+}
+
 func (*ConnectRequest_Hello) isConnectRequest_Msg() {}
 
 func (*ConnectRequest_Heartbeat) isConnectRequest_Msg() {}
@@ -445,6 +560,12 @@ func (*ConnectRequest_Metrics) isConnectRequest_Msg() {}
 
 func (*ConnectRequest_Logs) isConnectRequest_Msg() {}
 
+func (*ConnectRequest_DeployEvent) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_DeployLog) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_BranchUpdate) isConnectRequest_Msg() {}
+
 type ConnectResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Msg:
@@ -452,6 +573,7 @@ type ConnectResponse struct {
 	//	*ConnectResponse_Welcome
 	//	*ConnectResponse_Command
 	//	*ConnectResponse_Green
+	//	*ConnectResponse_Watch
 	Msg           isConnectResponse_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -521,6 +643,15 @@ func (x *ConnectResponse) GetGreen() *GreenSet {
 	return nil
 }
 
+func (x *ConnectResponse) GetWatch() *WatchSet {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectResponse_Watch); ok {
+			return x.Watch
+		}
+	}
+	return nil
+}
+
 type isConnectResponse_Msg interface {
 	isConnectResponse_Msg()
 }
@@ -537,11 +668,17 @@ type ConnectResponse_Green struct {
 	Green *GreenSet `protobuf:"bytes,3,opt,name=green,proto3,oneof"`
 }
 
+type ConnectResponse_Watch struct {
+	Watch *WatchSet `protobuf:"bytes,4,opt,name=watch,proto3,oneof"`
+}
+
 func (*ConnectResponse_Welcome) isConnectResponse_Msg() {}
 
 func (*ConnectResponse_Command) isConnectResponse_Msg() {}
 
 func (*ConnectResponse_Green) isConnectResponse_Msg() {}
+
+func (*ConnectResponse_Watch) isConnectResponse_Msg() {}
 
 type Hello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -688,6 +825,8 @@ type Command struct {
 	//
 	//	*Command_Ping
 	//	*Command_QueryLogs
+	//	*Command_Deploy
+	//	*Command_RemoveProject
 	Kind          isCommand_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -755,6 +894,24 @@ func (x *Command) GetQueryLogs() *QueryLogs {
 	return nil
 }
 
+func (x *Command) GetDeploy() *Deploy {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_Deploy); ok {
+			return x.Deploy
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRemoveProject() *RemoveProject {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_RemoveProject); ok {
+			return x.RemoveProject
+		}
+	}
+	return nil
+}
+
 type isCommand_Kind interface {
 	isCommand_Kind()
 }
@@ -767,9 +924,21 @@ type Command_QueryLogs struct {
 	QueryLogs *QueryLogs `protobuf:"bytes,3,opt,name=query_logs,json=queryLogs,proto3,oneof"`
 }
 
+type Command_Deploy struct {
+	Deploy *Deploy `protobuf:"bytes,4,opt,name=deploy,proto3,oneof"`
+}
+
+type Command_RemoveProject struct {
+	RemoveProject *RemoveProject `protobuf:"bytes,5,opt,name=remove_project,json=removeProject,proto3,oneof"`
+}
+
 func (*Command_Ping) isCommand_Kind() {}
 
 func (*Command_QueryLogs) isCommand_Kind() {}
+
+func (*Command_Deploy) isCommand_Kind() {}
+
+func (*Command_RemoveProject) isCommand_Kind() {}
 
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2005,6 +2174,740 @@ func (x *GreenSet) GetTemplateIds() []string {
 	return nil
 }
 
+// Deploy asks the agent to make a project run a version. The command result
+// only acknowledges that the deploy was accepted; progress arrives as
+// DeployEvent and DeployLog messages. A project has at most one deploy at a
+// time; a second one is refused while the first runs.
+type Deploy struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	DeployId string                 `protobuf:"bytes,1,opt,name=deploy_id,json=deployId,proto3" json:"deploy_id,omitempty"`
+	// ^[a-z0-9][a-z0-9-]{0,39}$ ; validated again by the agent.
+	Project string `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	// Types that are valid to be assigned to Source:
+	//
+	//	*Deploy_Git
+	//	*Deploy_Inline
+	Source isDeploy_Source `protobuf_oneof:"source"`
+	// Optional HTTPS ingress: the service and port that serve the domain.
+	Domain  string `protobuf:"bytes,5,opt,name=domain,proto3" json:"domain,omitempty"`
+	Service string `protobuf:"bytes,6,opt,name=service,proto3" json:"service,omitempty"`
+	Port    uint32 `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
+	// True when this deploy restores an earlier version (manual rollback).
+	IsRollback bool `protobuf:"varint,8,opt,name=is_rollback,json=isRollback,proto3" json:"is_rollback,omitempty"`
+	// The last version known to be healthy, used for automatic rollback when
+	// this one fails to start. Empty for a first deploy.
+	LastHealthy   *Version `protobuf:"bytes,9,opt,name=last_healthy,json=lastHealthy,proto3" json:"last_healthy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Deploy) Reset() {
+	*x = Deploy{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Deploy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Deploy) ProtoMessage() {}
+
+func (x *Deploy) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Deploy.ProtoReflect.Descriptor instead.
+func (*Deploy) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *Deploy) GetDeployId() string {
+	if x != nil {
+		return x.DeployId
+	}
+	return ""
+}
+
+func (x *Deploy) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Deploy) GetSource() isDeploy_Source {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *Deploy) GetGit() *GitSource {
+	if x != nil {
+		if x, ok := x.Source.(*Deploy_Git); ok {
+			return x.Git
+		}
+	}
+	return nil
+}
+
+func (x *Deploy) GetInline() *InlineCompose {
+	if x != nil {
+		if x, ok := x.Source.(*Deploy_Inline); ok {
+			return x.Inline
+		}
+	}
+	return nil
+}
+
+func (x *Deploy) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *Deploy) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *Deploy) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *Deploy) GetIsRollback() bool {
+	if x != nil {
+		return x.IsRollback
+	}
+	return false
+}
+
+func (x *Deploy) GetLastHealthy() *Version {
+	if x != nil {
+		return x.LastHealthy
+	}
+	return nil
+}
+
+type isDeploy_Source interface {
+	isDeploy_Source()
+}
+
+type Deploy_Git struct {
+	Git *GitSource `protobuf:"bytes,3,opt,name=git,proto3,oneof"`
+}
+
+type Deploy_Inline struct {
+	Inline *InlineCompose `protobuf:"bytes,4,opt,name=inline,proto3,oneof"`
+}
+
+func (*Deploy_Git) isDeploy_Source() {}
+
+func (*Deploy_Inline) isDeploy_Source() {}
+
+// Version identifies what runs: a Git commit (cloned by the agent) or the
+// inline compose content.
+type Version struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Version_Git
+	//	*Version_Inline
+	Kind          isVersion_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Version) Reset() {
+	*x = Version{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Version) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Version) ProtoMessage() {}
+
+func (x *Version) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Version.ProtoReflect.Descriptor instead.
+func (*Version) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *Version) GetKind() isVersion_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Version) GetGit() *GitSource {
+	if x != nil {
+		if x, ok := x.Kind.(*Version_Git); ok {
+			return x.Git
+		}
+	}
+	return nil
+}
+
+func (x *Version) GetInline() *InlineCompose {
+	if x != nil {
+		if x, ok := x.Kind.(*Version_Inline); ok {
+			return x.Inline
+		}
+	}
+	return nil
+}
+
+type isVersion_Kind interface {
+	isVersion_Kind()
+}
+
+type Version_Git struct {
+	Git *GitSource `protobuf:"bytes,1,opt,name=git,proto3,oneof"`
+}
+
+type Version_Inline struct {
+	Inline *InlineCompose `protobuf:"bytes,2,opt,name=inline,proto3,oneof"`
+}
+
+func (*Version_Git) isVersion_Kind() {}
+
+func (*Version_Inline) isVersion_Kind() {}
+
+type GitSource struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`                                    // https:// only
+	Ref           string                 `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`                                    // branch name or 40-hex commit
+	ComposePath   string                 `protobuf:"bytes,3,opt,name=compose_path,json=composePath,proto3" json:"compose_path,omitempty"` // path inside the repository, default compose.yaml
+	Token         string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`                                // optional HTTPS access token; never logged
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitSource) Reset() {
+	*x = GitSource{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitSource) ProtoMessage() {}
+
+func (x *GitSource) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitSource.ProtoReflect.Descriptor instead.
+func (*GitSource) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GitSource) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *GitSource) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *GitSource) GetComposePath() string {
+	if x != nil {
+		return x.ComposePath
+	}
+	return ""
+}
+
+func (x *GitSource) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type InlineCompose struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Content       string                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InlineCompose) Reset() {
+	*x = InlineCompose{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InlineCompose) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InlineCompose) ProtoMessage() {}
+
+func (x *InlineCompose) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InlineCompose.ProtoReflect.Descriptor instead.
+func (*InlineCompose) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *InlineCompose) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+// RemoveProject stops a project's containers. It never removes volumes.
+type RemoveProject struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveProject) Reset() {
+	*x = RemoveProject{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveProject) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveProject) ProtoMessage() {}
+
+func (x *RemoveProject) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveProject.ProtoReflect.Descriptor instead.
+func (*RemoveProject) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RemoveProject) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+// DeployEvent reports a phase change. Text fields are redacted on the host.
+type DeployEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeployId      string                 `protobuf:"bytes,1,opt,name=deploy_id,json=deployId,proto3" json:"deploy_id,omitempty"`
+	Phase         DeployPhase            `protobuf:"varint,2,opt,name=phase,proto3,enum=haetae.agent.v1.DeployPhase" json:"phase,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Commit        string                 `protobuf:"bytes,4,opt,name=commit,proto3" json:"commit,omitempty"` // resolved commit, once known
+	Url           string                 `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`       // HTTPS address, with HEALTHY
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`   // the failing step's raw (redacted) error, with FAILED
+	TsUnixMs      int64                  `protobuf:"varint,7,opt,name=ts_unix_ms,json=tsUnixMs,proto3" json:"ts_unix_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployEvent) Reset() {
+	*x = DeployEvent{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployEvent) ProtoMessage() {}
+
+func (x *DeployEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployEvent.ProtoReflect.Descriptor instead.
+func (*DeployEvent) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *DeployEvent) GetDeployId() string {
+	if x != nil {
+		return x.DeployId
+	}
+	return ""
+}
+
+func (x *DeployEvent) GetPhase() DeployPhase {
+	if x != nil {
+		return x.Phase
+	}
+	return DeployPhase_DEPLOY_PHASE_UNSPECIFIED
+}
+
+func (x *DeployEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *DeployEvent) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *DeployEvent) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *DeployEvent) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *DeployEvent) GetTsUnixMs() int64 {
+	if x != nil {
+		return x.TsUnixMs
+	}
+	return 0
+}
+
+// DeployLog is a chunk of build or start output, redacted on the host. If
+// redaction of a chunk fails, it is replaced by an empty text with withheld
+// set.
+type DeployLog struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeployId      string                 `protobuf:"bytes,1,opt,name=deploy_id,json=deployId,proto3" json:"deploy_id,omitempty"`
+	Seq           uint32                 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	Stream        string                 `protobuf:"bytes,3,opt,name=stream,proto3" json:"stream,omitempty"` // "stdout" or "stderr"
+	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	Withheld      bool                   `protobuf:"varint,5,opt,name=withheld,proto3" json:"withheld,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployLog) Reset() {
+	*x = DeployLog{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployLog) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployLog) ProtoMessage() {}
+
+func (x *DeployLog) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployLog.ProtoReflect.Descriptor instead.
+func (*DeployLog) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *DeployLog) GetDeployId() string {
+	if x != nil {
+		return x.DeployId
+	}
+	return ""
+}
+
+func (x *DeployLog) GetSeq() uint32 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *DeployLog) GetStream() string {
+	if x != nil {
+		return x.Stream
+	}
+	return ""
+}
+
+func (x *DeployLog) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *DeployLog) GetWithheld() bool {
+	if x != nil {
+		return x.Withheld
+	}
+	return false
+}
+
+// BranchUpdate tells the server that a watched branch moved.
+type BranchUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Commit        string                 `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BranchUpdate) Reset() {
+	*x = BranchUpdate{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BranchUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BranchUpdate) ProtoMessage() {}
+
+func (x *BranchUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BranchUpdate.ProtoReflect.Descriptor instead.
+func (*BranchUpdate) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *BranchUpdate) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *BranchUpdate) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+// WatchSet replaces the list of branches the agent polls for auto-deploy.
+type WatchSet struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Branches      []*WatchedBranch       `protobuf:"bytes,1,rep,name=branches,proto3" json:"branches,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchSet) Reset() {
+	*x = WatchSet{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchSet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchSet) ProtoMessage() {}
+
+func (x *WatchSet) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchSet.ProtoReflect.Descriptor instead.
+func (*WatchSet) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *WatchSet) GetBranches() []*WatchedBranch {
+	if x != nil {
+		return x.Branches
+	}
+	return nil
+}
+
+type WatchedBranch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	Ref           string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
+	Token         string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
+	LastCommit    string                 `protobuf:"bytes,5,opt,name=last_commit,json=lastCommit,proto3" json:"last_commit,omitempty"` // the commit last deployed; report only newer
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchedBranch) Reset() {
+	*x = WatchedBranch{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchedBranch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchedBranch) ProtoMessage() {}
+
+func (x *WatchedBranch) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchedBranch.ProtoReflect.Descriptor instead.
+func (*WatchedBranch) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *WatchedBranch) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *WatchedBranch) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *WatchedBranch) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *WatchedBranch) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *WatchedBranch) GetLastCommit() string {
+	if x != nil {
+		return x.LastCommit
+	}
+	return ""
+}
+
 var File_haetae_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_haetae_agent_v1_agent_proto_rawDesc = "" +
@@ -2024,19 +2927,24 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x06kernel\x18\x03 \x01(\tR\x06kernel\x12\x12\n" +
 	"\x04arch\x18\x04 \x01(\tR\x04arch\x12%\n" +
 	"\x0edocker_version\x18\x05 \x01(\tR\rdockerVersion\x12#\n" +
-	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"\xe1\x02\n" +
+	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"\xa7\x04\n" +
 	"\x0eConnectRequest\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.haetae.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.haetae.agent.v1.HeartbeatH\x00R\theartbeat\x128\n" +
 	"\x06result\x18\x03 \x01(\v2\x1e.haetae.agent.v1.CommandResultH\x00R\x06result\x126\n" +
 	"\x05state\x18\x04 \x01(\v2\x1e.haetae.agent.v1.StateSnapshotH\x00R\x05state\x129\n" +
 	"\ametrics\x18\x05 \x01(\v2\x1d.haetae.agent.v1.MetricsBatchH\x00R\ametrics\x12/\n" +
-	"\x04logs\x18\x06 \x01(\v2\x19.haetae.agent.v1.LogBatchH\x00R\x04logsB\x05\n" +
-	"\x03msg\"\xb7\x01\n" +
+	"\x04logs\x18\x06 \x01(\v2\x19.haetae.agent.v1.LogBatchH\x00R\x04logs\x12A\n" +
+	"\fdeploy_event\x18\a \x01(\v2\x1c.haetae.agent.v1.DeployEventH\x00R\vdeployEvent\x12;\n" +
+	"\n" +
+	"deploy_log\x18\b \x01(\v2\x1a.haetae.agent.v1.DeployLogH\x00R\tdeployLog\x12D\n" +
+	"\rbranch_update\x18\t \x01(\v2\x1d.haetae.agent.v1.BranchUpdateH\x00R\fbranchUpdateB\x05\n" +
+	"\x03msg\"\xea\x01\n" +
 	"\x0fConnectResponse\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.haetae.agent.v1.WelcomeH\x00R\awelcome\x124\n" +
 	"\acommand\x18\x02 \x01(\v2\x18.haetae.agent.v1.CommandH\x00R\acommand\x121\n" +
-	"\x05green\x18\x03 \x01(\v2\x19.haetae.agent.v1.GreenSetH\x00R\x05greenB\x05\n" +
+	"\x05green\x18\x03 \x01(\v2\x19.haetae.agent.v1.GreenSetH\x00R\x05green\x121\n" +
+	"\x05watch\x18\x04 \x01(\v2\x19.haetae.agent.v1.WatchSetH\x00R\x05watchB\x05\n" +
 	"\x03msg\"6\n" +
 	"\x05Hello\x12-\n" +
 	"\x04host\x18\x01 \x01(\v2\x19.haetae.agent.v1.HostInfoR\x04host\"6\n" +
@@ -2044,12 +2952,14 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\"-\n" +
 	"\tHeartbeat\x12 \n" +
 	"\fsent_unix_ms\x18\x01 \x01(\x03R\n" +
-	"sentUnixMs\"\x8b\x01\n" +
+	"sentUnixMs\"\x87\x02\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
 	"\x04ping\x18\x02 \x01(\v2\x15.haetae.agent.v1.PingH\x00R\x04ping\x12;\n" +
 	"\n" +
-	"query_logs\x18\x03 \x01(\v2\x1a.haetae.agent.v1.QueryLogsH\x00R\tqueryLogsB\x06\n" +
+	"query_logs\x18\x03 \x01(\v2\x1a.haetae.agent.v1.QueryLogsH\x00R\tqueryLogs\x121\n" +
+	"\x06deploy\x18\x04 \x01(\v2\x17.haetae.agent.v1.DeployH\x00R\x06deploy\x12G\n" +
+	"\x0eremove_project\x18\x05 \x01(\v2\x1e.haetae.agent.v1.RemoveProjectH\x00R\rremoveProjectB\x06\n" +
 	"\x04kind\"\x06\n" +
 	"\x04Ping\"\x8b\x01\n" +
 	"\tQueryLogs\x12!\n" +
@@ -2170,7 +3080,59 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x12redaction_failures\x18\x04 \x01(\x04R\x11redactionFailures\x12#\n" +
 	"\rlines_dropped\x18\x05 \x01(\x04R\flinesDropped\"-\n" +
 	"\bGreenSet\x12!\n" +
-	"\ftemplate_ids\x18\x01 \x03(\tR\vtemplateIds*\xa1\x01\n" +
+	"\ftemplate_ids\x18\x01 \x03(\tR\vtemplateIds\"\xd7\x02\n" +
+	"\x06Deploy\x12\x1b\n" +
+	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aproject\x12.\n" +
+	"\x03git\x18\x03 \x01(\v2\x1a.haetae.agent.v1.GitSourceH\x00R\x03git\x128\n" +
+	"\x06inline\x18\x04 \x01(\v2\x1e.haetae.agent.v1.InlineComposeH\x00R\x06inline\x12\x16\n" +
+	"\x06domain\x18\x05 \x01(\tR\x06domain\x12\x18\n" +
+	"\aservice\x18\x06 \x01(\tR\aservice\x12\x12\n" +
+	"\x04port\x18\a \x01(\rR\x04port\x12\x1f\n" +
+	"\vis_rollback\x18\b \x01(\bR\n" +
+	"isRollback\x12;\n" +
+	"\flast_healthy\x18\t \x01(\v2\x18.haetae.agent.v1.VersionR\vlastHealthyB\b\n" +
+	"\x06source\"{\n" +
+	"\aVersion\x12.\n" +
+	"\x03git\x18\x01 \x01(\v2\x1a.haetae.agent.v1.GitSourceH\x00R\x03git\x128\n" +
+	"\x06inline\x18\x02 \x01(\v2\x1e.haetae.agent.v1.InlineComposeH\x00R\x06inlineB\x06\n" +
+	"\x04kind\"h\n" +
+	"\tGitSource\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x10\n" +
+	"\x03ref\x18\x02 \x01(\tR\x03ref\x12!\n" +
+	"\fcompose_path\x18\x03 \x01(\tR\vcomposePath\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\")\n" +
+	"\rInlineCompose\x12\x18\n" +
+	"\acontent\x18\x01 \x01(\tR\acontent\")\n" +
+	"\rRemoveProject\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\"\xd6\x01\n" +
+	"\vDeployEvent\x12\x1b\n" +
+	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\x122\n" +
+	"\x05phase\x18\x02 \x01(\x0e2\x1c.haetae.agent.v1.DeployPhaseR\x05phase\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x16\n" +
+	"\x06commit\x18\x04 \x01(\tR\x06commit\x12\x10\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x1c\n" +
+	"\n" +
+	"ts_unix_ms\x18\a \x01(\x03R\btsUnixMs\"\x82\x01\n" +
+	"\tDeployLog\x12\x1b\n" +
+	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\x12\x10\n" +
+	"\x03seq\x18\x02 \x01(\rR\x03seq\x12\x16\n" +
+	"\x06stream\x18\x03 \x01(\tR\x06stream\x12\x12\n" +
+	"\x04text\x18\x04 \x01(\tR\x04text\x12\x1a\n" +
+	"\bwithheld\x18\x05 \x01(\bR\bwithheld\"@\n" +
+	"\fBranchUpdate\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x16\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\"F\n" +
+	"\bWatchSet\x12:\n" +
+	"\bbranches\x18\x01 \x03(\v2\x1e.haetae.agent.v1.WatchedBranchR\bbranches\"\x84\x01\n" +
+	"\rWatchedBranch\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x10\n" +
+	"\x03ref\x18\x03 \x01(\tR\x03ref\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\x12\x1f\n" +
+	"\vlast_commit\x18\x05 \x01(\tR\n" +
+	"lastCommit*\xa1\x01\n" +
 	"\bLogLevel\x12\x19\n" +
 	"\x15LOG_LEVEL_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fLOG_LEVEL_TRACE\x10\x01\x12\x13\n" +
@@ -2178,7 +3140,20 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x0eLOG_LEVEL_INFO\x10\x03\x12\x12\n" +
 	"\x0eLOG_LEVEL_WARN\x10\x04\x12\x13\n" +
 	"\x0fLOG_LEVEL_ERROR\x10\x05\x12\x13\n" +
-	"\x0fLOG_LEVEL_FATAL\x10\x062\xb2\x01\n" +
+	"\x0fLOG_LEVEL_FATAL\x10\x06*\xc2\x02\n" +
+	"\vDeployPhase\x12\x1c\n" +
+	"\x18DEPLOY_PHASE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13DEPLOY_PHASE_QUEUED\x10\x01\x12\x19\n" +
+	"\x15DEPLOY_PHASE_FETCHING\x10\x02\x12\x19\n" +
+	"\x15DEPLOY_PHASE_BUILDING\x10\x03\x12\x19\n" +
+	"\x15DEPLOY_PHASE_STARTING\x10\x04\x12\x19\n" +
+	"\x15DEPLOY_PHASE_CHECKING\x10\x05\x12\x18\n" +
+	"\x14DEPLOY_PHASE_HEALTHY\x10\x06\x12\x17\n" +
+	"\x13DEPLOY_PHASE_FAILED\x10\a\x12\x1d\n" +
+	"\x19DEPLOY_PHASE_ROLLING_BACK\x10\b\x12\x1c\n" +
+	"\x18DEPLOY_PHASE_ROLLED_BACK\x10\t\x12 \n" +
+	"\x1cDEPLOY_PHASE_ROLLBACK_FAILED\x10\n" +
+	"2\xb2\x01\n" +
 	"\x13AgentGatewayService\x12I\n" +
 	"\x06Enroll\x12\x1e.haetae.agent.v1.EnrollRequest\x1a\x1f.haetae.agent.v1.EnrollResponse\x12P\n" +
 	"\aConnect\x12\x1f.haetae.agent.v1.ConnectRequest\x1a .haetae.agent.v1.ConnectResponse(\x010\x01BCZAgithub.com/alexseymer/haetae/internal/gen/haetae/agent/v1;agentv1b\x06proto3"
@@ -2195,70 +3170,94 @@ func file_haetae_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_haetae_agent_v1_agent_proto_rawDescData
 }
 
-var file_haetae_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_haetae_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_haetae_agent_v1_agent_proto_goTypes = []any{
 	(LogLevel)(0),                 // 0: haetae.agent.v1.LogLevel
-	(*EnrollRequest)(nil),         // 1: haetae.agent.v1.EnrollRequest
-	(*EnrollResponse)(nil),        // 2: haetae.agent.v1.EnrollResponse
-	(*HostInfo)(nil),              // 3: haetae.agent.v1.HostInfo
-	(*ConnectRequest)(nil),        // 4: haetae.agent.v1.ConnectRequest
-	(*ConnectResponse)(nil),       // 5: haetae.agent.v1.ConnectResponse
-	(*Hello)(nil),                 // 6: haetae.agent.v1.Hello
-	(*Welcome)(nil),               // 7: haetae.agent.v1.Welcome
-	(*Heartbeat)(nil),             // 8: haetae.agent.v1.Heartbeat
-	(*Command)(nil),               // 9: haetae.agent.v1.Command
-	(*Ping)(nil),                  // 10: haetae.agent.v1.Ping
-	(*QueryLogs)(nil),             // 11: haetae.agent.v1.QueryLogs
-	(*CommandResult)(nil),         // 12: haetae.agent.v1.CommandResult
-	(*LogLines)(nil),              // 13: haetae.agent.v1.LogLines
-	(*LogLine)(nil),               // 14: haetae.agent.v1.LogLine
-	(*StateSnapshot)(nil),         // 15: haetae.agent.v1.StateSnapshot
-	(*ContainerState)(nil),        // 16: haetae.agent.v1.ContainerState
-	(*PortMapping)(nil),           // 17: haetae.agent.v1.PortMapping
-	(*MetricsBatch)(nil),          // 18: haetae.agent.v1.MetricsBatch
-	(*HostMetricSample)(nil),      // 19: haetae.agent.v1.HostMetricSample
-	(*ContainerMetricSample)(nil), // 20: haetae.agent.v1.ContainerMetricSample
-	(*LogBatch)(nil),              // 21: haetae.agent.v1.LogBatch
-	(*LogEvent)(nil),              // 22: haetae.agent.v1.LogEvent
-	(*TemplateCandidate)(nil),     // 23: haetae.agent.v1.TemplateCandidate
-	(*LogStats)(nil),              // 24: haetae.agent.v1.LogStats
-	(*GreenSet)(nil),              // 25: haetae.agent.v1.GreenSet
+	(DeployPhase)(0),              // 1: haetae.agent.v1.DeployPhase
+	(*EnrollRequest)(nil),         // 2: haetae.agent.v1.EnrollRequest
+	(*EnrollResponse)(nil),        // 3: haetae.agent.v1.EnrollResponse
+	(*HostInfo)(nil),              // 4: haetae.agent.v1.HostInfo
+	(*ConnectRequest)(nil),        // 5: haetae.agent.v1.ConnectRequest
+	(*ConnectResponse)(nil),       // 6: haetae.agent.v1.ConnectResponse
+	(*Hello)(nil),                 // 7: haetae.agent.v1.Hello
+	(*Welcome)(nil),               // 8: haetae.agent.v1.Welcome
+	(*Heartbeat)(nil),             // 9: haetae.agent.v1.Heartbeat
+	(*Command)(nil),               // 10: haetae.agent.v1.Command
+	(*Ping)(nil),                  // 11: haetae.agent.v1.Ping
+	(*QueryLogs)(nil),             // 12: haetae.agent.v1.QueryLogs
+	(*CommandResult)(nil),         // 13: haetae.agent.v1.CommandResult
+	(*LogLines)(nil),              // 14: haetae.agent.v1.LogLines
+	(*LogLine)(nil),               // 15: haetae.agent.v1.LogLine
+	(*StateSnapshot)(nil),         // 16: haetae.agent.v1.StateSnapshot
+	(*ContainerState)(nil),        // 17: haetae.agent.v1.ContainerState
+	(*PortMapping)(nil),           // 18: haetae.agent.v1.PortMapping
+	(*MetricsBatch)(nil),          // 19: haetae.agent.v1.MetricsBatch
+	(*HostMetricSample)(nil),      // 20: haetae.agent.v1.HostMetricSample
+	(*ContainerMetricSample)(nil), // 21: haetae.agent.v1.ContainerMetricSample
+	(*LogBatch)(nil),              // 22: haetae.agent.v1.LogBatch
+	(*LogEvent)(nil),              // 23: haetae.agent.v1.LogEvent
+	(*TemplateCandidate)(nil),     // 24: haetae.agent.v1.TemplateCandidate
+	(*LogStats)(nil),              // 25: haetae.agent.v1.LogStats
+	(*GreenSet)(nil),              // 26: haetae.agent.v1.GreenSet
+	(*Deploy)(nil),                // 27: haetae.agent.v1.Deploy
+	(*Version)(nil),               // 28: haetae.agent.v1.Version
+	(*GitSource)(nil),             // 29: haetae.agent.v1.GitSource
+	(*InlineCompose)(nil),         // 30: haetae.agent.v1.InlineCompose
+	(*RemoveProject)(nil),         // 31: haetae.agent.v1.RemoveProject
+	(*DeployEvent)(nil),           // 32: haetae.agent.v1.DeployEvent
+	(*DeployLog)(nil),             // 33: haetae.agent.v1.DeployLog
+	(*BranchUpdate)(nil),          // 34: haetae.agent.v1.BranchUpdate
+	(*WatchSet)(nil),              // 35: haetae.agent.v1.WatchSet
+	(*WatchedBranch)(nil),         // 36: haetae.agent.v1.WatchedBranch
 }
 var file_haetae_agent_v1_agent_proto_depIdxs = []int32{
-	3,  // 0: haetae.agent.v1.EnrollRequest.host:type_name -> haetae.agent.v1.HostInfo
-	6,  // 1: haetae.agent.v1.ConnectRequest.hello:type_name -> haetae.agent.v1.Hello
-	8,  // 2: haetae.agent.v1.ConnectRequest.heartbeat:type_name -> haetae.agent.v1.Heartbeat
-	12, // 3: haetae.agent.v1.ConnectRequest.result:type_name -> haetae.agent.v1.CommandResult
-	15, // 4: haetae.agent.v1.ConnectRequest.state:type_name -> haetae.agent.v1.StateSnapshot
-	18, // 5: haetae.agent.v1.ConnectRequest.metrics:type_name -> haetae.agent.v1.MetricsBatch
-	21, // 6: haetae.agent.v1.ConnectRequest.logs:type_name -> haetae.agent.v1.LogBatch
-	7,  // 7: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
-	9,  // 8: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
-	25, // 9: haetae.agent.v1.ConnectResponse.green:type_name -> haetae.agent.v1.GreenSet
-	3,  // 10: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
-	10, // 11: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
-	11, // 12: haetae.agent.v1.Command.query_logs:type_name -> haetae.agent.v1.QueryLogs
-	13, // 13: haetae.agent.v1.CommandResult.log_lines:type_name -> haetae.agent.v1.LogLines
-	14, // 14: haetae.agent.v1.LogLines.lines:type_name -> haetae.agent.v1.LogLine
-	16, // 15: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
-	17, // 16: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
-	19, // 17: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
-	20, // 18: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
-	22, // 19: haetae.agent.v1.LogBatch.events:type_name -> haetae.agent.v1.LogEvent
-	23, // 20: haetae.agent.v1.LogBatch.candidates:type_name -> haetae.agent.v1.TemplateCandidate
-	24, // 21: haetae.agent.v1.LogBatch.stats:type_name -> haetae.agent.v1.LogStats
-	0,  // 22: haetae.agent.v1.LogEvent.level:type_name -> haetae.agent.v1.LogLevel
-	0,  // 23: haetae.agent.v1.TemplateCandidate.level:type_name -> haetae.agent.v1.LogLevel
-	1,  // 24: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
-	4,  // 25: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
-	2,  // 26: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
-	5,  // 27: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
-	26, // [26:28] is the sub-list for method output_type
-	24, // [24:26] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	4,  // 0: haetae.agent.v1.EnrollRequest.host:type_name -> haetae.agent.v1.HostInfo
+	7,  // 1: haetae.agent.v1.ConnectRequest.hello:type_name -> haetae.agent.v1.Hello
+	9,  // 2: haetae.agent.v1.ConnectRequest.heartbeat:type_name -> haetae.agent.v1.Heartbeat
+	13, // 3: haetae.agent.v1.ConnectRequest.result:type_name -> haetae.agent.v1.CommandResult
+	16, // 4: haetae.agent.v1.ConnectRequest.state:type_name -> haetae.agent.v1.StateSnapshot
+	19, // 5: haetae.agent.v1.ConnectRequest.metrics:type_name -> haetae.agent.v1.MetricsBatch
+	22, // 6: haetae.agent.v1.ConnectRequest.logs:type_name -> haetae.agent.v1.LogBatch
+	32, // 7: haetae.agent.v1.ConnectRequest.deploy_event:type_name -> haetae.agent.v1.DeployEvent
+	33, // 8: haetae.agent.v1.ConnectRequest.deploy_log:type_name -> haetae.agent.v1.DeployLog
+	34, // 9: haetae.agent.v1.ConnectRequest.branch_update:type_name -> haetae.agent.v1.BranchUpdate
+	8,  // 10: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
+	10, // 11: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
+	26, // 12: haetae.agent.v1.ConnectResponse.green:type_name -> haetae.agent.v1.GreenSet
+	35, // 13: haetae.agent.v1.ConnectResponse.watch:type_name -> haetae.agent.v1.WatchSet
+	4,  // 14: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
+	11, // 15: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
+	12, // 16: haetae.agent.v1.Command.query_logs:type_name -> haetae.agent.v1.QueryLogs
+	27, // 17: haetae.agent.v1.Command.deploy:type_name -> haetae.agent.v1.Deploy
+	31, // 18: haetae.agent.v1.Command.remove_project:type_name -> haetae.agent.v1.RemoveProject
+	14, // 19: haetae.agent.v1.CommandResult.log_lines:type_name -> haetae.agent.v1.LogLines
+	15, // 20: haetae.agent.v1.LogLines.lines:type_name -> haetae.agent.v1.LogLine
+	17, // 21: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
+	18, // 22: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
+	20, // 23: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
+	21, // 24: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
+	23, // 25: haetae.agent.v1.LogBatch.events:type_name -> haetae.agent.v1.LogEvent
+	24, // 26: haetae.agent.v1.LogBatch.candidates:type_name -> haetae.agent.v1.TemplateCandidate
+	25, // 27: haetae.agent.v1.LogBatch.stats:type_name -> haetae.agent.v1.LogStats
+	0,  // 28: haetae.agent.v1.LogEvent.level:type_name -> haetae.agent.v1.LogLevel
+	0,  // 29: haetae.agent.v1.TemplateCandidate.level:type_name -> haetae.agent.v1.LogLevel
+	29, // 30: haetae.agent.v1.Deploy.git:type_name -> haetae.agent.v1.GitSource
+	30, // 31: haetae.agent.v1.Deploy.inline:type_name -> haetae.agent.v1.InlineCompose
+	28, // 32: haetae.agent.v1.Deploy.last_healthy:type_name -> haetae.agent.v1.Version
+	29, // 33: haetae.agent.v1.Version.git:type_name -> haetae.agent.v1.GitSource
+	30, // 34: haetae.agent.v1.Version.inline:type_name -> haetae.agent.v1.InlineCompose
+	1,  // 35: haetae.agent.v1.DeployEvent.phase:type_name -> haetae.agent.v1.DeployPhase
+	36, // 36: haetae.agent.v1.WatchSet.branches:type_name -> haetae.agent.v1.WatchedBranch
+	2,  // 37: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
+	5,  // 38: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
+	3,  // 39: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
+	6,  // 40: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
+	39, // [39:41] is the sub-list for method output_type
+	37, // [37:39] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_haetae_agent_v1_agent_proto_init() }
@@ -2273,26 +3272,40 @@ func file_haetae_agent_v1_agent_proto_init() {
 		(*ConnectRequest_State)(nil),
 		(*ConnectRequest_Metrics)(nil),
 		(*ConnectRequest_Logs)(nil),
+		(*ConnectRequest_DeployEvent)(nil),
+		(*ConnectRequest_DeployLog)(nil),
+		(*ConnectRequest_BranchUpdate)(nil),
 	}
 	file_haetae_agent_v1_agent_proto_msgTypes[4].OneofWrappers = []any{
 		(*ConnectResponse_Welcome)(nil),
 		(*ConnectResponse_Command)(nil),
 		(*ConnectResponse_Green)(nil),
+		(*ConnectResponse_Watch)(nil),
 	}
 	file_haetae_agent_v1_agent_proto_msgTypes[8].OneofWrappers = []any{
 		(*Command_Ping)(nil),
 		(*Command_QueryLogs)(nil),
+		(*Command_Deploy)(nil),
+		(*Command_RemoveProject)(nil),
 	}
 	file_haetae_agent_v1_agent_proto_msgTypes[11].OneofWrappers = []any{
 		(*CommandResult_LogLines)(nil),
+	}
+	file_haetae_agent_v1_agent_proto_msgTypes[25].OneofWrappers = []any{
+		(*Deploy_Git)(nil),
+		(*Deploy_Inline)(nil),
+	}
+	file_haetae_agent_v1_agent_proto_msgTypes[26].OneofWrappers = []any{
+		(*Version_Git)(nil),
+		(*Version_Inline)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_haetae_agent_v1_agent_proto_rawDesc), len(file_haetae_agent_v1_agent_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   25,
+			NumEnums:      2,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -127,13 +127,13 @@ func TestDispatchAllowlist(t *testing.T) {
 		return nil
 	}
 	ctx := context.Background()
-	if r := dispatch(ctx, &agentv1.Command{Id: "1", Kind: &agentv1.Command_QueryLogs{QueryLogs: &agentv1.QueryLogs{}}}, handler); r.GetCommandId() != "1" || r.GetError() != "" {
+	if r := dispatch(ctx, &agentv1.Command{Id: "1", Kind: &agentv1.Command_QueryLogs{QueryLogs: &agentv1.QueryLogs{}}}, RunOptions{Handler: handler}); r.GetCommandId() != "1" || r.GetError() != "" {
 		t.Errorf("query logs: %+v", r)
 	}
-	if r := dispatch(ctx, &agentv1.Command{Id: "2"}, handler); r.GetError() != "unsupported command" {
+	if r := dispatch(ctx, &agentv1.Command{Id: "2"}, RunOptions{Handler: handler}); r.GetError() != "unsupported command" {
 		t.Errorf("unknown kind must be refused: %+v", r)
 	}
-	if r := dispatch(ctx, &agentv1.Command{Id: "3", Kind: &agentv1.Command_QueryLogs{}}, nil); r.GetError() != "unsupported command" {
+	if r := dispatch(ctx, &agentv1.Command{Id: "3", Kind: &agentv1.Command_QueryLogs{}}, RunOptions{}); r.GetError() != "unsupported command" {
 		t.Errorf("with no handler everything but ping is refused: %+v", r)
 	}
 }

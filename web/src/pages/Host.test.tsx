@@ -73,6 +73,14 @@ function defaultFetch(url: string) {
       }),
     );
   }
+  if (url.startsWith("/api/projects")) {
+    return Promise.resolve(
+      new Response(JSON.stringify({ projects: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }
   return Promise.resolve(new Response("{}", { status: 404 }));
 }
 
@@ -136,7 +144,7 @@ describe("HostPage", () => {
     expect(overview).toHaveAttribute("tabindex", "-1");
     expect(containers).toHaveAttribute("aria-controls", "panel-containers");
     await user.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Deploy" })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{Home}");
     expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
   });
