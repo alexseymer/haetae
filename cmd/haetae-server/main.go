@@ -243,6 +243,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	chatSvc := startChat(ctx, st, cfg.dataDir, log)
+	go server.RunBriefing(ctx, st, chatSvc, log.With("component", "briefing"))
+	go server.RunAlertsEvaluator(ctx, st, chatSvc, log.With("component", "alerts"))
 	gw := gateway.New(st, ca, gateway.Config{}, log)
 	deploySvc := &deploys.Service{Store: st, Sender: gw, Box: box}
 	gw.SetDeploys(deploySvc)
