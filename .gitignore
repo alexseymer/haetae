@@ -22,6 +22,8 @@ Thumbs.db
 *.log
 !test/corpus/**/*.log
 tmp/
+test/e2e/out/
+test/e2e/node_modules/
 
 # Go
 /bin/
