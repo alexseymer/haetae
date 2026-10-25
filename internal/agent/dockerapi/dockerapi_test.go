@@ -186,6 +186,49 @@ func TestStats(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsEmptyID(t *testing.T) {
+	c := New("/nonexistent.sock")
+	if _, err := c.InspectContainer(context.Background(), "  "); err == nil {
+		t.Fatal("expected empty container id error")
+	}
+	if _, err := c.InspectImage(context.Background(), ""); err == nil {
+		t.Fatal("expected empty image ref error")
+	}
+	if _, err := c.InspectNetwork(context.Background(), ""); err == nil {
+		t.Fatal("expected empty network id error")
+	}
+	if err := c.PullImage(context.Background(), ""); err == nil {
+		t.Fatal("expected empty pull ref error")
+	}
+	if _, err := c.Stats(context.Background(), ""); err == nil {
+		t.Fatal("expected empty stats id error")
+	}
+}
+
+func TestInspectImageOmitsEnv(t *testing.T) {
+	c := startUnixServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"Id":          "sha256:abc",
+			"RepoTags":    []string{"app:latest"},
+			"RepoDigests": []string{"app@sha256:deadbeef"},
+			"Created":     "2024-01-01T00:00:00Z",
+			"Config": map[string]any{
+				"Env": []string{"SECRET=must-not-decode"},
+			},
+		})
+	}))
+	d, err := c.InspectImage(context.Background(), "app:latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.RepoDigests) != 1 || d.RepoDigests[0] != "app@sha256:deadbeef" {
+		t.Fatalf("digests: %+v", d.RepoDigests)
+	}
+	if b, _ := json.Marshal(d); strings.Contains(string(b), "SECRET") || strings.Contains(string(b), "must-not-decode") {
+		t.Fatalf("env leaked into ImageDetail: %s", b)
+	}
+}
+
 func TestNon2xxError(t *testing.T) {
 	c := startUnixServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

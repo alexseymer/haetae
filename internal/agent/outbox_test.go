@@ -146,6 +146,80 @@ func TestOutboxHardCapMixedFlood(t *testing.T) {
 	}
 }
 
+func TestOutboxSbomBounded(t *testing.T) {
+	o := NewOutbox(3)
+	for i := 0; i < maxSbomReports+10; i++ {
+		o.PutSbom(&agentv1.SbomReport{ImageId: "img-" + strconv.Itoa(i), Status: "ok"})
+	}
+	if n := o.Len(); n > maxSbomReports {
+		t.Fatalf("Len = %d, want at most %d SbomReports", n, maxSbomReports)
+	}
+	if o.Dropped() == 0 {
+		t.Fatal("expected drops when flooding SbomReports past the cap")
+	}
+	// Oldest were shed; newest should still be present.
+	ctx := context.Background()
+	var ids []string
+	for o.Len() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, msg.GetSbomReport().GetImageId())
+	}
+	if len(ids) != maxSbomReports {
+		t.Fatalf("drained %d reports, want %d", len(ids), maxSbomReports)
+	}
+	if ids[0] != "img-10" || ids[len(ids)-1] != "img-"+strconv.Itoa(maxSbomReports+9) {
+		t.Fatalf("kept range %q..%q, want img-10..img-%d", ids[0], ids[len(ids)-1], maxSbomReports+9)
+	}
+}
+
+func TestOutboxSbomDoesNotDropDeployOrTerminal(t *testing.T) {
+	o := NewOutbox(3)
+	terminal := &agentv1.DeployEvent{
+		DeployId: "keep-healthy",
+		Phase:    agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY,
+		TsUnixMs: 1,
+	}
+	progress := &agentv1.DeployEvent{
+		DeployId: "keep-building",
+		Phase:    agentv1.DeployPhase_DEPLOY_PHASE_BUILDING,
+		TsUnixMs: 2,
+	}
+	o.Event(terminal)
+	o.Event(progress)
+	for i := 0; i < maxSbomReports+20; i++ {
+		o.PutSbom(&agentv1.SbomReport{ImageId: "flood-" + strconv.Itoa(i), Status: "ok"})
+	}
+	if o.DeployQueueLen() != 2 {
+		t.Fatalf("deploy queue = %d, want 2 (Sbom drops must not touch deploy)", o.DeployQueueLen())
+	}
+	if n := o.Len(); n != 2+maxSbomReports {
+		t.Fatalf("Len = %d, want %d (2 deploy + capped sboms)", n, 2+maxSbomReports)
+	}
+
+	ctx := context.Background()
+	var sawTerminal, sawBuilding bool
+	for o.Len() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ev := msg.GetDeployEvent(); ev != nil {
+			if ev.GetDeployId() == "keep-healthy" {
+				sawTerminal = true
+			}
+			if ev.GetDeployId() == "keep-building" {
+				sawBuilding = true
+			}
+		}
+	}
+	if !sawTerminal || !sawBuilding {
+		t.Fatalf("deploy events lost to Sbom flood: terminal=%v building=%v", sawTerminal, sawBuilding)
+	}
+}
+
 func TestOutboxLastResortKeepsTerminalWhileNonTerminalExists(t *testing.T) {
 	o := NewOutbox(3)
 	terminal := &agentv1.DeployEvent{

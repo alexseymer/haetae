@@ -2,6 +2,8 @@ package grypedb_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -50,4 +52,49 @@ func TestMatcherKnownVulnerablePackage(t *testing.T) {
 		t.Errorf("fixed = %q, want 1.0.1", hit.FixedVersion)
 	}
 	_ = gotBuilt
+}
+
+func TestOpenMatcherMissingOrCorruptDB(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		_, err := grypedb.OpenMatcher(filepath.Join(t.TempDir(), "does-not-exist"))
+		if err == nil {
+			t.Fatal("expected error opening missing DB dir")
+		}
+	})
+	t.Run("corrupt", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "vulnerability.db"), []byte("not a sqlite db"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := grypedb.OpenMatcher(dir)
+		if err == nil {
+			t.Fatal("expected error opening corrupt DB")
+		}
+	})
+}
+
+func TestMatchEmptySbom(t *testing.T) {
+	dir := t.TempDir()
+	if err := grypedb.BuildDB(dir, time.Now().UTC(), nil); err != nil {
+		t.Fatalf("BuildDB: %v", err)
+	}
+	m, err := grypedb.OpenMatcher(dir)
+	if err != nil {
+		t.Fatalf("OpenMatcher: %v", err)
+	}
+	defer m.Close()
+
+	for _, sbom := range []grypedb.Sbom{
+		{},
+		{ImageID: "empty", Packages: nil},
+		{ImageID: "empty", Packages: []grypedb.Package{}},
+	} {
+		findings, _, err := m.Match(context.Background(), sbom)
+		if err != nil {
+			t.Fatalf("Match(%+v): %v", sbom, err)
+		}
+		if len(findings) != 0 {
+			t.Fatalf("Match(%+v): findings = %#v, want none (caller reports 'no packages', not a failed scan)", sbom, findings)
+		}
+	}
 }

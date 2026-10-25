@@ -126,7 +126,7 @@ func FetchLatestDocument(ctx context.Context, listingURL string) (*distribution.
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("grypedb: listing status %d", resp.StatusCode)
 	}

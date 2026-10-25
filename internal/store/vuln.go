@@ -389,9 +389,7 @@ func (s *Store) SaveSbom(ctx context.Context, orgID uuid.UUID, in SaveSbomInput)
 // modify an existing good SBOM or its findings. The latest scan row is what
 // ScanStatusForContainer uses to show "scan failed".
 func (s *Store) RecordFailedScan(ctx context.Context, orgID uuid.UUID, in FailedScanInput) (Scan, error) {
-	switch in.Status {
-	case ScanFailed, ScanTimeout, ScanOOM, ScanUnsupported:
-	default:
+	if !validScanStatuses[in.Status] || in.Status == ScanOK || in.Status == ScanPending {
 		return Scan{}, fmt.Errorf("%w: status %q", ErrInvalidSbom, in.Status)
 	}
 	if err := validateTrigger(in.Trigger); err != nil {

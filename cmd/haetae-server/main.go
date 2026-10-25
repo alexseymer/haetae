@@ -339,6 +339,7 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		WebPin:         webPin,
 		TrustedProxies: cfg.trustedProxies,
 		Deploys:        deploySvc,
+		Sender:         gw,
 		Secrets:        box,
 		RefreshWatch:   gw.RefreshWatch,
 		Chat:           chatSvc,

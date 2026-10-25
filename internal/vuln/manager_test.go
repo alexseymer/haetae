@@ -106,6 +106,32 @@ func (m *memVulnStore) SetMatchState(_ context.Context, orgID uuid.UUID, imageID
 	return nil
 }
 
+func TestMatchImageEmptySbomReportsNoPackages(t *testing.T) {
+	org := uuid.New()
+	st := newMemVulnStore()
+	st.sboms[st.key(org, "scratch")] = store.Sbom{
+		OrgID: org, ImageID: "scratch", DistroName: "scratch",
+		Packages: nil,
+	}
+	fake := &vuln.FakeMatcher{Findings: nil, BuiltAt: time.Now().UTC()}
+	mgr := vuln.NewManager(st, vuln.Config{ListingURL: "off", DataDir: t.TempDir()}, nil, nil)
+	mgr.SetMatcherForTest(fake)
+
+	if err := mgr.MatchImage(context.Background(), org, "scratch"); err != nil {
+		t.Fatal(err)
+	}
+	ms := st.match[st.key(org, "scratch")]
+	if ms.Status != store.MatchOK {
+		t.Fatalf("status = %q, want ok (empty SBOM is not a failed scan)", ms.Status)
+	}
+	if ms.Error != "no packages" {
+		t.Fatalf("error = %q, want %q (not 'no vulnerabilities')", ms.Error, "no packages")
+	}
+	if len(st.findings[st.key(org, "scratch")]) != 0 {
+		t.Fatalf("findings = %+v, want none", st.findings[st.key(org, "scratch")])
+	}
+}
+
 func TestManagerDisabled(t *testing.T) {
 	st := newMemVulnStore()
 	mgr := vuln.NewManager(st, vuln.Config{ListingURL: "off", DataDir: t.TempDir()}, nil, nil)

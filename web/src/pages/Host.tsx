@@ -21,14 +21,16 @@ import { Chart } from "../components/Chart";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatPercent, formatRelativeTime, withheldPercent } from "../lib/format";
 import { HostDeployTab } from "./HostDeployTab";
+import { HostSecurityTab } from "./HostSecurityTab";
 
-type Tab = "overview" | "containers" | "logs" | "deploy";
+type Tab = "overview" | "containers" | "logs" | "deploy" | "security";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "containers", label: "Containers" },
   { id: "logs", label: "Logs" },
   { id: "deploy", label: "Deploy" },
+  { id: "security", label: "Security" },
 ];
 
 const RANGES: Array<{ id: string; label: string; ms: number }> = [
@@ -58,7 +60,8 @@ export function HostPage() {
     tabParam === "containers" ||
     tabParam === "logs" ||
     tabParam === "overview" ||
-    tabParam === "deploy"
+    tabParam === "deploy" ||
+    tabParam === "security"
       ? tabParam
       : "overview";
 
@@ -706,6 +709,7 @@ export function HostPage() {
       ) : null}
 
       <HostDeployTab hostId={id} active={tab === "deploy"} />
+      <HostSecurityTab hostId={id} active={tab === "security"} />
     </div>
   );
 }

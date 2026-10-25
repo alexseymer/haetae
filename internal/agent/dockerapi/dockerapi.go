@@ -182,6 +182,10 @@ type NetworkSummary struct {
 
 // InspectContainer returns container details (GET /containers/{id}/json).
 func (c *Client) InspectContainer(ctx context.Context, id string) (ContainerDetail, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ContainerDetail{}, fmt.Errorf("dockerapi: empty container id")
+	}
 	var d ContainerDetail
 	path := "/containers/" + url.PathEscape(id) + "/json"
 	if err := c.getJSON(ctx, path, &d); err != nil {
@@ -191,7 +195,12 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (ContainerDeta
 }
 
 // InspectImage returns image details (GET /images/{name}/json).
+// The response type omits Config.Env and other secret-bearing fields.
 func (c *Client) InspectImage(ctx context.Context, ref string) (ImageDetail, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ImageDetail{}, fmt.Errorf("dockerapi: empty image ref")
+	}
 	var d ImageDetail
 	path := "/images/" + url.PathEscape(ref) + "/json"
 	if err := c.getJSON(ctx, path, &d); err != nil {
@@ -211,6 +220,10 @@ func (c *Client) ListNetworks(ctx context.Context) ([]NetworkSummary, error) {
 
 // InspectNetwork returns one network (GET /networks/{id}).
 func (c *Client) InspectNetwork(ctx context.Context, id string) (NetworkSummary, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return NetworkSummary{}, fmt.Errorf("dockerapi: empty network id")
+	}
 	var n NetworkSummary
 	path := "/networks/" + url.PathEscape(id)
 	if err := c.getJSON(ctx, path, &n); err != nil {
@@ -223,6 +236,10 @@ func (c *Client) InspectNetwork(ctx context.Context, id string) (NetworkSummary,
 // daemon. It drains the progress stream and returns when the pull finishes.
 // It never creates or restarts containers.
 func (c *Client) PullImage(ctx context.Context, ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return fmt.Errorf("dockerapi: empty image ref")
+	}
 	// Docker accepts the full ref in fromImage; tag may be empty for digests.
 	from, tag := splitPullRef(ref)
 	q := url.Values{}
@@ -309,6 +326,10 @@ type Stats struct {
 
 // Stats returns one sample: GET /containers/{id}/stats?stream=false&one-shot=true.
 func (c *Client) Stats(ctx context.Context, id string) (Stats, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Stats{}, fmt.Errorf("dockerapi: empty container id")
+	}
 	var s Stats
 	path := "/containers/" + url.PathEscape(id) + "/stats?stream=false&one-shot=true"
 	if err := c.getJSON(ctx, path, &s); err != nil {

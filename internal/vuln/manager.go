@@ -262,7 +262,13 @@ func (m *Manager) MatchImage(ctx context.Context, orgID uuid.UUID, imageID strin
 		_ = m.st.SetMatchState(ctx, orgID, imageID, store.MatchFailed, err.Error(), nil)
 		return err
 	}
-	return m.st.SetMatchState(ctx, orgID, imageID, store.MatchOK, "", &built)
+	// Empty inventory is a successful match (no findings), not a failed scan.
+	// Callers surface "no packages" so the UI never reads this as "no vulnerabilities".
+	msg := ""
+	if len(sb.Packages) == 0 {
+		msg = "no packages"
+	}
+	return m.st.SetMatchState(ctx, orgID, imageID, store.MatchOK, msg, &built)
 }
 
 // RematchAll rematches every stored SBOM with bounded concurrency.

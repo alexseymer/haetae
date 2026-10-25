@@ -28,7 +28,7 @@ type Advisory struct {
 }
 
 // BuildDB writes a minimal Grype v6 database into dir containing the given advisories.
-func BuildDB(dir string, built time.Time, advisories []Advisory) error {
+func BuildDB(dir string, built time.Time, advisories []Advisory) (err error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -36,7 +36,11 @@ func BuildDB(dir string, built time.Time, advisories []Advisory) error {
 	if err != nil {
 		return fmt.Errorf("grypedb: new writer: %w", err)
 	}
-	defer w.Close()
+	defer func() {
+		if cerr := w.Close(); err == nil && cerr != nil {
+			err = fmt.Errorf("grypedb: close writer: %w", cerr)
+		}
+	}()
 
 	provider := v6.Provider{
 		ID:           "test",
@@ -112,16 +116,41 @@ func BuildDB(dir string, built time.Time, advisories []Advisory) error {
 }
 
 // ArchiveDir tars+gzips the contents of dbDir into archivePath (tar.gz).
-func ArchiveDir(dbDir, archivePath string) error {
-	f, err := os.Create(archivePath)
+func ArchiveDir(dbDir, archivePath string) (err error) {
+	dbDir = filepath.Clean(dbDir)
+	archivePath = filepath.Clean(archivePath)
+	if !filepath.IsAbs(dbDir) {
+		if abs, aerr := filepath.Abs(dbDir); aerr == nil {
+			dbDir = abs
+		}
+	}
+	if !filepath.IsAbs(archivePath) {
+		if abs, aerr := filepath.Abs(archivePath); aerr == nil {
+			archivePath = abs
+		}
+	}
+
+	f, err := os.Create(archivePath) //nolint:gosec // G304: path is cleaned/abs'd; callers are tests writing a temp archive
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 	gz := gzip.NewWriter(f)
-	defer gz.Close()
+	defer func() {
+		if cerr := gz.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() {
+		if cerr := tw.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 
 	return filepath.Walk(dbDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -145,11 +174,12 @@ func ArchiveDir(dbDir, archivePath string) error {
 		if info.IsDir() {
 			return nil
 		}
-		rf, err := os.Open(path)
+		// path comes from Walk under cleaned dbDir (test fixture only).
+		rf, err := os.Open(path) //nolint:gosec // G304: Walk path under cleaned dbDir
 		if err != nil {
 			return err
 		}
-		defer rf.Close()
+		defer func() { _ = rf.Close() }()
 		_, err = io.Copy(tw, rf)
 		return err
 	})

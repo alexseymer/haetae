@@ -32,6 +32,10 @@ func TestNewCVEAdvisoryToAlert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Mark the host seen so host_offline does not fire before the CVE advisory.
+	if err := s.MarkSeen(ctx, h.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	started := time.Now().UTC().Add(-time.Hour)
 	if err := s.ReplaceContainers(ctx, org.ID, h.ID, []store.Container{{
 		ContainerID: "web1", Name: "web", State: "running", Image: "app:1", StartedAt: &started,

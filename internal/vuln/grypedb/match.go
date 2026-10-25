@@ -60,7 +60,7 @@ func (m *Matcher) reload() error {
 	desc, err := v6.ReadDescription(v6.Config{DBDirPath: m.dbDir}.DBFilePath())
 	built := time.Now().UTC()
 	if err == nil && desc != nil && !desc.Built.IsZero() {
-		built = desc.Built.Time.UTC()
+		built = desc.Built.UTC()
 	}
 	m.prov = v6.NewVulnerabilityProvider(rdr)
 	m.built = built
@@ -128,10 +128,6 @@ func (m *Matcher) Match(ctx context.Context, sbom Sbom) ([]Finding, time.Time, e
 			f.Severity = strings.ToLower(mt.Vulnerability.Metadata.Severity)
 			f.Description = mt.Vulnerability.Metadata.Description
 			f.URLs = append(f.URLs, mt.Vulnerability.Metadata.URLs...)
-		} else if meta, err := prov.VulnerabilityMetadata(mt.Vulnerability.Reference); err == nil && meta != nil {
-			f.Severity = strings.ToLower(meta.Severity)
-			f.Description = meta.Description
-			f.URLs = append(f.URLs, meta.URLs...)
 		}
 		if f.Severity == "" {
 			f.Severity = "unknown"

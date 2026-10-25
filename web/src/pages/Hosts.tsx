@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
+import type { SeveritySummary } from "../api/securityTypes";
 import type { EnrollmentResponse, HostSummary } from "../api/types";
 import { useAuth } from "../auth";
-import { OnlineBadge } from "../components/Badge";
+import { Badge, OnlineBadge } from "../components/Badge";
 import { CopyBlock } from "../components/CopyBlock";
 import { Modal } from "../components/Modal";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { hostSecurityBadgeText } from "../lib/security";
+
+type HostSecBadge = { scanFailed: boolean; summary: SeveritySummary };
 
 export function HostsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [hosts, setHosts] = useState<HostSummary[] | null>(null);
+  const [secBadges, setSecBadges] = useState<Record<string, HostSecBadge>>({});
   const [openIncidentCount, setOpenIncidentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -33,9 +38,11 @@ export function HostsPage() {
 
   const load = useCallback(async () => {
     const gen = ++loadGenRef.current;
+    let list: HostSummary[] = [];
     try {
       const res = await api.hosts();
       if (gen !== loadGenRef.current || !mountedRef.current) return;
+      list = res.hosts;
       setHosts(res.hosts);
       setError(null);
     } catch (err) {
@@ -50,6 +57,26 @@ export function HostsPage() {
     } catch {
       if (gen !== loadGenRef.current || !mountedRef.current) return;
       setOpenIncidentCount(0);
+    }
+    try {
+      const pairs = await Promise.all(
+        list.map(async (h) => {
+          try {
+            const sec = await api.hostSecurity(h.id);
+            return [h.id, { scanFailed: !!sec.scanFailed, summary: sec.summary }] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (gen !== loadGenRef.current || !mountedRef.current) return;
+      const next: Record<string, HostSecBadge> = {};
+      for (const p of pairs) {
+        if (p) next[p[0]] = p[1];
+      }
+      setSecBadges(next);
+    } catch {
+      // badges are best-effort
     }
   }, []);
 
@@ -126,6 +153,7 @@ export function HostsPage() {
                 <tr>
                   <th>Name</th>
                   <th>Status</th>
+                  <th>Security</th>
                   <th>OS</th>
                   <th>Containers</th>
                   <th>Last seen</th>
@@ -133,13 +161,28 @@ export function HostsPage() {
                 </tr>
               </thead>
               <tbody>
-                {hosts.map((h) => (
+                {hosts.map((h) => {
+                  const badge = secBadges[h.id];
+                  const badgeText = hostSecurityBadgeText(
+                    badge?.scanFailed,
+                    badge?.summary ?? null,
+                  );
+                  return (
                   <tr key={h.id}>
                     <td>
                       <Link to={`/hosts/${h.id}`}>{h.name}</Link>
                     </td>
                     <td>
                       <OnlineBadge online={h.connected} />
+                    </td>
+                    <td>
+                      {badgeText ? (
+                        <Link to={`/hosts/${h.id}?tab=security`}>
+                          <Badge variant="danger">{badgeText}</Badge>
+                        </Link>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td>{h.os}</td>
                     <td>
@@ -150,25 +193,42 @@ export function HostsPage() {
                     </td>
                     <td>{h.agentVersion}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="host-cards">
-            {hosts.map((h) => (
-              <Link key={h.id} to={`/hosts/${h.id}`} className="host-card">
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <strong>{h.name}</strong>
-                  <OnlineBadge online={h.connected} />
+            {hosts.map((h) => {
+              const badge = secBadges[h.id];
+              const badgeText = hostSecurityBadgeText(
+                badge?.scanFailed,
+                badge?.summary ?? null,
+              );
+              return (
+                <div key={h.id} className="host-card">
+                  <Link to={`/hosts/${h.id}`}>
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                      <strong>{h.name}</strong>
+                      <OnlineBadge online={h.connected} />
+                    </div>
+                    <div className="muted">
+                      {h.os} · {h.containers.running}/{h.containers.total} containers
+                    </div>
+                    <div className="muted" title={formatDateTime(h.lastSeen)}>
+                      Last seen {formatRelativeTime(h.lastSeen)} · agent {h.agentVersion}
+                    </div>
+                  </Link>
+                  {badgeText ? (
+                    <div style={{ marginTop: "0.35rem" }}>
+                      <Link to={`/hosts/${h.id}?tab=security`}>
+                        <Badge variant="danger">{badgeText}</Badge>
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
-                <div className="muted">
-                  {h.os} · {h.containers.running}/{h.containers.total} containers
-                </div>
-                <div className="muted" title={formatDateTime(h.lastSeen)}>
-                  Last seen {formatRelativeTime(h.lastSeen)} · agent {h.agentVersion}
-                </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : null}

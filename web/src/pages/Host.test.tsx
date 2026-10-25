@@ -144,9 +144,55 @@ describe("HostPage", () => {
     expect(overview).toHaveAttribute("tabindex", "-1");
     expect(containers).toHaveAttribute("aria-controls", "panel-containers");
     await user.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: "Deploy" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Security" })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{Home}");
     expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("opens the Security tab from ?tab=security", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (
+        url.includes("/security") ||
+        url.includes("/vulnerabilities") ||
+        url.includes("/outbound") ||
+        url.includes("/image-updates") ||
+        url.includes("/settings/updates")
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conntrack: { state: "ok", reason: "", notMonitored: [] },
+              misconfigs: [],
+              summary: { critical: 0, high: 0, medium: 0, low: 0 },
+              containers: [],
+              db: { status: "none", builtAt: null, checkedAt: null, error: "", configured: false },
+              conns: [],
+              updates: [],
+              autoPull: false,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return defaultFetch(url);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <MemoryRouter initialEntries={["/hosts/h1?tab=security"]}>
+        <AuthProvider>
+          <Seed>
+            <Routes>
+              <Route path="/hosts/:id" element={<HostPage />} />
+            </Routes>
+          </Seed>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("tab", { name: "Security" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByRole("heading", { name: "Vulnerabilities" })).toBeInTheDocument();
   });
 
   it("ignores a stale metrics response after a newer range load", async () => {

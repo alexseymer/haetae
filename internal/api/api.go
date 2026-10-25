@@ -85,6 +85,10 @@ type Config struct {
 	// Chat handles inbound web messages, actions and channel enablement.
 	// Nil disables chat write endpoints; channel list still reports web as enabled.
 	Chat *chat.Service
+
+	// Sender delivers agent commands (forced container scans). When nil, the
+	// Deploys service's Sender is used if set.
+	Sender deploys.Sender
 }
 
 // API serves the JSON endpoints.
@@ -100,6 +104,9 @@ type API struct {
 	loginByAccount *auth.Limiter // email + address
 	loginByAddr    *auth.Limiter // address only
 	loginByEmail   *auth.Limiter // email only: many addresses cannot add up to unlimited guesses
+
+	scanMu   sync.Mutex
+	scanLast map[string]time.Time // host|container → last forced scan
 }
 
 // New returns an API.
@@ -159,6 +166,7 @@ func (a *API) Handler() http.Handler {
 	a.registerProjects(mux)
 	a.registerAlerts(mux)
 	a.registerChat(mux)
+	a.registerSecurity(mux)
 
 	// Anything else under /api is a 404 in JSON, never the web app.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
