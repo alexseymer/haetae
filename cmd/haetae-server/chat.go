@@ -54,7 +54,10 @@ func buildChatChannels(publicURL string) (channels []chat.Channel, attach func(*
 	)
 
 	if tok := os.Getenv("HAETAE_TELEGRAM_TOKEN"); tok != "" {
-		tg = &telegram.Channel{Token: tok}
+		tg = &telegram.Channel{
+			Token:   tok,
+			BaseURL: os.Getenv("HAETAE_TELEGRAM_BASE_URL"), // empty → api.telegram.org; tests point at a fake
+		}
 		channels = append(channels, tg)
 	}
 	appTok := os.Getenv("HAETAE_SLACK_APP_TOKEN")

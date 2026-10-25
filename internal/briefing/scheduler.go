@@ -3,6 +3,7 @@ package briefing
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -107,11 +108,16 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 	// time.Date normalises a non-existent local time (DST spring-forward) to
 	// the next valid minute; a repeated hour still shares the same local date.
 	target := time.Date(y, m, d, hour, 0, 0, 0, loc)
-	if now.Before(target) {
-		return nil
-	}
-	if now.Sub(target) > CatchUpWindow {
-		return nil
+	// HAETAE_BRIEFING_NOW is test-only: skip the hour window so e2e can fire
+	// a briefing immediately (exactly-once still enforced by briefings PK).
+	force := os.Getenv("HAETAE_BRIEFING_NOW") != ""
+	if !force {
+		if now.Before(target) {
+			return nil
+		}
+		if now.Sub(target) > CatchUpWindow {
+			return nil
+		}
 	}
 
 	localDate := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
