@@ -17,7 +17,6 @@ const (
 )
 
 // EvaluateRules runs every rule over snap and returns firing candidates.
-// new_cve is reserved for M7 and is not evaluated here.
 func EvaluateRules(snap Snapshot) []Candidate {
 	var out []Candidate
 	out = append(out, ruleCrashLoop(snap)...)
@@ -28,6 +27,7 @@ func EvaluateRules(snap Snapshot) []Candidate {
 	out = append(out, ruleMemHigh(snap)...)
 	out = append(out, ruleDiskHigh(snap)...)
 	out = append(out, ruleDeployFailed(snap)...)
+	out = append(out, ruleNewCVE(snap)...)
 	return out
 }
 

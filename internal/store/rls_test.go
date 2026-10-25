@@ -73,7 +73,36 @@ func seedTwoOrgs(t *testing.T) twoOrgs {
 	}
 	seedM6TenantRows(t, s, o.orgA, o.hostA, "a")
 	seedM6TenantRows(t, s, o.orgB, o.hostB, "b")
+	seedM7TenantRows(t, s, o.orgA, o.hostA, "a")
+	seedM7TenantRows(t, s, o.orgB, o.hostB, "b")
 	return o
+}
+
+func seedM7TenantRows(t *testing.T, s *store.Store, org store.Org, host store.Host, tag string) {
+	t.Helper()
+	ctx := context.Background()
+	imageID := "sha256:" + tag
+	if _, err := s.SaveSbom(ctx, org.ID, store.SaveSbomInput{
+		HostID: host.ID, ContainerID: tag + "-c", Image: "img:" + tag, ImageID: imageID,
+		Trigger:  "start",
+		Packages: []store.SbomPackage{{Name: "p-" + tag, Version: "1", Type: "apk"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceFindings(ctx, org.ID, imageID, []store.Finding{{
+		VulnID: "CVE-" + tag, Package: "p-" + tag, Version: "1", Severity: store.FindingHigh,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMatchState(ctx, org.ID, imageID, store.MatchOK, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecordFailedScan(ctx, org.ID, store.FailedScanInput{
+		HostID: host.ID, ContainerID: tag + "-c", Image: "img:" + tag, ImageID: imageID,
+		Trigger: "daily", Status: store.ScanFailed, Error: "seed fail " + tag,
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func seedM6TenantRows(t *testing.T, s *store.Store, org store.Org, host store.Host, tag string) {
@@ -136,6 +165,8 @@ var tenantTables = []string{
 	// M6 (+ 0008 hardening). chat_link_codes stays server-role-only (no SELECT grant).
 	"org_settings", "incidents", "alerts", "mutes", "chat_accounts", "chat_messages",
 	"briefings", "chat_action_refs", "alert_eval_state",
+	// M7 matching tables (vuln_db is server-wide; misconfigs/outbound/updates seeded by host-security owner).
+	"scans", "sboms", "sbom_packages", "image_match_state", "image_findings",
 }
 
 // A query with no WHERE clause at all, run as the scoped role, returns only

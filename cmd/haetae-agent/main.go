@@ -15,6 +15,7 @@ import (
 
 	"github.com/alexseymer/haetae/internal/agent"
 	"github.com/alexseymer/haetae/internal/agent/deploy"
+	"github.com/alexseymer/haetae/internal/agent/scan"
 	"github.com/alexseymer/haetae/internal/redact"
 	"github.com/alexseymer/haetae/internal/version"
 )
@@ -154,7 +155,17 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		Interval:     *interval,
 	}, out, log.With("component", "monitor"))
 	logs := agent.NewLogManager(agent.LogConfig{}, mon.Docker(), out, log.With("component", "logs"))
-	mon.OnRunning = func(running map[string]string) { logs.Sync(ctx, running) }
+	scanner := scan.NewScanner(scan.Config{DockerSocket: *dockerSocket}, mon.Docker(), nil, out, log.With("component", "scan"))
+	caddyContainer := caddyName
+	if caddyContainer == "" {
+		caddyContainer = "haetae-caddy"
+	}
+	sec := startSecurity(ctx, mon.Docker(), out, *stateDir, caddyContainer, *httpPort, *httpsPort, log)
+	mon.OnRunning = func(running map[string]string) {
+		logs.Sync(ctx, running)
+		scanner.OnRunning(running)
+		sec.TriggerScan()
+	}
 
 	runner := deploy.ExecRunner{StateDir: *stateDir}
 	ing, err := newIngress(ingressConfig{
@@ -170,12 +181,13 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		return err
 	}
 	redactor := redact.New()
+	emit := &deployEmitHook{inner: out, onHealthy: scanner.OnDeployHealthy}
 	deploys := deploy.New(deploy.Config{
 		StateDir:      *stateDir,
 		AllowLocalGit: allowLocalGit,
 		Runner:        runner,
 		Ingress:       ing,
-		Emit:          out,
+		Emit:          emit,
 		HealthWindow:  healthWindow,
 		StartTimeout:  startTimeout,
 		Redact: func(ctx context.Context, lines []string) ([]string, error) {
@@ -198,13 +210,15 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 
 	go mon.Run(ctx)
 	go logs.Run(ctx)
+	go scanner.Run(ctx)
 
+	handler := commandHandler{logs: logs, scan: scanner, sec: sec}
 	return agent.Run(ctx, id, log, agent.RunOptions{
 		Outbox:        out,
 		OnConnected:   mon.Resync,
 		DockerVersion: mon.DockerVersion,
 		OnGreen:       logs.SetGreen,
-		Handler:       logs.Handle,
+		Handler:       handler.Handle,
 		Deploys:       deploys,
 		Watcher:       watcher,
 	})

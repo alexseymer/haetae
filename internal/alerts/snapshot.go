@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,10 @@ type Snapshot struct {
 	Hosts      []HostFact
 	Containers []ContainerFact
 	Deploys    []DeployFact
+	// CVEFindings feeds the new_cve rule (high/critical on running containers).
+	CVEFindings []CVEFindingFact
+	// CVESince is the previous-evaluation watermark for ranking "new" advisories.
+	CVESince time.Time
 }
 
 // HostFact is one host's state for host-level rules.
@@ -57,4 +62,5 @@ type Candidate struct {
 	Severity  string
 	DedupeKey string
 	Summary   string
+	Evidence  json.RawMessage // optional; empty becomes {}
 }

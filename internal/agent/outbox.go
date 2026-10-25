@@ -26,8 +26,22 @@ type Outbox struct {
 	batches  []*agentv1.MetricsBatch
 	logs     []*agentv1.LogBatch
 	deploy   []deployMsg
+	security []securityMsg
+	sboms    []*agentv1.SbomReport
 	dropped  uint64
 }
+
+type securityMsg struct {
+	report     *agentv1.SecurityReport
+	outbound   *agentv1.OutboundBatch
+	candidates *agentv1.ImageCandidates
+}
+
+// maxSecurityMsgs bounds queued security messages while disconnected.
+const maxSecurityMsgs = 32
+
+// maxSbomReports bounds queued inventory reports while disconnected.
+const maxSbomReports = 32
 
 type deployMsg struct {
 	event  *agentv1.DeployEvent
@@ -106,6 +120,61 @@ func (o *Outbox) PutBranchUpdate(u *agentv1.BranchUpdate) {
 	o.enqueueDeployLocked(deployMsg{branch: u})
 	o.mu.Unlock()
 	o.wake()
+}
+
+// PutSbom queues an inventory report, dropping the oldest when full.
+func (o *Outbox) PutSbom(r *agentv1.SbomReport) {
+	o.mu.Lock()
+	if len(o.sboms) >= maxSbomReports {
+		o.sboms[0] = nil
+		o.sboms = o.sboms[1:]
+		o.dropped++
+	}
+	o.sboms = append(o.sboms, r)
+	o.mu.Unlock()
+	o.wake()
+}
+
+// PutSecurityReport queues a full-replacement security report (replace-latest).
+func (o *Outbox) PutSecurityReport(r *agentv1.SecurityReport) {
+	o.mu.Lock()
+	o.enqueueSecurityLocked(securityMsg{report: r})
+	o.mu.Unlock()
+	o.wake()
+}
+
+// PutOutboundBatch queues an outbound connection window.
+func (o *Outbox) PutOutboundBatch(b *agentv1.OutboundBatch) {
+	o.mu.Lock()
+	o.enqueueSecurityLocked(securityMsg{outbound: b})
+	o.mu.Unlock()
+	o.wake()
+}
+
+// PutImageCandidates queues image update candidates.
+func (o *Outbox) PutImageCandidates(c *agentv1.ImageCandidates) {
+	o.mu.Lock()
+	o.enqueueSecurityLocked(securityMsg{candidates: c})
+	o.mu.Unlock()
+	o.wake()
+}
+
+func (o *Outbox) enqueueSecurityLocked(m securityMsg) {
+	// A newer SecurityReport replaces an unsent one (full replacement).
+	if m.report != nil {
+		for i, old := range o.security {
+			if old.report != nil {
+				o.security[i] = m
+				return
+			}
+		}
+	}
+	for len(o.security) >= maxSecurityMsgs {
+		o.security[0] = securityMsg{}
+		o.security = o.security[1:]
+		o.dropped++
+	}
+	o.security = append(o.security, m)
 }
 
 func (o *Outbox) enqueueDeployLocked(m deployMsg) {
@@ -287,7 +356,7 @@ func (o *Outbox) Dropped() uint64 {
 func (o *Outbox) Len() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	n := len(o.batches) + len(o.logs) + len(o.deploy)
+	n := len(o.batches) + len(o.logs) + len(o.deploy) + len(o.security) + len(o.sboms)
 	if o.snapshot != nil {
 		n++
 	}
@@ -343,6 +412,25 @@ func (o *Outbox) take() *agentv1.ConnectRequest {
 		case m.branch != nil:
 			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_BranchUpdate{BranchUpdate: m.branch}}
 		}
+	}
+	if len(o.security) > 0 {
+		m := o.security[0]
+		o.security[0] = securityMsg{}
+		o.security = o.security[1:]
+		switch {
+		case m.report != nil:
+			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_SecurityReport{SecurityReport: m.report}}
+		case m.outbound != nil:
+			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_OutboundBatch{OutboundBatch: m.outbound}}
+		case m.candidates != nil:
+			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_ImageCandidates{ImageCandidates: m.candidates}}
+		}
+	}
+	if len(o.sboms) > 0 {
+		r := o.sboms[0]
+		o.sboms[0] = nil
+		o.sboms = o.sboms[1:]
+		return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_SbomReport{SbomReport: r}}
 	}
 	if len(o.logs) > 0 { // problems first: log events can carry errors
 		b := o.logs[0]

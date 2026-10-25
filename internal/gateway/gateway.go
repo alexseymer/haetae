@@ -22,6 +22,7 @@ import (
 	"github.com/alexseymer/haetae/internal/gen/haetae/agent/v1/agentv1connect"
 	"github.com/alexseymer/haetae/internal/pki"
 	"github.com/alexseymer/haetae/internal/store"
+	"github.com/alexseymer/haetae/internal/updates"
 )
 
 // MaxMessageBytes is the largest agent message the gateway accepts. The
@@ -42,6 +43,7 @@ type Store interface {
 	AppendDeployLog(ctx context.Context, orgID, hostID, deployID uuid.UUID, log store.DeployLogChunk) error
 	ingestStore
 	logStore
+	securityStore
 }
 
 // Config tunes the gateway. Zero values get defaults.
@@ -95,8 +97,18 @@ type Gateway struct {
 	sessions map[uuid.UUID]*session
 	deploys  DeployService
 
+	sbomStore  SbomStore
+	matchQueue MatchQueue
+	findings   updates.FindingsLookup // optional; critical-fix verification
+
 	judgeMu sync.Mutex
 	judge   judgeThrottle
+}
+
+// SetFindingsLookup installs the vuln findings lookup used for image update
+// critical-fix decisions. Nil is fine until the vuln worker wires it.
+func (g *Gateway) SetFindingsLookup(l updates.FindingsLookup) {
+	g.findings = l
 }
 
 var _ agentv1connect.AgentGatewayServiceHandler = (*Gateway)(nil)

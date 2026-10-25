@@ -1,0 +1,10 @@
+Package: libc6
+Status: install ok installed
+Priority: required
+Section: libs
+Installed-Size: 1000
+Maintainer: test <t@t>
+Architecture: amd64
+Version: 2.36-9
+Description: GNU C Library
+

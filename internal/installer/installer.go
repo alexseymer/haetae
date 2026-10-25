@@ -16,9 +16,11 @@ var script []byte
 
 // allowedDownloads is the exact set of names served under /download/.
 var allowedDownloads = map[string]string{
-	"haetae-agent-linux-amd64": "application/octet-stream",
-	"haetae-agent-linux-arm64": "application/octet-stream",
-	"SHA256SUMS":               "text/plain",
+	"haetae-agent-linux-amd64":     "application/octet-stream",
+	"haetae-agent-linux-arm64":     "application/octet-stream",
+	"haetae-inventory-linux-amd64": "application/octet-stream",
+	"haetae-inventory-linux-arm64": "application/octet-stream",
+	"SHA256SUMS":                   "text/plain",
 }
 
 // New returns a handler that serves GET/HEAD /install.sh (the embedded

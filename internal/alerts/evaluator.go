@@ -37,6 +37,9 @@ type Evaluator struct {
 	restartSamples map[uuid.UUID]map[string][]restartSample
 	// seededOrgs remembers orgs whose DB trackers have been loaded into memory.
 	seededOrgs map[uuid.UUID]bool
+
+	// wake nudges an immediate evaluation (e.g. after vuln rematch).
+	wake chan struct{}
 }
 
 type restartSample struct {
@@ -65,6 +68,18 @@ func NewEvaluator(r Reader, n Notifier, cfg Config, log *slog.Logger) *Evaluator
 		unhealthySince:   make(map[uuid.UUID]map[string]time.Time),
 		restartSamples:   make(map[uuid.UUID]map[string][]restartSample),
 		seededOrgs:       make(map[uuid.UUID]bool),
+		wake:             make(chan struct{}, 1),
+	}
+}
+
+// Nudge requests an evaluation as soon as possible (non-blocking).
+func (e *Evaluator) Nudge() {
+	if e == nil || e.wake == nil {
+		return
+	}
+	select {
+	case e.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -78,6 +93,8 @@ func (e *Evaluator) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-e.wake:
+			e.round(ctx)
 		case <-t.C:
 			e.round(ctx)
 		}
@@ -221,6 +238,10 @@ func (e *Evaluator) applyHost(
 	var notifyUnmuted bool
 	for _, c := range cands {
 		_, wasFiring := existingByKey[c.DedupeKey]
+		ev := c.Evidence
+		if len(ev) == 0 {
+			ev = json.RawMessage(`{}`)
+		}
 		a := store.Alert{
 			OrgID:      orgID,
 			HostID:     hostID,
@@ -230,7 +251,7 @@ func (e *Evaluator) applyHost(
 			Severity:   c.Severity,
 			DedupeKey:  c.DedupeKey,
 			Summary:    c.Summary,
-			Evidence:   json.RawMessage(`{}`),
+			Evidence:   ev,
 		}
 		_, created, err := e.r.UpsertFiringAlert(ctx, a)
 		if err != nil {
@@ -537,12 +558,34 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 		})
 	}
 
+	cveRows, err := e.r.HighCriticalFindingsForRunningContainers(ctx, orgID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	cveFacts := make([]CVEFindingFact, 0, len(cveRows))
+	for _, row := range cveRows {
+		cveFacts = append(cveFacts, CVEFindingFact{
+			HostID: row.HostID, HostName: row.HostName, ContainerID: row.ContainerID,
+			Name: row.Name, Image: row.Image, ImageID: row.ImageID, StartedAt: row.StartedAt,
+			VulnID: row.Finding.VulnID, Package: row.Finding.Package, Version: row.Finding.Version,
+			FixedVersion: row.Finding.FixedVersion, Severity: row.Finding.Severity,
+			FirstSeen: row.Finding.FirstSeen,
+		})
+	}
+	// Watermark: one evaluator interval ago so a rematch's new first_seen ranks first.
+	cveSince := now.Add(-e.cfg.Interval)
+	if cveSince.After(now) {
+		cveSince = now.Add(-15 * time.Second)
+	}
+
 	return Snapshot{
-		Now:        now,
-		Settings:   settings,
-		Hosts:      hostFacts,
-		Containers: containers,
-		Deploys:    deployFacts,
+		Now:         now,
+		Settings:    settings,
+		Hosts:       hostFacts,
+		Containers:  containers,
+		Deploys:     deployFacts,
+		CVEFindings: cveFacts,
+		CVESince:    cveSince,
 	}, nil
 }
 

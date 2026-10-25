@@ -27,7 +27,13 @@ RUN mkdir -p /var/lib/haetae /dist /out \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
 		-ldflags "-s -w -X github.com/alexseymer/haetae/internal/version.Version=${VERSION}" \
 		-o /dist/haetae-agent-linux-arm64 ./cmd/haetae-agent \
-	&& cd /dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 > SHA256SUMS
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+		-ldflags "-s -w -X github.com/alexseymer/haetae/internal/version.Version=${VERSION}" \
+		-o /dist/haetae-inventory-linux-amd64 ./cmd/haetae-inventory \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+		-ldflags "-s -w -X github.com/alexseymer/haetae/internal/version.Version=${VERSION}" \
+		-o /dist/haetae-inventory-linux-arm64 ./cmd/haetae-inventory \
+	&& cd /dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 haetae-inventory-linux-amd64 haetae-inventory-linux-arm64 > SHA256SUMS
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 ARG VERSION=dev

@@ -46,12 +46,14 @@ web:
 	cp -r web/dist/. internal/webui/app/
 	touch internal/webui/app/.gitkeep
 
-# Cross-compile agent binaries published at /download/.
+# Cross-compile agent + inventory helper binaries published at /download/.
 dist:
 	mkdir -p bin/dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-agent-linux-amd64 ./cmd/haetae-agent
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-agent-linux-arm64 ./cmd/haetae-agent
-	cd bin/dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 > SHA256SUMS
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-inventory-linux-amd64 ./cmd/haetae-inventory
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-inventory-linux-arm64 ./cmd/haetae-inventory
+	cd bin/dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 haetae-inventory-linux-amd64 haetae-inventory-linux-arm64 > SHA256SUMS
 
 docker-image:
 	DOCKER_BUILDKIT=0 docker build --build-arg VERSION=$(VERSION) -t haetae-server:dev .
