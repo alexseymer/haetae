@@ -479,7 +479,9 @@ func (m *Manager) runDeploy(ctx context.Context, d *agentv1.Deploy) {
 			commit, "", err.Error())
 		return
 	}
-	m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK, "restoring last healthy version", commit, "", "")
+	// Keep the start/check failure on the deploy row (error is sticky when later
+	// events send an empty error) so the UI can show why rollback ran.
+	m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK, "restoring last healthy version", commit, "", err.Error())
 	rb := rollbackDeploy(d)
 	rbLogs := m.newLogStreamer(d.GetDeployId())
 	defer rbLogs.flush()

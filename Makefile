@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X github.com/alexseymer/haetae/internal/version.Version=$(VERS
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
 
-.PHONY: build test test-integration test-e2e test-load test-selfhost web dist docker-image lint vuln fmt generate clean
+.PHONY: build test test-integration test-e2e test-deploy test-load test-selfhost web dist docker-image lint vuln fmt generate clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
@@ -21,6 +21,10 @@ test-integration:
 # Real-browser acceptance against the embedded UI (needs Docker, Chromium, Playwright).
 test-e2e:
 	go test -count=1 -tags e2e -timeout 20m ./test/e2e/
+
+# M5 deploy acceptance: real server + agent + Docker (needs Docker, cached busybox/caddy).
+test-deploy:
+	bash -o pipefail -c "go test -count=1 -tags e2e_deploy -timeout 20m -v ./test/deploy/ 2>&1 | tee deploy-e2e.log | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
 
 # Agent memory under load (spec S10): 20 noisy containers, RSS sampled every second.
 # HAETAE_LOAD_DURATION overrides the default 2m.

@@ -138,6 +138,11 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 
 	allowLocalGit := os.Getenv("HAETAE_AGENT_ALLOW_LOCAL_GIT") == "1"
 	tlsInternal := os.Getenv("HAETAE_AGENT_CADDY_TLS") == "internal"
+	caddyName := os.Getenv("HAETAE_AGENT_CADDY_NAME")
+	caddyVol := os.Getenv("HAETAE_AGENT_CADDY_VOLUME_PREFIX")
+	healthWindow := parseEnvDuration("HAETAE_AGENT_HEALTH_WINDOW")
+	watchInterval := parseEnvDuration("HAETAE_AGENT_WATCH_INTERVAL")
+	startTimeout := parseEnvDuration("HAETAE_AGENT_START_TIMEOUT")
 
 	// 30 batches at the default interval keep five minutes of metrics while
 	// the control plane is unreachable.
@@ -153,11 +158,13 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 
 	runner := deploy.ExecRunner{StateDir: *stateDir}
 	ing, err := newIngress(ingressConfig{
-		StateDir:    *stateDir,
-		HTTPPort:    *httpPort,
-		HTTPSPort:   *httpsPort,
-		Runner:      runner,
-		TLSInternal: tlsInternal,
+		StateDir:      *stateDir,
+		HTTPPort:      *httpPort,
+		HTTPSPort:     *httpsPort,
+		Runner:        runner,
+		TLSInternal:   tlsInternal,
+		ContainerName: caddyName,
+		VolumePrefix:  caddyVol,
 	})
 	if err != nil {
 		return err
@@ -169,6 +176,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		Runner:        runner,
 		Ingress:       ing,
 		Emit:          out,
+		HealthWindow:  healthWindow,
+		StartTimeout:  startTimeout,
 		Redact: func(ctx context.Context, lines []string) ([]string, error) {
 			res, err := redactor.RedactBatch(ctx, lines, 500*time.Millisecond)
 			if err != nil {
@@ -182,6 +191,7 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	watcher := &deploy.Watcher{
 		Runner:        runner,
 		AllowLocalGit: allowLocalGit,
+		Interval:      watchInterval,
 		Log:           log.With("component", "watch"),
 	}
 	go watcher.Run(ctx, out.PutBranchUpdate)
@@ -198,4 +208,18 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		Deploys:       deploys,
 		Watcher:       watcher,
 	})
+}
+
+// parseEnvDuration returns the duration in env key, or 0 if unset/invalid
+// (callers treat 0 as "use the package default").
+func parseEnvDuration(key string) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0
+	}
+	return d
 }

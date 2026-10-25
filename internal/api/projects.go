@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -566,7 +567,10 @@ func buildProjectInput(name string, src projectSourceJSON, domain, service strin
 	}
 	switch src.Kind {
 	case "git":
-		if err := deployspec.GitURL(src.GitURL, false); err != nil {
+		// HAETAE_ALLOW_LOCAL_GIT=1 lets tests create file:// projects; the agent
+		// still needs HAETAE_AGENT_ALLOW_LOCAL_GIT=1 to fetch them.
+		allowLocal := os.Getenv("HAETAE_ALLOW_LOCAL_GIT") == "1"
+		if err := deployspec.GitURL(src.GitURL, allowLocal); err != nil {
 			return store.ProjectInput{}, err
 		}
 		if err := deployspec.GitRef(src.GitRef); err != nil {

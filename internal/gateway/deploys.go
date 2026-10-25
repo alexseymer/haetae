@@ -154,7 +154,7 @@ func (g *Gateway) handleDeployLog(ctx context.Context, s *session, lg *agentv1.D
 	}
 }
 
-func (g *Gateway) handleBranchUpdate(ctx context.Context, s *session, bu *agentv1.BranchUpdate) {
+func (g *Gateway) handleBranchUpdate(parent context.Context, s *session, bu *agentv1.BranchUpdate) {
 	if bu == nil {
 		return
 	}
@@ -172,9 +172,19 @@ func (g *Gateway) handleBranchUpdate(ctx context.Context, s *session, bu *agentv
 	if name == "" {
 		return
 	}
-	if err := svc.OnBranchUpdate(ctx, s.orgID, s.hostID, name, clipTo(bu.GetCommit(), 64)); err != nil {
-		g.log.Warn("branch update", "host_id", s.hostID, "project", name, "err", err)
-	}
+	commit := clipTo(bu.GetCommit(), 64)
+	// OnBranchUpdate may Send a Deploy command and wait for the result. That
+	// must not run on the receive loop: the Result arrives on this same loop,
+	// so a synchronous Send deadlocks until sendTimeout.
+	orgID, hostID := s.orgID, s.hostID
+	base := context.WithoutCancel(parent)
+	go func() {
+		ctx, cancel := context.WithTimeout(base, 60*time.Second)
+		defer cancel()
+		if err := svc.OnBranchUpdate(ctx, orgID, hostID, name, commit); err != nil {
+			g.log.Warn("branch update", "host_id", hostID, "project", name, "err", err)
+		}
+	}()
 }
 
 func (s *session) warnUnknownDeploy(g *Gateway, id uuid.UUID) {

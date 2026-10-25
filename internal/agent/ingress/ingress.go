@@ -430,9 +430,21 @@ func (i *Ingress) connectNetworks(ctx context.Context, upstream string) error {
 		return fmt.Errorf("ingress: inspect upstream networks: %w", err)
 	}
 	for _, net := range strings.Fields(out.String()) {
-		cerr := i.runner.Run(ctx, "docker", []string{"network", "connect", net, i.containerName}, nil)
-		if cerr != nil && !isAlreadyExists(cerr) {
-			return fmt.Errorf("ingress: network connect %s: %w", net, cerr)
+		var errBuf strings.Builder
+		cerr := i.runner.Run(ctx, "docker", []string{"network", "connect", net, i.containerName}, func(line string) {
+			errBuf.WriteString(line)
+			errBuf.WriteByte('\n')
+		})
+		if cerr != nil {
+			// Docker prints "already exists" / "already connected" on stderr;
+			// fold it into the error so isAlreadyExists can see it (ExecRunner
+			// otherwise returns a bare exit status when onLine is nil).
+			if msg := strings.TrimSpace(errBuf.String()); msg != "" {
+				cerr = fmt.Errorf("%w: %s", cerr, msg)
+			}
+			if !isAlreadyExists(cerr) {
+				return fmt.Errorf("ingress: network connect %s: %w", net, cerr)
+			}
 		}
 	}
 	return nil

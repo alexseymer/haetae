@@ -1,7 +1,7 @@
-//go:build deploy
+//go:build deploy || e2e_deploy
 
-// Package dockerclean removes leftover Docker resources from deploy-tagged
-// integration tests and fails the package if any remain after TestMain.
+// Package dockerclean removes leftover Docker resources from deploy integration
+// tests and fails the package if any remain after TestMain.
 package dockerclean
 
 import (

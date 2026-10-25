@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -161,11 +162,23 @@ func TestBranchUpdateRateLimited(t *testing.T) {
 			Project: "shop", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		})
 	}
-	svc.mu.Lock()
-	n := svc.calls
-	svc.mu.Unlock()
+	// handleBranchUpdate dispatches OnBranchUpdate asynchronously.
+	deadline := time.Now().Add(2 * time.Second)
+	var n int
+	for time.Now().Before(deadline) {
+		svc.mu.Lock()
+		n = svc.calls
+		svc.mu.Unlock()
+		if n > 0 && n <= deployBranchPerMin {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if n > deployBranchPerMin {
 		t.Fatalf("accepted %d branch updates, want <= %d", n, deployBranchPerMin)
+	}
+	if n == 0 {
+		t.Fatal("expected some branch updates to be accepted")
 	}
 	if s.droppedBranch.Load() == 0 {
 		t.Fatal("expected dropped branch updates")

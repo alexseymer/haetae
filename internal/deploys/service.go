@@ -26,6 +26,7 @@ var (
 
 const (
 	sendTimeout        = 10 * time.Second
+	removeSendTimeout  = 60 * time.Second // compose down may wait out Docker's 10s stop grace
 	pushDeployCooldown = 30 * time.Second
 )
 
@@ -268,7 +269,7 @@ func (s *Service) Remove(ctx context.Context, hostID uuid.UUID, projectName stri
 	if s.Sender == nil || !s.Sender.Connected(hostID) {
 		return ErrHostOffline
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	sendCtx, cancel := context.WithTimeout(ctx, removeSendTimeout)
 	defer cancel()
 	res, err := s.Sender.Send(sendCtx, hostID, &agentv1.Command{
 		Kind: &agentv1.Command_RemoveProject{RemoveProject: &agentv1.RemoveProject{Project: projectName}},
