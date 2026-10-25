@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -193,6 +194,9 @@ func TestStartDecryptsTokenAndSetsLastHealthy(t *testing.T) {
 	if dep.GetLastHealthy().GetGit().GetRef() != healthy.Commit {
 		t.Fatalf("last_healthy ref = %q", dep.GetLastHealthy().GetGit().GetRef())
 	}
+	if dep.GetLastHealthy().GetGit().GetToken() != "tok-secret" {
+		t.Fatalf("last_healthy token = %q, want project token", dep.GetLastHealthy().GetGit().GetToken())
+	}
 }
 
 func TestRollbackNeverHealthyRefused(t *testing.T) {
@@ -262,6 +266,71 @@ func TestOnBranchUpdateIgnored(t *testing.T) {
 	}
 	if st.created != 0 {
 		t.Fatal("running project started another deploy")
+	}
+}
+
+func TestOnBranchUpdateSameCommitIgnored(t *testing.T) {
+	org, host := uuid.New(), uuid.New()
+	pid := uuid.New()
+	const commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	p := store.Project{
+		ID: pid, OrgID: org, HostID: host, Name: "shop", SourceKind: "git",
+		GitURL: "https://github.com/acme/shop", GitRef: "main", AutoDeploy: true,
+	}
+	st := &fakeStore{
+		byName:   map[string]store.Project{"shop": p},
+		projects: map[uuid.UUID]store.Project{pid: p},
+		deploys: []store.Deploy{{
+			ID: uuid.New(), ProjectID: pid, Status: store.DeployHealthy, Commit: commit,
+		}},
+	}
+	svc := &Service{Store: st, Sender: &fakeSender{connected: true}}
+	if err := svc.OnBranchUpdate(context.Background(), org, host, "shop", commit); err != nil {
+		t.Fatal(err)
+	}
+	if st.created != 0 {
+		t.Fatal("same-commit BranchUpdate started a deploy")
+	}
+}
+
+func TestOnBranchUpdateCooldown(t *testing.T) {
+	org, host := uuid.New(), uuid.New()
+	pid := uuid.New()
+	p := store.Project{
+		ID: pid, OrgID: org, HostID: host, Name: "shop", SourceKind: "git",
+		GitURL: "https://github.com/acme/shop", GitRef: "main", AutoDeploy: true,
+	}
+	st := &fakeStore{
+		byName:   map[string]store.Project{"shop": p},
+		projects: map[uuid.UUID]store.Project{pid: p},
+	}
+	now := time.Unix(1_700_000_000, 0)
+	svc := &Service{
+		Store: st, Sender: &fakeSender{connected: true},
+		now: func() time.Time { return now },
+	}
+	if err := svc.OnBranchUpdate(context.Background(), org, host, "shop", "c1"); err != nil {
+		t.Fatal(err)
+	}
+	if st.created != 1 {
+		t.Fatalf("created = %d, want 1", st.created)
+	}
+	st.running = nil // simulate finished so RunningDeploy is clear
+	st.deploys = append(st.deploys, store.Deploy{
+		ID: uuid.New(), ProjectID: pid, Status: store.DeployFailed, Commit: "c1",
+	})
+	if err := svc.OnBranchUpdate(context.Background(), org, host, "shop", "c2"); err != nil {
+		t.Fatal(err)
+	}
+	if st.created != 1 {
+		t.Fatal("cooldown did not suppress second push deploy")
+	}
+	now = now.Add(31 * time.Second)
+	if err := svc.OnBranchUpdate(context.Background(), org, host, "shop", "c2"); err != nil {
+		t.Fatal(err)
+	}
+	if st.created != 2 {
+		t.Fatalf("after cooldown created = %d, want 2", st.created)
 	}
 }
 

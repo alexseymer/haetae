@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexseymer/haetae/internal/deployphase"
 	"github.com/alexseymer/haetae/internal/deployspec"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/redact"
@@ -376,7 +377,19 @@ func (s *logStreamer) emitChunkLocked(stream string, lines []string) {
 	s.m.cfg.Emit.Log(chunk)
 }
 
-func (m *Manager) emitEvent(d *agentv1.Deploy, phase agentv1.DeployPhase, msg, commit, url, errText string) {
+// emitEventTracked emits a phase event. When last is non-nil it enforces the
+// shared deployphase table (same-phase updates are allowed; illegal jumps are
+// dropped so the agent never emits an illegal sequence).
+func (m *Manager) emitEventTracked(d *agentv1.Deploy, last *string, phase agentv1.DeployPhase, msg, commit, url, errText string) {
+	name := phaseString(phase)
+	if last != nil && name != "" {
+		if *last != "" && name != *last && !deployphase.Allowed(*last, name) {
+			return
+		}
+		if name != *last {
+			*last = name
+		}
+	}
 	ev := &agentv1.DeployEvent{
 		DeployId: d.GetDeployId(),
 		Phase:    phase,
@@ -389,6 +402,33 @@ func (m *Manager) emitEvent(d *agentv1.Deploy, phase agentv1.DeployPhase, msg, c
 	m.persistState(d.GetProject(), d.GetDeployId(), phase, commit)
 	if m.cfg.Emit != nil {
 		m.cfg.Emit.Event(ev)
+	}
+}
+
+func phaseString(p agentv1.DeployPhase) string {
+	switch p {
+	case agentv1.DeployPhase_DEPLOY_PHASE_QUEUED:
+		return deployphase.Queued
+	case agentv1.DeployPhase_DEPLOY_PHASE_FETCHING:
+		return deployphase.Fetching
+	case agentv1.DeployPhase_DEPLOY_PHASE_BUILDING:
+		return deployphase.Building
+	case agentv1.DeployPhase_DEPLOY_PHASE_STARTING:
+		return deployphase.Starting
+	case agentv1.DeployPhase_DEPLOY_PHASE_CHECKING:
+		return deployphase.Checking
+	case agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY:
+		return deployphase.Healthy
+	case agentv1.DeployPhase_DEPLOY_PHASE_FAILED:
+		return deployphase.Failed
+	case agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK:
+		return deployphase.RollingBack
+	case agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK:
+		return deployphase.RolledBack
+	case agentv1.DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED:
+		return deployphase.RollbackFailed
+	default:
+		return ""
 	}
 }
 
@@ -407,54 +447,56 @@ func (m *Manager) runDeploy(ctx context.Context, d *agentv1.Deploy) {
 	logs := m.newLogStreamer(d.GetDeployId())
 	defer logs.flush()
 
-	url, msg, commit, err := m.deployOnce(ctx, d, logs, false)
+	last := deployphase.Queued
+	url, msg, commit, err := m.deployOnce(ctx, d, logs, false, &last)
 	if err == nil {
 		if msg == "" {
 			msg = "healthy"
 		}
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY, msg, commit, url, "")
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY, msg, commit, url, "")
 		return
 	}
 	if ctx.Err() != nil {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, "agent stopped", commit, "", "agent stopped")
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, "agent stopped", commit, "", "agent stopped")
 		return
 	}
 	if isBuildFailure(err) {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, "previous version is still running", commit, "", err.Error())
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, "previous version is still running", commit, "", err.Error())
 		return
 	}
 	if isIngressFailure(err) {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, "app is running but not reachable via ingress", commit, "", err.Error())
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, "app is running but not reachable via ingress", commit, "", err.Error())
 		return
 	}
 	// Runtime failure (start/check): rollback when possible.
 	if d.GetIsRollback() {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, err.Error(), commit, "", err.Error())
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_FAILED, err.Error(), commit, "", err.Error())
 		return
 	}
 	if d.GetLastHealthy() == nil {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FAILED,
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_FAILED,
 			"no last healthy version to roll back to; containers left for inspection (compose down was not run)",
 			commit, "", err.Error())
 		return
 	}
-	m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK, "restoring last healthy version", commit, "", "")
+	m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK, "restoring last healthy version", commit, "", "")
 	rb := rollbackDeploy(d)
 	rbLogs := m.newLogStreamer(d.GetDeployId())
 	defer rbLogs.flush()
-	rbURL, rbMsg, rbCommit, rbErr := m.deployOnce(ctx, rb, rbLogs, true)
+	// Rollback must not re-emit fetching/building/… (illegal after rolling_back).
+	rbURL, rbMsg, rbCommit, rbErr := m.deployOnce(ctx, rb, rbLogs, true, nil)
 	if rbErr != nil {
 		msg := rbErr.Error()
 		if ctx.Err() != nil {
 			msg = "agent stopped"
 		}
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED, msg, rbCommit, "", msg)
+		m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED, msg, rbCommit, "", msg)
 		return
 	}
 	if rbMsg == "" {
 		rbMsg = "rolled back"
 	}
-	m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK, rbMsg, rbCommit, rbURL, "")
+	m.emitEventTracked(d, &last, agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK, rbMsg, rbCommit, rbURL, "")
 }
 
 type classifiedError struct {
@@ -498,21 +540,29 @@ func rollbackDeploy(d *agentv1.Deploy) *agentv1.Deploy {
 
 // deployOnce runs fetch → build → start → check. On success it returns the
 // public URL (may be empty), a human message, and the resolved commit.
-func (m *Manager) deployOnce(ctx context.Context, d *agentv1.Deploy, logs *logStreamer, silentFetch bool) (url, msg, commit string, err error) {
-	if !silentFetch {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FETCHING, "fetching source", "", "", "")
-	} else {
-		m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FETCHING, "fetching last healthy source", "", "", "")
+// When last is nil (rollback pass), intermediate phase events are not emitted.
+func (m *Manager) deployOnce(ctx context.Context, d *agentv1.Deploy, logs *logStreamer, silentFetch bool, last *string) (url, msg, commit string, err error) {
+	emit := func(phase agentv1.DeployPhase, message, cmt, u, errText string) {
+		if last == nil {
+			return
+		}
+		m.emitEventTracked(d, last, phase, message, cmt, u, errText)
 	}
-	composeFile, commit, err := m.fetch(ctx, d, logs)
+	if !silentFetch {
+		emit(agentv1.DeployPhase_DEPLOY_PHASE_FETCHING, "fetching source", "", "", "")
+	} else if last != nil {
+		emit(agentv1.DeployPhase_DEPLOY_PHASE_FETCHING, "fetching last healthy source", "", "", "")
+	}
+	composeFile, commit, err := m.fetch(ctx, d, logs, last)
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", "", commit, err
 		}
-		return "", "", commit, runtimeErr(err.Error())
+		// Fetch failures never roll back: containers were not replaced.
+		return "", "", commit, buildErr(err.Error())
 	}
 
-	m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_BUILDING, "building", commit, "", "")
+	emit(agentv1.DeployPhase_DEPLOY_PHASE_BUILDING, "building", commit, "", "")
 	if err := m.build(ctx, d, composeFile, logs); err != nil {
 		if ctx.Err() != nil {
 			return "", "", commit, err
@@ -520,7 +570,7 @@ func (m *Manager) deployOnce(ctx context.Context, d *agentv1.Deploy, logs *logSt
 		return "", "", commit, buildErr(err.Error())
 	}
 
-	m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_STARTING, "starting", commit, "", "")
+	emit(agentv1.DeployPhase_DEPLOY_PHASE_STARTING, "starting", commit, "", "")
 	if err := m.start(ctx, d, composeFile, logs); err != nil {
 		if ctx.Err() != nil {
 			return "", "", commit, err
@@ -528,7 +578,7 @@ func (m *Manager) deployOnce(ctx context.Context, d *agentv1.Deploy, logs *logSt
 		return "", "", commit, runtimeErr(err.Error())
 	}
 
-	m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_CHECKING, "checking health", commit, "", "")
+	emit(agentv1.DeployPhase_DEPLOY_PHASE_CHECKING, "checking health", commit, "", "")
 	url, msg, err = m.checkHealth(ctx, d, composeFile)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -542,7 +592,7 @@ func (m *Manager) deployOnce(ctx context.Context, d *agentv1.Deploy, logs *logSt
 	return url, msg, commit, nil
 }
 
-func (m *Manager) fetch(ctx context.Context, d *agentv1.Deploy, logs *logStreamer) (composeFile, commit string, err error) {
+func (m *Manager) fetch(ctx context.Context, d *agentv1.Deploy, logs *logStreamer, last *string) (composeFile, commit string, err error) {
 	projDir := m.projectDir(d.GetProject())
 	if err := os.MkdirAll(projDir, 0o700); err != nil {
 		return "", "", err
@@ -567,7 +617,9 @@ func (m *Manager) fetch(ctx context.Context, d *agentv1.Deploy, logs *logStreame
 	if err != nil {
 		return "", "", err
 	}
-	m.emitEvent(d, agentv1.DeployPhase_DEPLOY_PHASE_FETCHING, "fetched "+commit, commit, "", "")
+	if last != nil {
+		m.emitEventTracked(d, last, agentv1.DeployPhase_DEPLOY_PHASE_FETCHING, "fetched "+commit, commit, "", "")
+	}
 	composeFile = filepath.Join(srcDir, filepath.FromSlash(composePath))
 	if err := assertComposeInside(srcDir, composeFile); err != nil {
 		return "", commit, err
@@ -612,32 +664,31 @@ func gitEnv(token string) (env []string, cleanup func(), err error) {
 	if token == "" {
 		return env, cleanup, nil
 	}
-	f, err := os.CreateTemp("", "haetae-askpass-*")
+	dir, err := os.MkdirTemp("", "haetae-git-*")
 	if err != nil {
 		return nil, nil, err
 	}
-	path := f.Name()
-	script := "#!/bin/sh\ncase \"$1\" in\n*Username*|*username*) echo x-access-token ;;\n*) echo \"$HAETAE_GIT_TOKEN\" ;;\nesac\n"
-	if _, err := f.WriteString(script); err != nil {
-		f.Close()
-		os.Remove(path)
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: temp dir must be owner-executable for askpass
+		_ = os.RemoveAll(dir)
 		return nil, nil, err
 	}
-	if err := f.Chmod(0o700); err != nil {
-		f.Close()
-		os.Remove(path)
+	tokenPath := filepath.Join(dir, "token")
+	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
+		_ = os.RemoveAll(dir)
 		return nil, nil, err
 	}
-	if err := f.Close(); err != nil {
-		os.Remove(path)
+	askpassPath := filepath.Join(dir, "askpass")
+	// Token lives only in the 0600 file; the script cats it (never embeds it).
+	script := "#!/bin/sh\nTOKEN_FILE=$(dirname \"$0\")/token\ncase \"$1\" in\n*Username*|*username*) echo x-access-token ;;\n*) cat \"$TOKEN_FILE\" ;;\nesac\n"
+	if err := os.WriteFile(askpassPath, []byte(script), 0o700); err != nil { //nolint:gosec // G306: askpass must be executable (0700)
+		_ = os.RemoveAll(dir)
 		return nil, nil, err
 	}
 	env = append(env,
-		"GIT_ASKPASS="+path,
-		"HAETAE_GIT_TOKEN="+token,
+		"GIT_ASKPASS="+askpassPath,
 		"GIT_ASKPASS_REQUIRE=force",
 	)
-	cleanup = func() { _ = os.Remove(path) }
+	cleanup = func() { _ = os.RemoveAll(dir) }
 	return env, cleanup, nil
 }
 

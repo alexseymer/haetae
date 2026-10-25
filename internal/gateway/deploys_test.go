@@ -132,3 +132,42 @@ func TestDeployFloodLimited(t *testing.T) {
 		t.Fatal("expected dropped logs")
 	}
 }
+
+type countingDeploySvc struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (c *countingDeploySvc) WatchSet(context.Context, uuid.UUID, uuid.UUID) (*agentv1.WatchSet, error) {
+	return &agentv1.WatchSet{}, nil
+}
+
+func (c *countingDeploySvc) OnBranchUpdate(context.Context, uuid.UUID, uuid.UUID, string, string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	return nil
+}
+
+func TestBranchUpdateRateLimited(t *testing.T) {
+	f := &fakeDeployStore{}
+	g := New(f, nil, Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := &countingDeploySvc{}
+	g.SetDeploys(svc)
+	s := newSession(uuid.New(), func(error) {})
+	s.orgID = uuid.New()
+	for range deployBranchPerMin + 20 {
+		g.handleBranchUpdate(context.Background(), s, &agentv1.BranchUpdate{
+			Project: "shop", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		})
+	}
+	svc.mu.Lock()
+	n := svc.calls
+	svc.mu.Unlock()
+	if n > deployBranchPerMin {
+		t.Fatalf("accepted %d branch updates, want <= %d", n, deployBranchPerMin)
+	}
+	if s.droppedBranch.Load() == 0 {
+		t.Fatal("expected dropped branch updates")
+	}
+}

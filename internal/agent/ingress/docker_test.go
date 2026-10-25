@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alexseymer/haetae/internal/testutil/dockerclean"
 )
 
 func TestDockerIngress(t *testing.T) {
@@ -30,25 +32,42 @@ func TestDockerIngress(t *testing.T) {
 	caddyName := "haetae-ing-caddy-" + suffix
 	volPrefix := "haetae-ing-vol-" + suffix
 
-	run := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "docker", args...)
+	run := func(c context.Context, args ...string) (string, error) {
+		cmd := exec.CommandContext(c, "docker", args...)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
 	must := func(args ...string) {
 		t.Helper()
-		out, err := run(args...)
+		out, err := run(ctx, args...)
 		if err != nil {
 			t.Fatalf("docker %v: %v\n%s", args, err, out)
 		}
 	}
 
+	// Cleanup must not use the test ctx: defer cancel() runs before t.Cleanup,
+	// so a cancelled context would leave containers running.
 	cleanup := func() {
-		_, _ = run("rm", "-f", caddyName)
-		_, _ = run("rm", "-f", nginxName)
-		_, _ = run("network", "rm", netName)
-		_, _ = run("volume", "rm", "-f", volPrefix+"-data")
-		_, _ = run("volume", "rm", "-f", volPrefix+"-config")
+		cctx, ccancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer ccancel()
+		_, _ = run(cctx, "rm", "-f", caddyName)
+		_, _ = run(cctx, "rm", "-f", nginxName)
+		_, _ = run(cctx, "network", "rm", netName)
+		_, _ = run(cctx, "volume", "rm", "-f", volPrefix+"-data")
+		_, _ = run(cctx, "volume", "rm", "-f", volPrefix+"-config")
+		prefix := "haetae-ing-"
+		if left := dockerclean.List(prefix); len(left) > 0 {
+			// Only fail on resources from this test's suffix.
+			var mine []string
+			for _, n := range left {
+				if strings.Contains(n, suffix) {
+					mine = append(mine, n)
+				}
+			}
+			if len(mine) > 0 {
+				t.Errorf("ingress cleanup left resources: %v", mine)
+			}
+		}
 	}
 	cleanup()
 	t.Cleanup(cleanup)
@@ -58,7 +77,7 @@ func TestDockerIngress(t *testing.T) {
 	// Wait until nginx serves its welcome page inside the container.
 	readyDeadline := time.Now().Add(30 * time.Second)
 	for {
-		out, err := run("exec", nginxName, "wget", "-qO-", "http://127.0.0.1/")
+		out, err := run(ctx, "exec", nginxName, "wget", "-qO-", "http://127.0.0.1/")
 		if err == nil && strings.Contains(out, "Welcome to nginx") {
 			break
 		}
@@ -113,6 +132,14 @@ func TestDockerIngress(t *testing.T) {
 	}
 	if !strings.Contains(issuer, "Caddy Local Authority") {
 		t.Fatalf("issuer CN = %q, want containing Caddy Local Authority", issuer)
+	}
+
+	// Admin API must not be reachable on TCP 2019 from another container on the
+	// same network (bound to a unix socket inside the Caddy container only).
+	probeOut, probeErr := run(ctx, "run", "--rm", "--network", netName, "busybox:1.37",
+		"wget", "-qO-", "-T", "3", "http://"+caddyName+":2019/config/")
+	if probeErr == nil {
+		t.Fatalf("admin API reachable on TCP 2019 from peer container: %s", probeOut)
 	}
 
 	if err := ing.Unroute(ctx, "app"); err != nil {

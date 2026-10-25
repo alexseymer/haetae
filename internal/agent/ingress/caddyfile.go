@@ -28,6 +28,7 @@ func writeCaddyfileContent(routes map[string]route, tlsInternal bool) string {
 
 	var b strings.Builder
 	b.WriteString("{\n")
+	b.WriteString("\tadmin unix//run/caddy-admin.sock\n")
 	b.WriteString("\thttp_port 80\n")
 	b.WriteString("\thttps_port 443\n")
 	b.WriteString("\tservers {\n")

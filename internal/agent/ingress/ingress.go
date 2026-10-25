@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +61,7 @@ type Config struct {
 	VolumePrefix  string // volumes <prefix>-data and <prefix>-config; default "haetae-caddy"
 	Runner        Runner
 	Now           func() time.Time
+	Log           *slog.Logger
 }
 
 // route is one project's ingress target, persisted in routes.json.
@@ -82,6 +84,7 @@ type Ingress struct {
 	volumePrefix  string
 	runner        Runner
 	now           func() time.Time
+	log           *slog.Logger
 
 	mu     sync.Mutex
 	routes map[string]route
@@ -131,6 +134,10 @@ func New(cfg Config) (*Ingress, error) {
 	if now == nil {
 		now = time.Now
 	}
+	log := cfg.Log
+	if log == nil {
+		log = slog.Default()
+	}
 
 	ingressDir := filepath.Join(cfg.StateDir, "ingress")
 	if err := os.MkdirAll(ingressDir, 0o700); err != nil {
@@ -150,6 +157,7 @@ func New(cfg Config) (*Ingress, error) {
 		volumePrefix:  volPrefix,
 		runner:        runner,
 		now:           now,
+		log:           log,
 		routes:        make(map[string]route),
 	}
 	if err := ing.loadRoutes(); err != nil {
@@ -306,7 +314,16 @@ func (i *Ingress) loadRoutes() error {
 	if routes == nil {
 		routes = make(map[string]route)
 	}
-	i.routes = routes
+	valid := make(map[string]route, len(routes))
+	for project, r := range routes {
+		if err := validateRoute(project, r.Domain, r.Upstream); err != nil {
+			i.log.Error("ingress: dropping invalid restored route",
+				"project", project, "domain", r.Domain, "upstream", r.Upstream, "err", err)
+			continue
+		}
+		valid[project] = r
+	}
+	i.routes = valid
 	return nil
 }
 
@@ -331,19 +348,16 @@ func (i *Ingress) saveRoutes() error {
 // file bind mount breaks if the path is replaced by rename.
 func (i *Ingress) writeCaddyfile() error {
 	content := writeCaddyfileContent(i.routes, i.tlsInternal)
-	f, err := os.OpenFile(i.caddyfilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(i.caddyfilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // G302: read by the Caddy container, contains no secrets
 	if err != nil {
 		return fmt.Errorf("ingress: open Caddyfile: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString(content); err != nil {
 		return fmt.Errorf("ingress: write Caddyfile: %w", err)
 	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("ingress: sync Caddyfile: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("ingress: close Caddyfile: %w", err)
 	}
 	return nil
 }
@@ -437,7 +451,10 @@ func (i *Ingress) reload(ctx context.Context) error {
 	defer cancel()
 	args := []string{
 		"exec", i.containerName,
-		"caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--force",
+		"caddy", "reload",
+		"--config", "/etc/caddy/Caddyfile",
+		"--address", "unix//run/caddy-admin.sock",
+		"--force",
 	}
 	var last error
 	for {
@@ -447,14 +464,14 @@ func (i *Ingress) reload(ctx context.Context) error {
 		}
 		if rctx.Err() != nil {
 			if last != nil && !errors.Is(last, context.DeadlineExceeded) && !errors.Is(last, context.Canceled) {
-				return fmt.Errorf("ingress: caddy reload: %w (last: %v)", rctx.Err(), last)
+				return fmt.Errorf("ingress: caddy reload: %w (last: %w)", rctx.Err(), last)
 			}
 			return fmt.Errorf("ingress: caddy reload: %w", rctx.Err())
 		}
 		// Fresh containers may not accept exec until Caddy is up; retry until timeout.
 		select {
 		case <-rctx.Done():
-			return fmt.Errorf("ingress: caddy reload: %w (last: %v)", rctx.Err(), last)
+			return fmt.Errorf("ingress: caddy reload: %w (last: %w)", rctx.Err(), last)
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
@@ -468,7 +485,7 @@ func (ExecRunner) Run(ctx context.Context, name string, args []string, onLine fu
 	if name == "" {
 		return errors.New("ingress: empty command name")
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // G204: Runner executes only binaries chosen by the code with validated arguments
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdin = nil
 

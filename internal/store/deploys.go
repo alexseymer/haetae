@@ -10,6 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/alexseymer/haetae/internal/deployphase"
 )
 
 // Deploy field and log size limits.
@@ -20,19 +23,22 @@ const (
 	DeployLogTruncMsg  = "[log truncated]"
 )
 
-// Deploy statuses.
+// Deploy statuses (must match deployphase and the deploys.status check).
 const (
-	DeployQueued         = "queued"
-	DeployFetching       = "fetching"
-	DeployBuilding       = "building"
-	DeployStarting       = "starting"
-	DeployChecking       = "checking"
-	DeployHealthy        = "healthy"
-	DeployFailed         = "failed"
-	DeployRollingBack    = "rolling_back"
-	DeployRolledBack     = "rolled_back"
-	DeployRollbackFailed = "rollback_failed"
+	DeployQueued         = deployphase.Queued
+	DeployFetching       = deployphase.Fetching
+	DeployBuilding       = deployphase.Building
+	DeployStarting       = deployphase.Starting
+	DeployChecking       = deployphase.Checking
+	DeployHealthy        = deployphase.Healthy
+	DeployFailed         = deployphase.Failed
+	DeployRollingBack    = deployphase.RollingBack
+	DeployRolledBack     = deployphase.RolledBack
+	DeployRollbackFailed = deployphase.RollbackFailed
 )
+
+// ErrActiveDeploy is returned when CreateDeploy hits the one-active-per-project index.
+var ErrActiveDeploy = errors.New("store: project already has an active deploy")
 
 // Deploy triggers.
 const (
@@ -92,27 +98,13 @@ type DeployLog struct {
 	Withheld bool
 }
 
-var (
-	linearPhase = map[string]int{
-		DeployQueued:   1,
-		DeployFetching: 2,
-		DeployBuilding: 3,
-		DeployStarting: 4,
-		DeployChecking: 5,
-	}
-	runningStatuses = []string{
-		DeployQueued, DeployFetching, DeployBuilding,
-		DeployStarting, DeployChecking, DeployRollingBack,
-	}
-)
+var runningStatuses = []string{
+	DeployQueued, DeployFetching, DeployBuilding,
+	DeployStarting, DeployChecking, DeployRollingBack,
+}
 
 func isFinalStatus(s string) bool {
-	switch s {
-	case DeployHealthy, DeployFailed, DeployRolledBack, DeployRollbackFailed:
-		return true
-	default:
-		return false
-	}
+	return deployphase.IsFinal(s)
 }
 
 func clipDeployText(s string) string {
@@ -149,28 +141,9 @@ func clipLogText(s string) string {
 }
 
 // phaseAllowed reports whether moving from cur to next is a valid forward step.
-// Order: queued<fetching<building<starting<checking<healthy|failed;
-// failed→rolling_back→rolled_back|rollback_failed. Stale/out-of-order = false.
+// The table lives in deployphase so the agent and store stay aligned.
 func phaseAllowed(cur, next string) bool {
-	if cur == next || next == "" {
-		return false
-	}
-	if cl, ok := linearPhase[cur]; ok {
-		if nl, okN := linearPhase[next]; okN {
-			return nl > cl
-		}
-		if next == DeployHealthy || next == DeployFailed {
-			return cur == DeployChecking
-		}
-		return false
-	}
-	if cur == DeployFailed && next == DeployRollingBack {
-		return true
-	}
-	if cur == DeployRollingBack && (next == DeployRolledBack || next == DeployRollbackFailed) {
-		return true
-	}
-	return false
+	return deployphase.Allowed(cur, next)
 }
 
 const deployCols = `
@@ -207,6 +180,10 @@ func (s *Store) CreateDeploy(ctx context.Context, p Project, trigger string, rol
 		p.ComposePath, p.InlineCompose, trigger, rollbackOf, startedBy,
 	))
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return Deploy{}, fmt.Errorf("store: CreateDeploy: %w", ErrActiveDeploy)
+		}
 		return Deploy{}, fmt.Errorf("store: CreateDeploy: %w", err)
 	}
 	return d, nil

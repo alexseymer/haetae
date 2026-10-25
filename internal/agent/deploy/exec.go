@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 )
@@ -31,16 +32,24 @@ type Runner interface {
 
 // ExecRunner runs commands with os/exec: no shell, stdin closed, process-group
 // kill on cancel, and line-oriented stdout/stderr with a 64 KiB line cap.
-type ExecRunner struct{}
+// The child gets a fixed minimal environment (never os.Environ()), plus
+// Cmd.Env. StateDir is required so HOME can be <StateDir>/home.
+type ExecRunner struct {
+	StateDir string
+}
 
 // Run implements Runner.
-func (ExecRunner) Run(ctx context.Context, c Cmd) error {
+func (r ExecRunner) Run(ctx context.Context, c Cmd) error {
 	if c.Name == "" {
 		return errors.New("deploy: empty command name")
 	}
-	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
+	env, err := r.minimalEnv(c.Env)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, c.Name, c.Args...) //nolint:gosec // G204: Runner executes only binaries chosen by the code with validated arguments
 	cmd.Dir = c.Dir
-	cmd.Env = append(os.Environ(), c.Env...)
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdin = nil
 
@@ -87,6 +96,28 @@ func (ExecRunner) Run(ctx context.Context, c Cmd) error {
 	return err
 }
 
+func (r ExecRunner) minimalEnv(extra []string) ([]string, error) {
+	if r.StateDir == "" {
+		return nil, errors.New("deploy: ExecRunner.StateDir is required")
+	}
+	home := filepath.Join(r.StateDir, "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return nil, fmt.Errorf("deploy: mkdir home: %w", err)
+	}
+	env := []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + home,
+		"LANG=C.UTF-8",
+	}
+	for _, k := range []string{"DOCKER_HOST", "DOCKER_CONFIG", "XDG_RUNTIME_DIR"} {
+		if v, ok := os.LookupEnv(k); ok && v != "" {
+			env = append(env, k+"="+v)
+		}
+	}
+	env = append(env, extra...)
+	return env, nil
+}
+
 func scanLines(r io.Reader, emit func(string)) {
 	br := bufio.NewReaderSize(r, maxLineBytes)
 	for {
@@ -127,7 +158,7 @@ func readLine(br *bufio.Reader) (string, error) {
 			return string(buf), err
 		}
 		if !isPrefix {
-			return string(buf), nil
+			return string(buf), err
 		}
 	}
 }

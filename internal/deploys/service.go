@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +24,10 @@ var (
 	ErrSameDeploy  = errors.New("deploys: cannot roll back to the current deploy")
 )
 
-const sendTimeout = 10 * time.Second
+const (
+	sendTimeout        = 10 * time.Second
+	pushDeployCooldown = 30 * time.Second
+)
 
 // Store is the persistence the service needs.
 type Store interface {
@@ -59,6 +63,17 @@ type Service struct {
 	Store  Store
 	Sender Sender
 	Box    *secrets.Box
+
+	mu       sync.Mutex
+	lastPush map[uuid.UUID]time.Time // project ID → last push-triggered Start
+	now      func() time.Time        // tests may override; nil → time.Now
+}
+
+func (s *Service) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // Start creates a deploy and asks the agent to run it.
@@ -83,6 +98,9 @@ func (s *Service) Start(ctx context.Context, orgID, hostID uuid.UUID, project st
 
 	d, err := s.Store.CreateDeploy(ctx, snap, trigger, opts.RollbackOf, startedBy)
 	if err != nil {
+		if errors.Is(err, store.ErrActiveDeploy) {
+			return store.Deploy{}, ErrBusy
+		}
 		return store.Deploy{}, err
 	}
 
@@ -121,12 +139,12 @@ func (s *Service) buildDeployCommand(ctx context.Context, orgID uuid.UUID, proje
 		Port:       uint32(max(0, project.Port)), //nolint:gosec // G115: port validated 1..65535
 		IsRollback: opts.IsRollback,
 	}
+	token, err := s.decryptToken(ctx, orgID, project)
+	if err != nil {
+		return nil, err
+	}
 	switch d.SourceKind {
 	case "git":
-		token, err := s.decryptToken(ctx, orgID, project)
-		if err != nil {
-			return nil, err
-		}
 		msg.Source = &agentv1.Deploy_Git{Git: &agentv1.GitSource{
 			Url: d.GitURL, Ref: d.GitRef, ComposePath: d.ComposePath, Token: token,
 		}}
@@ -137,7 +155,12 @@ func (s *Service) buildDeployCommand(ctx context.Context, orgID uuid.UUID, proje
 	}
 
 	if lh, err := s.Store.LastHealthyDeploy(ctx, orgID, project.ID); err == nil && lh.ID != d.ID {
-		msg.LastHealthy = versionFromDeploy(lh)
+		// last_healthy git must carry the project's current token (never copied into deploy rows).
+		lhToken := ""
+		if lh.SourceKind == "git" {
+			lhToken = token
+		}
+		msg.LastHealthy = versionFromDeploy(lh, lhToken)
 	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
@@ -167,7 +190,7 @@ func (s *Service) decryptToken(ctx context.Context, orgID uuid.UUID, project sto
 	return string(plain), nil
 }
 
-func versionFromDeploy(d store.Deploy) *agentv1.Version {
+func versionFromDeploy(d store.Deploy, gitToken string) *agentv1.Version {
 	switch d.SourceKind {
 	case "git":
 		ref := d.GitRef
@@ -175,7 +198,7 @@ func versionFromDeploy(d store.Deploy) *agentv1.Version {
 			ref = d.Commit
 		}
 		return &agentv1.Version{Kind: &agentv1.Version_Git{Git: &agentv1.GitSource{
-			Url: d.GitURL, Ref: ref, ComposePath: d.ComposePath,
+			Url: d.GitURL, Ref: ref, ComposePath: d.ComposePath, Token: gitToken,
 		}}}
 	case "inline":
 		return &agentv1.Version{Kind: &agentv1.Version_Inline{Inline: &agentv1.InlineCompose{Content: d.InlineCompose}}}
@@ -260,8 +283,9 @@ func (s *Service) Remove(ctx context.Context, hostID uuid.UUID, projectName stri
 }
 
 // OnBranchUpdate starts a push-triggered deploy when the project is auto-deploy
-// git and idle. Otherwise it is a no-op.
-func (s *Service) OnBranchUpdate(ctx context.Context, orgID, hostID uuid.UUID, projectName, _ string) error {
+// git and idle. Otherwise it is a no-op. Ignores updates whose commit matches
+// the most recent non-failed deploy, and enforces a per-project cooldown.
+func (s *Service) OnBranchUpdate(ctx context.Context, orgID, hostID uuid.UUID, projectName, commit string) error {
 	p, err := s.Store.GetProjectByName(ctx, orgID, hostID, projectName)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -272,14 +296,52 @@ func (s *Service) OnBranchUpdate(ctx context.Context, orgID, hostID uuid.UUID, p
 	if !p.AutoDeploy || p.SourceKind != "git" {
 		return nil
 	}
+	if commit != "" {
+		if same, err := s.sameAsLatestNonFailed(ctx, orgID, p.ID, commit); err != nil {
+			return err
+		} else if same {
+			return nil
+		}
+	}
 	if _, err := s.Store.RunningDeploy(ctx, orgID, p.ID); err == nil {
 		return nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
+	}
+	if !s.allowPushDeploy(p.ID) {
+		return nil
 	}
 	_, err = s.Start(ctx, orgID, hostID, p, store.TriggerPush, nil, StartOpts{})
 	if errors.Is(err, ErrBusy) || errors.Is(err, ErrHostOffline) {
 		return nil
 	}
 	return err
+}
+
+func (s *Service) sameAsLatestNonFailed(ctx context.Context, orgID, projectID uuid.UUID, commit string) (bool, error) {
+	ds, err := s.Store.ListDeploys(ctx, orgID, projectID, 20)
+	if err != nil {
+		return false, err
+	}
+	for _, d := range ds {
+		if d.Status == store.DeployFailed {
+			continue
+		}
+		return d.Commit != "" && d.Commit == commit, nil
+	}
+	return false, nil
+}
+
+func (s *Service) allowPushDeploy(projectID uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastPush == nil {
+		s.lastPush = make(map[uuid.UUID]time.Time)
+	}
+	now := s.clock()
+	if last, ok := s.lastPush[projectID]; ok && now.Sub(last) < pushDeployCooldown {
+		return false
+	}
+	s.lastPush[projectID] = now
+	return true
 }

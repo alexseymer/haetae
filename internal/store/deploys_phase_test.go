@@ -5,12 +5,17 @@ import "testing"
 func TestPhaseAllowed(t *testing.T) {
 	ok := [][2]string{
 		{DeployQueued, DeployFetching},
-		{DeployQueued, DeployBuilding}, // skip forward
+		{DeployQueued, DeployFailed},
 		{DeployFetching, DeployBuilding},
+		{DeployFetching, DeployFailed},
 		{DeployBuilding, DeployStarting},
+		{DeployBuilding, DeployFailed},
 		{DeployStarting, DeployChecking},
+		{DeployStarting, DeployFailed},
+		{DeployStarting, DeployRollingBack},
 		{DeployChecking, DeployHealthy},
 		{DeployChecking, DeployFailed},
+		{DeployChecking, DeployRollingBack},
 		{DeployFailed, DeployRollingBack},
 		{DeployRollingBack, DeployRolledBack},
 		{DeployRollingBack, DeployRollbackFailed},
@@ -22,13 +27,14 @@ func TestPhaseAllowed(t *testing.T) {
 	}
 	bad := [][2]string{
 		{DeployQueued, DeployQueued},
+		{DeployQueued, DeployBuilding},
 		{DeployFetching, DeployQueued},
 		{DeployHealthy, DeployFailed},
 		{DeployFailed, DeployHealthy},
-		{DeployChecking, DeployRollingBack},
 		{DeployBuilding, DeployHealthy},
 		{DeployRolledBack, DeployRollingBack},
 		{DeployHealthy, DeployRollingBack},
+		{DeployRollingBack, DeployFetching},
 	}
 	for _, p := range bad {
 		if phaseAllowed(p[0], p[1]) {

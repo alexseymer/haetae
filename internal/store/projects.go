@@ -225,25 +225,25 @@ func (s *Store) UpdateProject(ctx context.Context, orgID, id uuid.UUID, in Proje
 	if setTok {
 		p, err = scanProjectPublic(s.pool.QueryRow(ctx, `
 			UPDATE projects SET
-				git_url = $3, git_ref = $4, compose_path = $5,
-				git_token_sealed = $6, inline_compose = $7,
-				domain = $8, service = $9, port = $10, auto_deploy = $11,
+				source_kind = $3, git_url = $4, git_ref = $5, compose_path = $6,
+				git_token_sealed = $7, inline_compose = $8,
+				domain = $9, service = $10, port = $11, auto_deploy = $12,
 				updated_at = now()
 			WHERE org_id = $1 AND id = $2
 			RETURNING `+projectPublicCols,
-			orgID, id, in.GitURL, in.GitRef, in.ComposePath, sealed, in.InlineCompose,
+			orgID, id, in.SourceKind, in.GitURL, in.GitRef, in.ComposePath, sealed, in.InlineCompose,
 			in.Domain, in.Service, in.Port, in.AutoDeploy,
 		))
 	} else {
 		p, err = scanProjectPublic(s.pool.QueryRow(ctx, `
 			UPDATE projects SET
-				git_url = $3, git_ref = $4, compose_path = $5,
-				inline_compose = $6,
-				domain = $7, service = $8, port = $9, auto_deploy = $10,
+				source_kind = $3, git_url = $4, git_ref = $5, compose_path = $6,
+				inline_compose = $7,
+				domain = $8, service = $9, port = $10, auto_deploy = $11,
 				updated_at = now()
 			WHERE org_id = $1 AND id = $2
 			RETURNING `+projectPublicCols,
-			orgID, id, in.GitURL, in.GitRef, in.ComposePath, in.InlineCompose,
+			orgID, id, in.SourceKind, in.GitURL, in.GitRef, in.ComposePath, in.InlineCompose,
 			in.Domain, in.Service, in.Port, in.AutoDeploy,
 		))
 	}

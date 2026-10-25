@@ -178,3 +178,131 @@ export type ContainerMetricName =
   | "blk_read_bps"
   | "blk_write_bps"
   | "pids";
+
+export type SourceKind = "git" | "inline";
+
+export type DeployStatus =
+  | "queued"
+  | "fetching"
+  | "building"
+  | "starting"
+  | "checking"
+  | "healthy"
+  | "failed"
+  | "rolling_back"
+  | "rolled_back"
+  | "rollback_failed";
+
+export type DeployTrigger = "manual" | "push" | "rollback";
+
+export interface ProjectSource {
+  kind: SourceKind;
+  gitUrl?: string;
+  gitRef?: string;
+  composePath?: string;
+  inlineCompose?: string;
+}
+
+export interface DeployBrief {
+  id: string;
+  status: DeployStatus;
+  commit: string;
+  trigger: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  url: string;
+  error: string;
+}
+
+export interface Project {
+  id: string;
+  hostId: string;
+  name: string;
+  source: ProjectSource;
+  domain: string;
+  service: string;
+  port: number;
+  autoDeploy: boolean;
+  hasToken: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  /** Present when the list endpoint includes it; otherwise filled client-side. */
+  lastDeploy?: DeployBrief | null;
+}
+
+export interface ProjectsResponse {
+  projects: Project[];
+}
+
+export interface ProjectResponse {
+  project: Project;
+  inlineCompose?: string;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  source: {
+    kind: SourceKind;
+    gitUrl?: string;
+    gitRef?: string;
+    composePath?: string;
+    gitToken?: string;
+    inlineCompose?: string;
+  };
+  domain: string;
+  service: string;
+  port: number;
+  autoDeploy: boolean;
+}
+
+export interface PatchProjectRequest {
+  source?: {
+    kind?: SourceKind;
+    gitUrl?: string;
+    gitRef?: string;
+    composePath?: string;
+    gitToken?: string;
+    inlineCompose?: string;
+  };
+  domain?: string;
+  service?: string;
+  port?: number;
+  autoDeploy?: boolean;
+}
+
+export interface Deploy {
+  id: string;
+  projectId: string;
+  projectName: string;
+  status: DeployStatus;
+  commit: string;
+  trigger: string;
+  rollbackOf: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  url: string;
+  error: string;
+  message: string;
+}
+
+export interface DeploysResponse {
+  deploys: Deploy[];
+}
+
+export interface DeployResponse {
+  deploy: Deploy;
+}
+
+export interface DeployLogLine {
+  seq: number;
+  stream: string;
+  text: string;
+  withheld: boolean;
+}
+
+export interface DeployLogsResponse {
+  logs: DeployLogLine[];
+  done: boolean;
+  status: DeployStatus;
+}

@@ -1,14 +1,18 @@
 package ingress
 
 import (
+	"strings"
 	"testing"
 )
 
 func TestWriteCaddyfileContent_Empty(t *testing.T) {
 	got := writeCaddyfileContent(nil, false)
-	want := "{\n\thttp_port 80\n\thttps_port 443\n\tservers {\n\t\tprotocols h1 h2\n\t}\n}\n"
+	want := "{\n\tadmin unix//run/caddy-admin.sock\n\thttp_port 80\n\thttps_port 443\n\tservers {\n\t\tprotocols h1 h2\n\t}\n}\n"
 	if got != want {
 		t.Fatalf("empty:\n got: %q\nwant: %q", got, want)
+	}
+	if !strings.Contains(got, "admin unix//run/caddy-admin.sock") {
+		t.Fatal("missing admin unix socket")
 	}
 }
 
@@ -21,6 +25,7 @@ func TestWriteCaddyfileContent_OrderAndTLS(t *testing.T) {
 
 	got := writeCaddyfileContent(routes, false)
 	want := `{
+	admin unix//run/caddy-admin.sock
 	http_port 80
 	https_port 443
 	servers {
@@ -46,6 +51,7 @@ zeta.example.com {
 
 	gotTLS := writeCaddyfileContent(routes, true)
 	wantTLS := `{
+	admin unix//run/caddy-admin.sock
 	http_port 80
 	https_port 443
 	servers {

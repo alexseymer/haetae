@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
+	"github.com/alexseymer/haetae/internal/testutil/dockerclean"
 )
 
 func TestDockerInlineHealthyThenRollbackAndRemoveKeepsVolume(t *testing.T) {
@@ -32,7 +33,7 @@ func TestDockerInlineHealthyThenRollbackAndRemoveKeepsVolume(t *testing.T) {
 	ing := &fakeIngress{}
 	m := New(Config{
 		StateDir:     stateDir,
-		Runner:       ExecRunner{},
+		Runner:       ExecRunner{StateDir: stateDir},
 		Ingress:      ing,
 		Emit:         emit,
 		Redact:       identityRedact,
@@ -41,7 +42,7 @@ func TestDockerInlineHealthyThenRollbackAndRemoveKeepsVolume(t *testing.T) {
 		BuildTimeout: 5 * time.Minute,
 	})
 	defer m.Close()
-	defer cleanupDockerProject(t, project, volName)
+	t.Cleanup(func() { cleanupDockerProject(t, project, volName) })
 
 	v1 := `services:
   web:
@@ -141,13 +142,23 @@ func lastPhase(e *recordEmit) agentv1.DeployPhase {
 
 func cleanupDockerProject(t *testing.T, project, volName string) {
 	t.Helper()
-	_ = exec.Command("docker", "compose", "-p", project, "down", "--remove-orphans").Run()
-	// Remove any leftover containers with the project label.
-	out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label=com.docker.compose.project="+project).Output()
-	for _, id := range strings.Fields(string(out)) {
-		_ = exec.Command("docker", "rm", "-f", id).Run()
+	// Independent timeout: must not depend on a cancelled test context.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	run := func(args ...string) {
+		_ = exec.CommandContext(ctx, "docker", args...).Run()
 	}
-	_ = exec.Command("docker", "volume", "rm", "-f", volName).Run()
-	// Networks named project_default
-	_ = exec.Command("docker", "network", "rm", project+"_default").Run()
+	run("compose", "-p", project, "down", "--remove-orphans", "-v")
+	// Remove any leftover containers with the project label.
+	out, _ := exec.CommandContext(ctx, "docker", "ps", "-aq", "--filter", "label=com.docker.compose.project="+project).Output()
+	for _, id := range strings.Fields(string(out)) {
+		run("rm", "-f", id)
+	}
+	run("volume", "rm", "-f", volName)
+	run("network", "rm", project+"_default")
+	// Also sweep by name prefix in case labels differ.
+	_ = dockerclean.ForceRemove(project)
+	if left := dockerclean.List(project); len(left) > 0 {
+		t.Errorf("deploy cleanup left resources: %v", left)
+	}
 }

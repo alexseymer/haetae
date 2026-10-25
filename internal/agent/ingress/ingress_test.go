@@ -1,10 +1,12 @@
 package ingress
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -243,7 +245,7 @@ func scriptFirstRoute(r *fakeRunner, caddy, upstream string) {
 		fakeStep{match: matchHas("docker", "run")},
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}", upstream), stdout: []string{"proj_net "}},
 		fakeStep{match: matchArgs("docker", "network", "connect", "proj_net", caddy)},
-		fakeStep{match: matchArgs("docker", "exec", caddy, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--force")},
+		fakeStep{match: matchArgs("docker", "exec", caddy, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--address", "unix//run/caddy-admin.sock", "--force")},
 	)
 }
 
@@ -307,7 +309,7 @@ func TestRouteSecondNoRun(t *testing.T) {
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{.State.Running}}", cfg.ContainerName), stdout: []string{"true"}},
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}", "api"), stdout: []string{"proj_net "}},
 		fakeStep{match: matchArgs("docker", "network", "connect", "proj_net", cfg.ContainerName), err: errors.New("already exists")},
-		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--force")},
+		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--address", "unix//run/caddy-admin.sock", "--force")},
 	)
 	ing, err := New(cfg)
 	if err != nil {
@@ -340,7 +342,7 @@ func TestUnroute(t *testing.T) {
 	scriptFirstRoute(r, cfg.ContainerName, "web")
 	r.add(
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{.State.Running}}", cfg.ContainerName), stdout: []string{"true"}},
-		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--force")},
+		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--address", "unix//run/caddy-admin.sock", "--force")},
 	)
 	ing, err := New(cfg)
 	if err != nil {
@@ -382,7 +384,7 @@ func TestContainerStoppedStarts(t *testing.T) {
 		fakeStep{match: matchArgs("docker", "start", cfg.ContainerName)},
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}", "web"), stdout: []string{"bridge "}},
 		fakeStep{match: matchArgs("docker", "network", "connect", "bridge", cfg.ContainerName)},
-		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--force")},
+		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--address", "unix//run/caddy-admin.sock", "--force")},
 	)
 	ing, err := New(cfg)
 	if err != nil {
@@ -436,7 +438,7 @@ func TestRoutesAtomicAndRestore(t *testing.T) {
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{.State.Running}}", cfg.ContainerName), stdout: []string{"true"}},
 		fakeStep{match: matchArgs("docker", "inspect", "-f", "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}", "web"), stdout: []string{"proj_net "}},
 		fakeStep{match: matchArgs("docker", "network", "connect", "proj_net", cfg.ContainerName), err: errors.New("endpoint already exists")},
-		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--force")},
+		fakeStep{match: matchArgs("docker", "exec", cfg.ContainerName, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--address", "unix//run/caddy-admin.sock", "--force")},
 	)
 	if err := ing2.Restore(context.Background()); err != nil {
 		t.Fatal(err)
@@ -512,5 +514,45 @@ func TestCaddyfileWrittenInPlace(t *testing.T) {
 	// Same inode means in-place write (not rename-replace).
 	if !os.SameFile(fiBefore, fiAfter) {
 		t.Fatal("Caddyfile was replaced by rename; must write in place for bind mounts")
+	}
+}
+
+func TestLoadRoutesDropsInvalid(t *testing.T) {
+	dir := t.TempDir()
+	ingressDir := filepath.Join(dir, "ingress")
+	if err := os.MkdirAll(ingressDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tampered := map[string]route{
+		"good":    {Domain: "good.example.com", Upstream: "web:8080"},
+		"BadName": {Domain: "bad.example.com", Upstream: "web:8080"},
+		"evil":    {Domain: "evil.example.com", Upstream: "web;rm -rf /:80"},
+		"nodom":   {Domain: "", Upstream: "web:80"},
+	}
+	data, err := json.Marshal(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ingressDir, "routes.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var logBuf bytes.Buffer
+	ing, err := New(Config{
+		StateDir: dir,
+		Runner:   &fakeRunner{},
+		Log:      slog.New(slog.NewTextHandler(&logBuf, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ing.Close()
+	if len(ing.routes) != 1 {
+		t.Fatalf("routes = %#v, want only good", ing.routes)
+	}
+	if _, ok := ing.routes["good"]; !ok {
+		t.Fatal("good route dropped")
+	}
+	if !strings.Contains(logBuf.String(), "dropping invalid") {
+		t.Fatalf("expected error log, got %q", logBuf.String())
 	}
 }

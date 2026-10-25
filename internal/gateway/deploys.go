@@ -18,8 +18,9 @@ type DeployService interface {
 }
 
 const (
-	deployEventRate = 50
-	deployLogRate   = 200
+	deployEventRate    = 50
+	deployLogRate      = 200
+	deployBranchPerMin = 6 // BranchUpdate token bucket refill
 )
 
 // SetDeploys wires the deploy service used for WatchSet / branch updates.
@@ -155,6 +156,10 @@ func (g *Gateway) handleDeployLog(ctx context.Context, s *session, lg *agentv1.D
 
 func (g *Gateway) handleBranchUpdate(ctx context.Context, s *session, bu *agentv1.BranchUpdate) {
 	if bu == nil {
+		return
+	}
+	if !s.branchLim.Allow() {
+		s.droppedBranch.Add(1)
 		return
 	}
 	g.mu.Lock()

@@ -20,13 +20,15 @@ import { Badge, OnlineBadge } from "../components/Badge";
 import { Chart } from "../components/Chart";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatPercent, formatRelativeTime, withheldPercent } from "../lib/format";
+import { HostDeployTab } from "./HostDeployTab";
 
-type Tab = "overview" | "containers" | "logs";
+type Tab = "overview" | "containers" | "logs" | "deploy";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "containers", label: "Containers" },
   { id: "logs", label: "Logs" },
+  { id: "deploy", label: "Deploy" },
 ];
 
 const RANGES: Array<{ id: string; label: string; ms: number }> = [
@@ -53,7 +55,10 @@ export function HostPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const tab: Tab =
-    tabParam === "containers" || tabParam === "logs" || tabParam === "overview"
+    tabParam === "containers" ||
+    tabParam === "logs" ||
+    tabParam === "overview" ||
+    tabParam === "deploy"
       ? tabParam
       : "overview";
 
@@ -683,6 +688,8 @@ export function HostPage() {
           )}
         </div>
       ) : null}
+
+      <HostDeployTab hostId={id} active={tab === "deploy"} />
     </div>
   );
 }

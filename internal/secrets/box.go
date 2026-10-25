@@ -78,7 +78,7 @@ func loadOrCreateKey(path string) ([]byte, error) {
 	if fi.Mode().Perm()&0o077 != 0 {
 		return nil, errors.New("secrets: key file is group/world accessible")
 	}
-	key, err := os.ReadFile(path)
+	key, err := os.ReadFile(path) //nolint:gosec // G304: the key path is under the operator's data dir
 	if err != nil {
 		return nil, fmt.Errorf("secrets: read key: %w", err)
 	}

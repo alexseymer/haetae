@@ -239,3 +239,69 @@ func TestCreateProjectDuplicateName(t *testing.T) {
 		t.Fatalf("want name taken, got %v", err)
 	}
 }
+
+func TestUpdateProjectSwitchesSourceKind(t *testing.T) {
+	o := seedTwoOrgs(t)
+	ctx := context.Background()
+	p := seedProject(t, o.s, o.orgA.ID, o.hostA.ID, "switch")
+	got, err := o.s.UpdateProject(ctx, o.orgA.ID, p.ID, store.ProjectInput{
+		Name: p.Name, SourceKind: "inline", InlineCompose: "services:\n  web:\n    image: x\n",
+		GitURL: "", GitRef: "", ComposePath: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceKind != "inline" || got.InlineCompose == "" || got.GitURL != "" {
+		t.Fatalf("after git→inline: %+v", got)
+	}
+	got, err = o.s.UpdateProject(ctx, o.orgA.ID, p.ID, store.ProjectInput{
+		Name: p.Name, SourceKind: "git", GitURL: "https://github.com/acme/switch",
+		GitRef: "main", ComposePath: "compose.yaml", InlineCompose: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceKind != "git" || got.GitURL == "" || got.InlineCompose != "" {
+		t.Fatalf("after inline→git: %+v", got)
+	}
+}
+
+func TestCreateDeployOneActiveConcurrency(t *testing.T) {
+	o := seedTwoOrgs(t)
+	ctx := context.Background()
+	proj := seedProject(t, o.s, o.orgA.ID, o.hostA.ID, "busy")
+	p := mustGetProject(t, o.s, o.orgA.ID, proj.ID)
+
+	const n = 10
+	type result struct {
+		d   store.Deploy
+		err error
+	}
+	ch := make(chan result, n)
+	for range n {
+		go func() {
+			d, err := o.s.CreateDeploy(ctx, p, store.TriggerManual, nil, nil)
+			ch <- result{d, err}
+		}()
+	}
+	var ok int
+	var busy int
+	for range n {
+		r := <-ch
+		if r.err == nil {
+			ok++
+			continue
+		}
+		if strings.Contains(r.err.Error(), "already has an active deploy") {
+			busy++
+			continue
+		}
+		t.Fatalf("unexpected error: %v", r.err)
+	}
+	if ok != 1 {
+		t.Fatalf("successes = %d, want 1 (busy=%d)", ok, busy)
+	}
+	if busy != n-1 {
+		t.Fatalf("busy = %d, want %d", busy, n-1)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/alexseymer/haetae/internal/deployphase"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 )
 
@@ -12,9 +13,10 @@ import (
 // the oldest. While the control plane is unreachable the agent therefore
 // keeps a short window of metrics and never grows without limit.
 //
-// Deploy events and logs share a separate queue (cap maxDeployMsgs). Events
-// are never dropped; when full, the oldest deploy log messages are discarded
-// first. Events and logs stay in arrival order relative to each other.
+// Deploy events and logs share a separate queue (cap maxDeployMsgs) that
+// hard-caps total messages including events. When over the cap: oldest logs
+// first, then coalesce duplicate/obsolete phase events, then drop oldest
+// events as a last resort.
 type Outbox struct {
 	maxBatches int
 	notify     chan struct{}
@@ -82,7 +84,7 @@ func (o *Outbox) PutLogs(b *agentv1.LogBatch) (droppedEvents int) {
 	return droppedEvents
 }
 
-// Event queues a DeployEvent. Events are never dropped.
+// Event queues a DeployEvent.
 func (o *Outbox) Event(e *agentv1.DeployEvent) {
 	o.mu.Lock()
 	o.enqueueDeployLocked(deployMsg{event: e})
@@ -90,8 +92,7 @@ func (o *Outbox) Event(e *agentv1.DeployEvent) {
 	o.wake()
 }
 
-// Log queues a DeployLog. When the deploy queue is full, older log messages
-// (never events) are dropped to make room.
+// Log queues a DeployLog.
 func (o *Outbox) Log(l *agentv1.DeployLog) {
 	o.mu.Lock()
 	o.enqueueDeployLocked(deployMsg{log: l})
@@ -108,20 +109,51 @@ func (o *Outbox) PutBranchUpdate(u *agentv1.BranchUpdate) {
 }
 
 func (o *Outbox) enqueueDeployLocked(m deployMsg) {
+	// Prefer replacing the latest same deploy+phase event in place so
+	// duplicate progress never grows the queue.
+	if m.event != nil {
+		id := m.event.GetDeployId()
+		ph := m.event.GetPhase()
+		for i := len(o.deploy) - 1; i >= 0; i-- {
+			e := o.deploy[i].event
+			if e != nil && e.GetDeployId() == id && e.GetPhase() == ph {
+				o.deploy[i] = m
+				return
+			}
+		}
+	}
 	for len(o.deploy) >= maxDeployMsgs {
-		if !o.dropOldestDeployLogLocked() {
+		if !o.shedDeployLocked() {
 			break
 		}
 	}
 	if len(o.deploy) >= maxDeployMsgs {
-		// Queue is full of events (and maybe branch updates). Never drop those.
-		// A new log is discarded; a new event/branch still appends.
-		if m.log != nil {
-			o.dropped++
-			return
-		}
+		// Still full after shedding: refuse the new message.
+		o.dropped++
+		return
 	}
 	o.deploy = append(o.deploy, m)
+}
+
+// shedDeployLocked frees one or more slots. Order: oldest logs; coalesce
+// duplicate/obsolete phase events; drop oldest events/branches last.
+func (o *Outbox) shedDeployLocked() bool {
+	if o.dropOldestDeployLogLocked() {
+		return true
+	}
+	before := len(o.deploy)
+	o.coalesceDeployEventsLocked()
+	if len(o.deploy) < before {
+		return true
+	}
+	if len(o.deploy) == 0 {
+		return false
+	}
+	// Last resort: drop the oldest message (event or branch).
+	o.deploy[0] = deployMsg{}
+	o.deploy = o.deploy[1:]
+	o.dropped++
+	return true
 }
 
 func (o *Outbox) dropOldestDeployLogLocked() bool {
@@ -137,8 +169,83 @@ func (o *Outbox) dropOldestDeployLogLocked() bool {
 	return false
 }
 
-// Dropped reports how many metrics batches were discarded because the
-// outbox was full.
+// coalesceDeployEventsLocked keeps the latest event per (deployID, phase) and
+// drops obsolete earlier phases of the same deploy when a later phase exists.
+func (o *Outbox) coalesceDeployEventsLocked() {
+	type key struct {
+		id    string
+		phase agentv1.DeployPhase
+	}
+	latestIdx := make(map[key]int)
+	latestRank := make(map[string]int) // deployID → highest Rank seen
+	for i, m := range o.deploy {
+		if m.event == nil {
+			continue
+		}
+		id := m.event.GetDeployId()
+		ph := m.event.GetPhase()
+		latestIdx[key{id, ph}] = i
+		if r := deployphase.Rank(phaseName(ph)); r > latestRank[id] {
+			latestRank[id] = r
+		}
+	}
+	keep := make([]deployMsg, 0, len(o.deploy))
+	seen := make(map[key]bool)
+	for i, m := range o.deploy {
+		if m.event == nil {
+			keep = append(keep, m)
+			continue
+		}
+		id := m.event.GetDeployId()
+		ph := m.event.GetPhase()
+		k := key{id, ph}
+		if latestIdx[k] != i {
+			o.dropped++
+			continue // older duplicate of same deploy+phase
+		}
+		if r := deployphase.Rank(phaseName(ph)); r < latestRank[id] {
+			o.dropped++
+			continue // obsolete earlier phase
+		}
+		if seen[k] {
+			o.dropped++
+			continue
+		}
+		seen[k] = true
+		keep = append(keep, m)
+	}
+	o.deploy = keep
+}
+
+func phaseName(p agentv1.DeployPhase) string {
+	switch p {
+	case agentv1.DeployPhase_DEPLOY_PHASE_QUEUED:
+		return deployphase.Queued
+	case agentv1.DeployPhase_DEPLOY_PHASE_FETCHING:
+		return deployphase.Fetching
+	case agentv1.DeployPhase_DEPLOY_PHASE_BUILDING:
+		return deployphase.Building
+	case agentv1.DeployPhase_DEPLOY_PHASE_STARTING:
+		return deployphase.Starting
+	case agentv1.DeployPhase_DEPLOY_PHASE_CHECKING:
+		return deployphase.Checking
+	case agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY:
+		return deployphase.Healthy
+	case agentv1.DeployPhase_DEPLOY_PHASE_FAILED:
+		return deployphase.Failed
+	case agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK:
+		return deployphase.RollingBack
+	case agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK:
+		return deployphase.RolledBack
+	case agentv1.DeployPhase_DEPLOY_PHASE_ROLLBACK_FAILED:
+		return deployphase.RollbackFailed
+	default:
+		return ""
+	}
+}
+
+// Dropped reports how many metrics batches / deploy messages were discarded
+// because the outbox was full.
 func (o *Outbox) Dropped() uint64 {
 	o.mu.Lock()
 	defer o.mu.Unlock()

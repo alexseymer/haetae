@@ -27,11 +27,13 @@ type session struct {
 	watch    chan *agentv1.WatchSet // latest watch set; replace-latest
 	lastSeen atomic.Int64           // unix nanoseconds
 
-	eventLim *tokenBucket
-	logLim   *tokenBucket
+	eventLim  *tokenBucket
+	logLim    *tokenBucket
+	branchLim *tokenBucket
 
 	droppedEvents atomic.Int64
 	droppedLogs   atomic.Int64
+	droppedBranch atomic.Int64
 
 	warnMu          sync.Mutex
 	lastUnknownWarn time.Time
@@ -43,14 +45,15 @@ type session struct {
 
 func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 	s := &session{
-		hostID:   hostID,
-		cancel:   cancel,
-		outbox:   make(chan *agentv1.Command, 16),
-		green:    make(chan []string, 1),
-		watch:    make(chan *agentv1.WatchSet, 1),
-		eventLim: newTokenBucket(deployEventRate, deployEventRate),
-		logLim:   newTokenBucket(deployLogRate, deployLogRate),
-		pending:  make(map[string]chan *agentv1.CommandResult),
+		hostID:    hostID,
+		cancel:    cancel,
+		outbox:    make(chan *agentv1.Command, 16),
+		green:     make(chan []string, 1),
+		watch:     make(chan *agentv1.WatchSet, 1),
+		eventLim:  newTokenBucket(deployEventRate, deployEventRate),
+		logLim:    newTokenBucket(deployLogRate, deployLogRate),
+		branchLim: newTokenBucketRate(float64(deployBranchPerMin)/60.0, float64(deployBranchPerMin)),
+		pending:   make(map[string]chan *agentv1.CommandResult),
 	}
 	s.touch()
 	return s

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestOutboxIsBoundedAndSnapshotFirst(t *testing.T) {
 	}
 }
 
-func TestOutboxNeverDropsDeployEvents(t *testing.T) {
+func TestOutboxShedsLogsBeforeEvents(t *testing.T) {
 	o := NewOutbox(3)
 	events := []*agentv1.DeployEvent{
 		{DeployId: "e1", Phase: agentv1.DeployPhase_DEPLOY_PHASE_FETCHING},
@@ -51,11 +52,11 @@ func TestOutboxNeverDropsDeployEvents(t *testing.T) {
 	}
 	o.Event(events[0])
 	for i := 0; i < 15000; i++ {
-		o.Log(&agentv1.DeployLog{DeployId: "d", Seq: uint32(i), Text: "x"})
+		o.Log(&agentv1.DeployLog{DeployId: "d", Seq: uint32(i), Text: "x"}) //nolint:gosec // G115: test seq
 	}
 	o.Event(events[1])
 	for i := 0; i < 15000; i++ {
-		o.Log(&agentv1.DeployLog{DeployId: "d", Seq: uint32(15000 + i), Text: "y"})
+		o.Log(&agentv1.DeployLog{DeployId: "d", Seq: uint32(15000 + i), Text: "y"}) //nolint:gosec // G115: test seq
 	}
 	o.Event(events[2])
 
@@ -81,7 +82,7 @@ func TestOutboxNeverDropsDeployEvents(t *testing.T) {
 		}
 	}
 	if len(gotEvents) != 3 {
-		t.Fatalf("events = %d, want 3 (never dropped); logs kept=%d", len(gotEvents), gotLogs)
+		t.Fatalf("events = %d, want 3 (logs shed first); logs kept=%d", len(gotEvents), gotLogs)
 	}
 	for i, e := range events {
 		if gotEvents[i].GetDeployId() != e.GetDeployId() {
@@ -90,5 +91,57 @@ func TestOutboxNeverDropsDeployEvents(t *testing.T) {
 	}
 	if gotLogs > maxDeployMsgs-3 {
 		t.Fatalf("too many logs kept: %d", gotLogs)
+	}
+}
+
+func TestOutboxHardCapEventsOnly(t *testing.T) {
+	o := NewOutbox(3)
+	const extra = 500
+	for i := 0; i < maxDeployMsgs+extra; i++ {
+		o.Event(&agentv1.DeployEvent{
+			DeployId: "flood",
+			Phase:    agentv1.DeployPhase_DEPLOY_PHASE_FETCHING,
+			Message:  "m",
+			TsUnixMs: int64(i),
+		})
+	}
+	// Same deploy+phase replaces in place — queue stays at 1.
+	if n := o.DeployQueueLen(); n != 1 {
+		t.Fatalf("queue len %d, want 1 (in-place coalesce of duplicate phase)", n)
+	}
+	// Distinct deploys fill to the hard cap; further events drop.
+	for i := 0; i < maxDeployMsgs+extra; i++ {
+		o.Event(&agentv1.DeployEvent{
+			DeployId: "d-" + strconv.Itoa(i),
+			Phase:    agentv1.DeployPhase_DEPLOY_PHASE_BUILDING,
+			TsUnixMs: int64(i),
+		})
+	}
+	if n := o.DeployQueueLen(); n > maxDeployMsgs {
+		t.Fatalf("queue len %d exceeds hard cap %d", n, maxDeployMsgs)
+	}
+	if o.Dropped() == 0 {
+		t.Fatal("expected drops when flooding distinct events past the cap")
+	}
+}
+
+func TestOutboxHardCapMixedFlood(t *testing.T) {
+	o := NewOutbox(3)
+	for i := 0; i < maxDeployMsgs+200; i++ {
+		o.Log(&agentv1.DeployLog{DeployId: "a", Seq: uint32(i % 100000), Text: "log"}) //nolint:gosec
+		o.Event(&agentv1.DeployEvent{
+			DeployId: "d-" + strconv.Itoa(i),
+			Phase:    agentv1.DeployPhase_DEPLOY_PHASE_BUILDING,
+			TsUnixMs: int64(i),
+		})
+		if i%7 == 0 {
+			o.PutBranchUpdate(&agentv1.BranchUpdate{Project: "p", Commit: strconv.Itoa(i)})
+		}
+	}
+	if n := o.DeployQueueLen(); n > maxDeployMsgs {
+		t.Fatalf("queue len %d exceeds hard cap %d", n, maxDeployMsgs)
+	}
+	if o.Dropped() == 0 {
+		t.Fatal("expected drops under mixed flood")
 	}
 }

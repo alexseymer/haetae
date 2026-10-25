@@ -15,10 +15,14 @@ type tokenBucket struct {
 }
 
 func newTokenBucket(perSec, burst int) *tokenBucket {
+	return newTokenBucketRate(float64(perSec), float64(burst))
+}
+
+func newTokenBucketRate(rate, burst float64) *tokenBucket {
 	return &tokenBucket{
-		rate:   float64(perSec),
-		burst:  float64(burst),
-		tokens: float64(burst),
+		rate:   rate,
+		burst:  burst,
+		tokens: burst,
 		last:   time.Now(),
 	}
 }

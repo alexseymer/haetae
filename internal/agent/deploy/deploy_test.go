@@ -217,11 +217,29 @@ func TestGitDeployCommandSequenceAndTokenSecret(t *testing.T) {
 	if strings.Contains(emit.textBlob(), token) {
 		t.Fatal("token leaked in events/logs")
 	}
-	// Askpass scripts must be gone.
-	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "haetae-askpass-*"))
-	for _, p := range matches {
-		if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), token) {
-			t.Fatalf("token left on disk in %s", p)
+	var askpassDirs []string
+	for _, c := range gitCmds {
+		for _, e := range c.Env {
+			if strings.HasPrefix(e, "HAETAE_GIT_TOKEN=") {
+				t.Fatal("HAETAE_GIT_TOKEN must not appear in child env")
+			}
+			if after, ok := strings.CutPrefix(e, "GIT_ASKPASS="); ok {
+				askpassDirs = append(askpassDirs, filepath.Dir(after))
+				if b, err := os.ReadFile(after); err == nil && strings.Contains(string(b), token) {
+					t.Fatal("token embedded in askpass script")
+				}
+			}
+			if strings.Contains(e, token) {
+				t.Fatalf("token in env entry %q", e)
+			}
+		}
+	}
+	if len(askpassDirs) == 0 {
+		t.Fatal("expected GIT_ASKPASS on git fetch")
+	}
+	for _, dir := range askpassDirs {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("askpass temp dir %s still present after git: %v", dir, err)
 		}
 	}
 	phases := emit.phases()
@@ -552,10 +570,8 @@ func TestRedactionFailureWithheld(t *testing.T) {
 		t.Fatalf("no withheld chunk: %+v", emit.Logs)
 	}
 	for _, e := range emit.Events {
-		if e.GetMessage() != "" && e.GetMessage() != "[withheld]" {
-			// identity fields may be withheld
-		}
-		if strings.Contains(e.GetMessage(), "secret-line") {
+		msg := e.GetMessage()
+		if msg != "" && msg != "[withheld]" && strings.Contains(msg, "secret-line") {
 			t.Fatal("secret in event")
 		}
 	}
@@ -659,5 +675,117 @@ func TestParseComposePS(t *testing.T) {
 	nd, err := parseComposePS([]byte("{\"Name\":\"a\",\"Service\":\"web\",\"State\":\"running\"}\n{\"Name\":\"b\",\"Service\":\"db\",\"State\":\"running\"}\n"))
 	if err != nil || len(nd) != 2 {
 		t.Fatalf("%v %v", nd, err)
+	}
+}
+
+func TestFetchFailureDoesNotRollback(t *testing.T) {
+	runner := &FakeRunner{}
+	runner.Add(
+		FakeStep{Match: matchCmd("git", "init")},
+		FakeStep{Match: matchCmd("git", "remote", "add")},
+		FakeStep{Match: matchCmd("git", "fetch"), Err: errors.New("auth failed")},
+	)
+	emit := &recordEmit{}
+	m := testManager(t, runner, emit, &fakeIngress{})
+	d := &agentv1.Deploy{
+		DeployId: "d1", Project: "shop",
+		Source: &agentv1.Deploy_Git{Git: &agentv1.GitSource{
+			Url: "https://github.com/acme/shop", Ref: "main", Token: "tok",
+		}},
+		LastHealthy: &agentv1.Version{Kind: &agentv1.Version_Inline{Inline: &agentv1.InlineCompose{
+			Content: "services:\n  web:\n    image: good\n",
+		}}},
+	}
+	if err := m.Handle(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+	phases := emit.phases()
+	if phases[len(phases)-1] != agentv1.DeployPhase_DEPLOY_PHASE_FAILED {
+		t.Fatalf("phases = %v, want FAILED (no rollback)", phases)
+	}
+	for _, p := range phases {
+		if p == agentv1.DeployPhase_DEPLOY_PHASE_ROLLING_BACK {
+			t.Fatalf("fetch failure must not roll back: %v", phases)
+		}
+	}
+	last := emit.Events[len(emit.Events)-1]
+	if last.GetMessage() != "previous version is still running" {
+		t.Fatalf("message = %q", last.GetMessage())
+	}
+	for _, c := range runner.Calls {
+		if c.Name == "docker" {
+			t.Fatalf("docker should not run on fetch failure: %v", c.Args)
+		}
+	}
+}
+
+func TestRollbackGitFetchUsesAskpassToken(t *testing.T) {
+	const token = "rollback-secret-token"
+	const commit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	runner := &FakeRunner{}
+	runner.Add(
+		FakeStep{Match: matchCmd("docker", "build", "--pull"), Stdout: []string{"ok"}},
+		FakeStep{Match: matchCmd("docker", "up", "-d"), Err: errors.New("up failed")},
+	)
+	writeCompose := func(c Cmd) {
+		_ = os.WriteFile(filepath.Join(c.Dir, "compose.yaml"), []byte("services:\n  web:\n    image: nginx\n"), 0o600)
+	}
+	runner.Add(
+		FakeStep{Match: matchCmd("git", "init")},
+		FakeStep{Match: matchCmd("git", "remote", "add")},
+		FakeStep{Match: matchCmd("git", "fetch")},
+		FakeStep{Match: matchCmd("git", "checkout")},
+		FakeStep{Match: matchCmd("git", "clean"), After: writeCompose},
+		FakeStep{Match: matchCmd("git", "rev-parse"), Stdout: []string{commit}},
+		FakeStep{Match: matchCmd("docker", "build", "--pull"), Stdout: []string{"ok"}},
+		FakeStep{Match: matchCmd("docker", "up", "-d"), Stdout: []string{"ok"}},
+		FakeStep{Match: matchCmd("docker", "ps", "--format"), Stdout: []string{psHealthyJSON("web", "shop-web-1")}, Repeat: -1},
+	)
+	emit := &recordEmit{}
+	m := testManager(t, runner, emit, &fakeIngress{})
+	d := &agentv1.Deploy{
+		DeployId: "d1", Project: "shop",
+		Source: &agentv1.Deploy_Inline{Inline: &agentv1.InlineCompose{Content: "services:\n  web:\n    image: bad\n"}},
+		LastHealthy: &agentv1.Version{Kind: &agentv1.Version_Git{Git: &agentv1.GitSource{
+			Url: "https://github.com/acme/shop", Ref: commit, Token: token,
+		}}},
+	}
+	if err := m.Handle(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+	phases := emit.phases()
+	if phases[len(phases)-1] != agentv1.DeployPhase_DEPLOY_PHASE_ROLLED_BACK {
+		t.Fatalf("phases = %v", phases)
+	}
+	var sawRollbackFetch bool
+	for _, c := range runner.Calls {
+		if c.Name != "git" || !strings.Contains(strings.Join(c.Args, " "), "fetch") {
+			continue
+		}
+		for _, a := range c.Args {
+			if strings.Contains(a, token) {
+				t.Fatalf("token in argv: %v", c.Args)
+			}
+		}
+		var hasAskpass bool
+		for _, e := range c.Env {
+			if strings.HasPrefix(e, "HAETAE_GIT_TOKEN=") {
+				t.Fatal("HAETAE_GIT_TOKEN in rollback fetch env")
+			}
+			if strings.HasPrefix(e, "GIT_ASKPASS=") {
+				hasAskpass = true
+			}
+			if strings.Contains(e, token) {
+				t.Fatalf("token in env: %q", e)
+			}
+		}
+		if hasAskpass {
+			sawRollbackFetch = true
+		}
+	}
+	if !sawRollbackFetch {
+		t.Fatal("rollback git fetch missing GIT_ASKPASS")
 	}
 }

@@ -151,7 +151,7 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	logs := agent.NewLogManager(agent.LogConfig{}, mon.Docker(), out, log.With("component", "logs"))
 	mon.OnRunning = func(running map[string]string) { logs.Sync(ctx, running) }
 
-	runner := deploy.ExecRunner{}
+	runner := deploy.ExecRunner{StateDir: *stateDir}
 	ing, err := newIngress(ingressConfig{
 		StateDir:    *stateDir,
 		HTTPPort:    *httpPort,

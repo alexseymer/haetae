@@ -72,6 +72,8 @@ CREATE INDEX deploys_project_created_idx ON deploys (project_id, created_at DESC
 CREATE INDEX deploys_org_host_idx ON deploys (org_id, host_id);
 CREATE INDEX deploys_status_last_event_idx ON deploys (status, last_event_at)
   WHERE status IN ('queued', 'fetching', 'building', 'starting', 'checking', 'rolling_back');
+CREATE UNIQUE INDEX deploys_one_active ON deploys (project_id)
+  WHERE status NOT IN ('healthy', 'failed', 'rolled_back', 'rollback_failed');
 CREATE INDEX deploy_logs_deploy_seq_idx ON deploy_logs (deploy_id, seq);
 
 DO $$
@@ -103,7 +105,7 @@ GRANT INSERT (
   git_token_sealed, inline_compose, domain, service, port, auto_deploy
 ) ON projects TO haetae_app;
 GRANT UPDATE (
-  git_url, git_ref, compose_path, git_token_sealed, inline_compose,
+  source_kind, git_url, git_ref, compose_path, git_token_sealed, inline_compose,
   domain, service, port, auto_deploy, updated_at
 ) ON projects TO haetae_app;
 
