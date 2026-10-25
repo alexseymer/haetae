@@ -41,6 +41,7 @@ type proxy struct {
 	// Agent-side connections, and those the agent itself closed (we read
 	// EOF or a reset from it, rather than closing it ourselves).
 	agentConns  map[net.Conn]bool
+	agentOrder  []net.Conn // accept order, oldest first
 	agentClosed map[net.Conn]bool
 }
 
@@ -101,6 +102,7 @@ func (p *proxy) accept(ln net.Listener) {
 		p.conns[in] = struct{}{}
 		p.conns[out] = struct{}{}
 		p.agentConns[in] = true
+		p.agentOrder = append(p.agentOrder, in)
 		p.mu.Unlock()
 		go p.relay(in, out)
 		go p.relay(out, in)
@@ -126,7 +128,7 @@ func (p *proxy) agentSideConns() []net.Conn {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var out []net.Conn
-	for c := range p.agentConns {
+	for _, c := range p.agentOrder { // oldest first, so the newest is the last
 		if !p.agentClosed[c] {
 			out = append(out, c)
 		}

@@ -62,8 +62,10 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Integration tests
-        run: make test-integration 2>&1 | tee integration.log
         shell: bash
+        run: |
+          set -o pipefail
+          make test-integration 2>&1 | tee integration.log
       - name: Measurements
         if: always()
         run: grep MEASURE integration.log || true
@@ -113,3 +115,39 @@ jobs:
       - run: npm run build
       - name: Dependency audit (production, high and above)
         run: npm audit --omit=dev --audit-level=high
+
+  selfhost:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: haetae
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HAETAE_TEST_DATABASE_URL: postgres://postgres:haetae@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Installer script tests (agent)
+        run: go test -count=1 -tags integration -timeout 20m ./test/install/
+      - name: Self-hosted install and isolated-network tests
+        shell: bash
+        run: |
+          set -o pipefail
+          make test-selfhost 2>&1 | tee selfhost.log
+      - name: Measurements
+        if: always()
+        run: grep MEASURE selfhost.log || true
+      - name: Full log of the failing test
+        if: failure()
+        run: tail -n 150 selfhost-full.log || true

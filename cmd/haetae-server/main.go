@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/alexseymer/haetae/internal/api"
 	"github.com/alexseymer/haetae/internal/auth"
 	"github.com/alexseymer/haetae/internal/gateway"
+	"github.com/alexseymer/haetae/internal/installer"
 	"github.com/alexseymer/haetae/internal/pki"
 	"github.com/alexseymer/haetae/internal/server"
 	"github.com/alexseymer/haetae/internal/store"
@@ -28,12 +30,14 @@ import (
 
 const usage = `usage:
   haetae-server serve                     run the control plane
+  haetae-server setup-code                print the first-run setup code
   haetae-server token create --name NAME  create a single-use enrollment token
   haetae-server --version
 
 Configuration (environment):
   HAETAE_DATABASE_URL    PostgreSQL URL (required)
   HAETAE_DATA_DIR        state directory, holds the agent CA (default /var/lib/haetae)
+  HAETAE_DIST_DIR        directory of agent binaries served at /download/ (default /usr/share/haetae/dist)
   HAETAE_GATEWAY_ADDR    agent gateway listen address (default :8443)
   HAETAE_GATEWAY_URL     URL agents dial (default https://<hostname>:8443)
   HAETAE_GATEWAY_NAMES   extra comma-separated names for the gateway and web certificates
@@ -148,6 +152,10 @@ func main() {
 	switch args := flag.Args(); {
 	case len(args) == 1 && args[0] == "serve":
 		err = serve(ctx, log)
+	case len(args) == 1 && args[0] == "setup-code":
+		err = printSetupCode()
+	case len(args) == 1 && args[0] == "healthcheck":
+		err = healthcheck()
 	case len(args) >= 2 && args[0] == "token" && args[1] == "create":
 		err = tokenCreate(ctx, args[2:])
 	default:
@@ -160,6 +168,49 @@ func main() {
 	}
 }
 
+// printSetupCode writes DATA_DIR/setup-code to stdout. The file is only present
+// while first-run setup is still required.
+func printSetupCode() error {
+	dataDir := envOr("HAETAE_DATA_DIR", "/var/lib/haetae")
+	b, err := os.ReadFile(filepath.Join(dataDir, "setup-code")) //nolint:gosec // G304: a fixed file name inside the operator's own data directory
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("no setup code: setup is already done")
+		}
+		return err
+	}
+	_, err = os.Stdout.Write(b)
+	return err
+}
+
+// healthcheck probes the local web interface (used as the container HEALTHCHECK).
+func healthcheck() error {
+	addr := envOr("HAETAE_WEB_ADDR", ":8080")
+	port := "8080"
+	if i := strings.LastIndex(addr, ":"); i >= 0 && i+1 < len(addr) {
+		port = addr[i+1:]
+	}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local probe of our own listener
+		},
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://127.0.0.1:"+port+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthz returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func serve(ctx context.Context, log *slog.Logger) error {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -169,7 +220,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	st, err := store.Open(ctx, cfg.databaseURL)
+	st, err := openStore(ctx, cfg.databaseURL, log)
 	if err != nil {
 		return err
 	}
@@ -269,7 +320,9 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 			_ = os.Remove(codeFile)
 		},
 	})
-	ws, err := server.ListenWeb(cfg.webAddr, server.Routes(a.Handler(), nil, webui.Handler()), cert)
+	distDir := envOr("HAETAE_DIST_DIR", "/usr/share/haetae/dist")
+	inst := installer.New(distDir)
+	ws, err := server.ListenWeb(cfg.webAddr, server.Routes(a.Handler(), inst, webui.Handler()), cert)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +349,7 @@ func tokenCreate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	st, err := store.Open(ctx, cfg.databaseURL)
+	st, err := openStore(ctx, cfg.databaseURL, slog.Default())
 	if err != nil {
 		return err
 	}
@@ -313,4 +366,30 @@ func tokenCreate(ctx context.Context, args []string) error {
 	fmt.Printf("Token for %s (valid %s, single use):\n  %s\n\nOn the host, run:\n  haetae-agent enroll --server %s --token %s --ca-pin %s\n",
 		*name, *ttl, token, cfg.gatewayURL, token, pki.Fingerprint(ca.DER))
 	return nil
+}
+
+// openStore connects to PostgreSQL and applies migrations, waiting for the
+// database to come up. In a container setup the server often starts at the
+// same moment as the database; dying on the first refused connection would
+// turn a few seconds of startup into a crash loop. It gives up after about
+// two minutes, or when ctx ends.
+func openStore(ctx context.Context, url string, log *slog.Logger) (*store.Store, error) {
+	const attempts = 60
+	var err error
+	for i := 1; i <= attempts; i++ {
+		var st *store.Store
+		if st, err = store.Open(ctx, url); err == nil {
+			return st, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		log.Warn("database not ready, retrying", "attempt", i, "of", attempts, "err", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	return nil, fmt.Errorf("database still unavailable after %d attempts: %w", attempts, err)
 }

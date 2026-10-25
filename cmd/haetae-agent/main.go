@@ -18,9 +18,11 @@ import (
 )
 
 const usage = `usage:
-  haetae-agent enroll --server URL --token TOKEN --ca-pin PIN [--state-dir DIR]
+  haetae-agent enroll --server URL --ca-pin PIN [--token TOKEN] [--state-dir DIR]
   haetae-agent run [--state-dir DIR]
   haetae-agent --version
+
+enroll: --token wins over the HAETAE_ENROLL_TOKEN environment variable when both are set.
 `
 
 const defaultStateDir = "/var/lib/haetae-agent"
@@ -67,24 +69,49 @@ func main() {
 	}
 }
 
-func enroll(ctx context.Context, args []string) error {
+type enrollArgs struct {
+	ServerURL string
+	Token     string
+	CAPin     string
+	StateDir  string
+}
+
+// parseEnrollArgs parses enroll flags. The --token flag wins over HAETAE_ENROLL_TOKEN.
+func parseEnrollArgs(args []string, getenv func(string) string) (enrollArgs, error) {
 	fs := flag.NewFlagSet("enroll", flag.ContinueOnError)
 	serverURL := fs.String("server", "", "gateway URL, e.g. https://haetae.example.com:8443")
-	token := fs.String("token", "", "single-use enrollment token")
+	token := fs.String("token", "", "single-use enrollment token (or HAETAE_ENROLL_TOKEN)")
 	caPin := fs.String("ca-pin", "", "CA fingerprint printed with the token (sha256:...)")
 	stateDir := fs.String("state-dir", defaultStateDir, "where the agent keeps its identity")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return enrollArgs{}, err
 	}
-	if *serverURL == "" || *token == "" || *caPin == "" {
-		return errors.New("--server, --token and --ca-pin are required")
+	tok := *token
+	if tok == "" {
+		tok = getenv("HAETAE_ENROLL_TOKEN")
 	}
+	if *serverURL == "" || tok == "" || *caPin == "" {
+		return enrollArgs{}, errors.New("--server, --token (or HAETAE_ENROLL_TOKEN) and --ca-pin are required")
+	}
+	return enrollArgs{
+		ServerURL: *serverURL,
+		Token:     tok,
+		CAPin:     *caPin,
+		StateDir:  *stateDir,
+	}, nil
+}
 
-	id, err := agent.Enroll(ctx, *serverURL, *token, *caPin, *stateDir)
+func enroll(ctx context.Context, args []string) error {
+	ea, err := parseEnrollArgs(args, os.Getenv)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Enrolled as host %s. Start the agent with: haetae-agent run --state-dir %s\n", id.HostID, *stateDir)
+
+	id, err := agent.Enroll(ctx, ea.ServerURL, ea.Token, ea.CAPin, ea.StateDir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Enrolled as host %s. Start the agent with: haetae-agent run --state-dir %s\n", id.HostID, ea.StateDir)
 	return nil
 }
 

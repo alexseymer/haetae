@@ -1,0 +1,9 @@
+.git
+node_modules
+web/dist
+bin
+docs
+test
+internal/webui/app/*
+!internal/webui/app/.gitkeep
+*.log
