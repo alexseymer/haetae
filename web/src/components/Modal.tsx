@@ -19,21 +19,8 @@ const FOCUSABLE =
 export function Modal({ title, open, onClose, children }: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    if (panel) {
-      const focusables = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
-      const first = focusables[0];
-      (first ?? panel).focus();
-    }
-    return () => {
-      previouslyFocused.current?.focus?.();
-    };
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +33,36 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Inert siblings + initial focus share one effect so cleanup clears inert
+  // before restoring focus (focusing an inert control is a no-op).
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const backdrop = backdropRef.current;
+    const parent = backdrop?.parentElement;
+    const siblings =
+      backdrop && parent
+        ? Array.from(parent.children).filter(
+            (el): el is HTMLElement => el !== backdrop && el instanceof HTMLElement,
+          )
+        : [];
+    for (const el of siblings) {
+      el.inert = true;
+    }
+    const panel = panelRef.current;
+    if (panel) {
+      const focusables = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
+      const first = focusables[0];
+      (first ?? panel).focus();
+    }
+    return () => {
+      for (const el of siblings) {
+        el.inert = false;
+      }
+      previouslyFocused.current?.focus?.();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -70,9 +87,13 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => {
-      if (e.target === e.currentTarget) onClose();
-    }}>
+    <div
+      ref={backdropRef}
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
         ref={panelRef}
         className="modal"

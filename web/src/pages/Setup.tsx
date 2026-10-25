@@ -87,6 +87,7 @@ export function SetupPage() {
               type="button"
               className="btn btn-secondary"
               onClick={() => setShowPassword((s) => !s)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
               aria-pressed={showPassword}
             >
               {showPassword ? "Hide" : "Show"}

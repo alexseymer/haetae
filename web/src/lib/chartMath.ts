@@ -155,6 +155,7 @@ export function dataExtent(series: Point[][]): { minT: number; maxT: number; min
   let any = false;
   for (const pts of series) {
     for (const p of pts) {
+      if (!Number.isFinite(p.t) || !Number.isFinite(p.v)) continue;
       any = true;
       if (p.t < minT) minT = p.t;
       if (p.t > maxT) maxT = p.t;
@@ -169,8 +170,9 @@ export function dataExtent(series: Point[][]): { minT: number; maxT: number; min
 /** Choose ~n time tick timestamps between minT and maxT. */
 export function timeTicks(minT: number, maxT: number, count = 4): number[] {
   if (!Number.isFinite(minT) || !Number.isFinite(maxT) || maxT <= minT) {
-    return [minT];
+    return Number.isFinite(minT) ? [minT] : [];
   }
+  if (count <= 1) return [minT];
   const ticks: number[] = [];
   for (let i = 0; i < count; i += 1) {
     const t = minT + ((maxT - minT) * i) / (count - 1);

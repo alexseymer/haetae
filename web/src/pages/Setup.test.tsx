@@ -37,6 +37,13 @@ describe("SetupPage", () => {
     await user.type(screen.getByLabelText("Organisation name"), "Widgets");
     await user.type(screen.getByLabelText("Email"), "admin@ex.com");
     await user.type(screen.getByLabelText("Password"), "hunter2");
+    const toggle = screen.getByRole("button", { name: "Show password" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(toggle);
+    expect(screen.getByRole("button", { name: "Hide password" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await user.click(screen.getByRole("button", { name: "Create organisation" }));
 
     await waitFor(() => expect(screen.getByText("Home")).toBeInTheDocument());

@@ -26,4 +26,31 @@ describe("Modal", () => {
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("marks siblings inert while open and restores after close", () => {
+    const { rerender } = render(
+      <div>
+        <button type="button" data-testid="outside">
+          Outside
+        </button>
+        <Modal title="Test modal" open onClose={() => undefined}>
+          <button type="button">Inside</button>
+        </Modal>
+      </div>,
+    );
+    const outside = screen.getByTestId("outside");
+    expect(outside.inert).toBe(true);
+
+    rerender(
+      <div>
+        <button type="button" data-testid="outside">
+          Outside
+        </button>
+        <Modal title="Test modal" open={false} onClose={() => undefined}>
+          <button type="button">Inside</button>
+        </Modal>
+      </div>,
+    );
+    expect(outside.inert).toBe(false);
+  });
 });

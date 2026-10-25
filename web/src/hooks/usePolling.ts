@@ -3,8 +3,16 @@ import { useEffect, useRef } from "react";
 /**
  * Call `fn` immediately and then every `intervalMs` while the document is visible.
  * Pauses when document.visibilityState !== "visible".
+ * When becoming visible again, starts the interval (which runs `fn` once) without a
+ * second immediate call.
+ * `restartKey` remounts the effect (immediate run + new interval) when it changes.
  */
-export function usePolling(fn: () => void | Promise<void>, intervalMs: number, enabled = true): void {
+export function usePolling(
+  fn: () => void | Promise<void>,
+  intervalMs: number,
+  enabled = true,
+  restartKey?: unknown,
+): void {
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
@@ -38,7 +46,7 @@ export function usePolling(fn: () => void | Promise<void>, intervalMs: number, e
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
-        run();
+        // start() already runs once; do not call run() again (double fetch).
         start();
       } else {
         stop();
@@ -55,5 +63,5 @@ export function usePolling(fn: () => void | Promise<void>, intervalMs: number, e
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [intervalMs, enabled]);
+  }, [intervalMs, enabled, restartKey]);
 }

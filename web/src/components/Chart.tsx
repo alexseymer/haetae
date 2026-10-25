@@ -10,6 +10,9 @@ import {
 } from "../lib/chartMath";
 import { formatByUnit, type UnitKind } from "../lib/format";
 
+/** Max rows in the accessible fallback table; large series are truncated with a note. */
+export const CHART_TABLE_MAX_ROWS = 200;
+
 export interface ChartSeries {
   label: string;
   points: Point[];
@@ -34,6 +37,10 @@ function formatTickTime(t: number): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function isFinitePoint(p: Point): boolean {
+  return Number.isFinite(p.t) && Number.isFinite(p.v);
 }
 
 export function Chart({
@@ -64,7 +71,7 @@ export function Chart({
     const xTicks = timeTicks(extent.minT, extent.maxT, 4);
     const segments = series.map((s) => ({
       ...s,
-      segments: splitOnGaps(s.points),
+      segments: splitOnGaps(s.points.filter(isFinitePoint)),
     }));
     return { padL, padR, padT, padB, width, height, yScale, xTicks, segments, extent };
   }, [extent, series, yMax, height]);
@@ -76,6 +83,9 @@ export function Chart({
     const last = primaryPoints[primaryPoints.length - 1];
     return `${title}: ${primaryPoints.length} points, last value ${formatByUnit(last?.v ?? 0, unit)}`;
   }, [title, loading, error, extent, primaryPoints, unit]);
+
+  const tablePoints = primaryPoints.slice(0, CHART_TABLE_MAX_ROWS);
+  const tableTruncated = primaryPoints.length > CHART_TABLE_MAX_ROWS;
 
   if (loading) {
     return (
@@ -130,6 +140,17 @@ export function Chart({
     hoverIdx != null && hoverIdx >= 0 && hoverIdx < primaryPoints.length ? hoverIdx : null;
   const activeT = activeIdx != null ? primaryPoints[activeIdx]?.t : null;
 
+  const liveAnnouncement =
+    activeIdx != null && activeT != null
+      ? [
+          formatTickTime(activeT),
+          ...series.map((s) => {
+            const p = s.points[activeIdx];
+            return `${s.label}: ${p && isFinitePoint(p) ? formatByUnit(p.v, unit) : "—"}`;
+          }),
+        ].join(", ")
+      : "";
+
   const onMove = (clientX: number) => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -159,6 +180,10 @@ export function Chart({
     }
   };
 
+  // React style={{…}} is applied via the CSSOM (el.style.* / setProperty), which
+  // CSP style-src 'self' does not block. Inline style attributes in static HTML
+  // are blocked; these props are not. E2E asserts computed styles under the real
+  // CSP header (see test/e2e/ui.spec.mjs).
   return (
     <div className="chart" style={{ position: "relative" }}>
       <div className="chart-title">{title}</div>
@@ -224,8 +249,10 @@ export function Chart({
           s.segments.map((seg, segi) => {
             if (seg.length === 0) return null;
             const d = seg
+              .filter(isFinitePoint)
               .map((p, i) => `${i === 0 ? "M" : "L"}${xOf(p.t).toFixed(2)},${yOf(p.v).toFixed(2)}`)
               .join(" ");
+            if (!d) return null;
             return (
               <path
                 key={`${gid}-${si}-${segi}`}
@@ -239,7 +266,7 @@ export function Chart({
             );
           }),
         )}
-        {activeT != null && (
+        {activeT != null && Number.isFinite(activeT) && (
           <line
             x1={xOf(activeT)}
             x2={xOf(activeT)}
@@ -253,7 +280,7 @@ export function Chart({
         {activeIdx != null &&
           series.map((s, i) => {
             const p = s.points[activeIdx];
-            if (!p) return null;
+            if (!p || !isFinitePoint(p)) return null;
             return (
               <circle
                 key={`dot-${i}`}
@@ -267,14 +294,15 @@ export function Chart({
             );
           })}
       </svg>
-      {activeIdx != null && activeT != null && (
+      <div className="sr-only" aria-live="polite">
+        {liveAnnouncement}
+      </div>
+      {activeIdx != null && activeT != null && Number.isFinite(activeT) && (
         <div
           className="chart-tooltip"
           style={{
-            left: Math.min(
-              Math.max(8, (xOf(activeT) / width) * 100),
-              70,
-            ) + "%",
+            left:
+              Math.min(Math.max(8, (xOf(activeT) / width) * 100), 70) + "%",
             top: 36,
           }}
         >
@@ -283,7 +311,7 @@ export function Chart({
             const p = s.points[activeIdx];
             return (
               <div key={s.label}>
-                {s.label}: {p ? formatByUnit(p.v, unit) : "—"}
+                {s.label}: {p && isFinitePoint(p) ? formatByUnit(p.v, unit) : "—"}
               </div>
             );
           })}
@@ -308,18 +336,25 @@ export function Chart({
           </tr>
         </thead>
         <tbody>
-          {primaryPoints.map((p, i) => (
+          {tablePoints.map((p, i) => (
             <tr key={p.t}>
               <td>{formatTickTime(p.t)}</td>
               {series.map((s) => (
                 <td key={s.label}>
-                  {s.points[i] ? formatByUnit(s.points[i]!.v, unit) : "—"}
+                  {s.points[i] && isFinitePoint(s.points[i]!)
+                    ? formatByUnit(s.points[i]!.v, unit)
+                    : "—"}
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
+      {tableTruncated ? (
+        <p className="sr-only">
+          Showing first {CHART_TABLE_MAX_ROWS} of {primaryPoints.length} points.
+        </p>
+      ) : null}
     </div>
   );
 }

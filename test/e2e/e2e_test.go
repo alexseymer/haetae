@@ -109,11 +109,20 @@ func TestWebUIE2E(t *testing.T) {
 		"E2E_CHROMIUM=/usr/bin/chromium",
 		"NODE_PATH="+npmRootGlobal(t),
 	)
+	// Own process group so timeout/failure can SIGKILL node, Chromium, and the
+	// agent (spawned without detached) together via kill(-pgid).
 	node.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	out, err := node.CombinedOutput()
-	t.Logf("node output:\n%s", out)
+	nodeOut := &syncBuffer{}
+	node.Stdout, node.Stderr = nodeOut, nodeOut
+	if err := node.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer killProcessGroup(node)
+
+	err = node.Wait()
+	t.Logf("node output:\n%s", nodeOut.String())
 	if err != nil {
-		t.Fatalf("ui.spec.mjs failed: %v\n%s", err, out)
+		t.Fatalf("ui.spec.mjs failed: %v\n%s", err, nodeOut.String())
 	}
 }
 

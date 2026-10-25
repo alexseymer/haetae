@@ -50,6 +50,9 @@ export function CopyBlock({ text, label = "Command" }: CopyBlockProps) {
         <button type="button" className="btn btn-secondary" onClick={() => void onCopy()}>
           {copied ? "Copied" : "Copy"}
         </button>
+        <span className="sr-only" aria-live="polite">
+          {copied ? "Copied" : ""}
+        </span>
       </div>
     </div>
   );

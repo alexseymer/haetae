@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { EnrollmentResponse, HostSummary } from "../api/types";
@@ -20,13 +20,25 @@ export function HostsPage() {
   const [ttlHours, setTtlHours] = useState(24);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const mountedRef = useRef(true);
+  const loadGenRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
+    const gen = ++loadGenRef.current;
     try {
       const res = await api.hosts();
+      if (gen !== loadGenRef.current || !mountedRef.current) return;
       setHosts(res.hosts);
       setError(null);
     } catch (err) {
+      if (gen !== loadGenRef.current || !mountedRef.current) return;
       setError(err instanceof ApiError ? err.message : "Failed to load hosts");
     }
   }, []);

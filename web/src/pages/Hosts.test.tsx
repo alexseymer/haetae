@@ -9,6 +9,7 @@ import { HostsPage } from "./Hosts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function Seed({ user, children }: { user: User; children: ReactNode }) {
@@ -91,6 +92,82 @@ describe("HostsPage", () => {
     );
     renderHosts(admin, fetchMock as unknown as typeof fetch);
     expect(await screen.findByText(/No hosts yet/i)).toBeInTheDocument();
+  });
+
+  it("ignores a stale hosts response that finishes after a newer one", async () => {
+    const slowResolvers: Array<(r: Response) => void> = [];
+    let calls = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/hosts") {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<Response>((resolve) => {
+            slowResolvers.push(resolve);
+          });
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              hosts: [
+                {
+                  id: "h-new",
+                  name: "fresh-host",
+                  hostname: "fresh",
+                  os: "linux",
+                  kernel: "6.1",
+                  arch: "amd64",
+                  dockerVersion: "24",
+                  agentVersion: "0.1.0",
+                  connected: true,
+                  lastSeen: new Date().toISOString(),
+                  enrolledAt: new Date().toISOString(),
+                  containers: { running: 1, total: 1 },
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderHosts(admin, fetchMock as unknown as typeof fetch);
+    await waitFor(() => expect(calls).toBe(1));
+    // Advance past the poll interval to start a second load.
+    await vi.advanceTimersByTimeAsync(10_000);
+    await waitFor(() => expect(calls).toBe(2));
+    expect((await screen.findAllByText("fresh-host")).length).toBeGreaterThan(0);
+
+    for (const resolve of slowResolvers) {
+      resolve(
+        new Response(
+          JSON.stringify({
+            hosts: [
+              {
+                id: "h-old",
+                name: "stale-host",
+                hostname: "stale",
+                os: "linux",
+                kernel: "6.1",
+                arch: "amd64",
+                dockerVersion: "24",
+                agentVersion: "0.1.0",
+                connected: false,
+                lastSeen: null,
+                enrolledAt: new Date().toISOString(),
+                containers: { running: 0, total: 0 },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }
+    await waitFor(() => {
+      expect(screen.getAllByText("fresh-host").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("stale-host")).not.toBeInTheDocument();
   });
 
   it("Add host dialog shows command after create; Esc closes", async () => {

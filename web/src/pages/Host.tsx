@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type {
@@ -11,9 +18,16 @@ import type {
 } from "../api/types";
 import { Badge, OnlineBadge } from "../components/Badge";
 import { Chart } from "../components/Chart";
+import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatPercent, formatRelativeTime, withheldPercent } from "../lib/format";
 
 type Tab = "overview" | "containers" | "logs";
+
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "containers", label: "Containers" },
+  { id: "logs", label: "Logs" },
+];
 
 const RANGES: Array<{ id: string; label: string; ms: number }> = [
   { id: "1h", label: "1h", ms: 3600_000 },
@@ -62,17 +76,35 @@ export function HostPage() {
   const [events, setEvents] = useState<LogEvent[]>([]);
   const [logsError, setLogsError] = useState<string | null>(null);
 
+  const mountedRef = useRef(true);
+  const metricsGenRef = useRef(0);
+  const metricsLoadedOnceRef = useRef(false);
+  const logsGenRef = useRef(0);
+  const cMetricsGenRef = useRef(0);
+  const containersGenRef = useRef(0);
+  const hostGenRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const setTab = (next: Tab) => {
     setSearchParams({ tab: next }, { replace: true });
   };
 
   const loadHost = useCallback(async () => {
+    const gen = ++hostGenRef.current;
     try {
       const res = await api.host(id);
+      if (gen !== hostGenRef.current || !mountedRef.current) return;
       setHost(res.host);
       setLogStats(res.logStats);
       setError(null);
     } catch (err) {
+      if (gen !== hostGenRef.current || !mountedRef.current) return;
       setError(err instanceof ApiError ? err.message : "Failed to load host");
     }
   }, [id]);
@@ -81,74 +113,64 @@ export function HostPage() {
     void loadHost();
   }, [loadHost]);
 
-  useEffect(() => {
-    if (tab !== "overview" || !id) return;
-    let cancelled = false;
-    let initial = true;
-    const load = async () => {
-      // Avoid flashing the loading state on poll refreshes when we already have points.
-      if (initial) setMetricsLoading(true);
-      setMetricsError(null);
-      const to = Date.now();
-      const from = to - rangeMs;
-      const names = [
-        "cpu_pct",
-        "load1",
-        "mem_used",
-        "mem_total",
-        "disk_used",
-        "disk_total",
-        "net_rx_bps",
-        "net_tx_bps",
-      ] as const;
-      try {
-        const results = await Promise.all(
-          names.map(async (m) => {
-            const res = await api.hostMetrics(id, m, from, to);
-            return [m, res.points] as const;
-          }),
-        );
-        if (cancelled) return;
-        const next: Record<string, MetricPoint[]> = {};
-        for (const [m, pts] of results) next[m] = pts;
-        setMetrics(next);
-      } catch (err) {
-        if (!cancelled) {
-          setMetricsError(err instanceof ApiError ? err.message : "Failed to load metrics");
-        }
-      } finally {
-        if (!cancelled) {
-          setMetricsLoading(false);
-          initial = false;
-        }
+  const loadMetrics = useCallback(async () => {
+    if (!id) return;
+    const gen = ++metricsGenRef.current;
+    if (!metricsLoadedOnceRef.current) setMetricsLoading(true);
+    setMetricsError(null);
+    const to = Date.now();
+    const from = to - rangeMs;
+    const names = [
+      "cpu_pct",
+      "load1",
+      "mem_used",
+      "mem_total",
+      "disk_used",
+      "disk_total",
+      "net_rx_bps",
+      "net_tx_bps",
+    ] as const;
+    try {
+      const results = await Promise.all(
+        names.map(async (m) => {
+          const res = await api.hostMetrics(id, m, from, to);
+          return [m, res.points] as const;
+        }),
+      );
+      if (gen !== metricsGenRef.current || !mountedRef.current) return;
+      const next: Record<string, MetricPoint[]> = {};
+      for (const [m, pts] of results) next[m] = pts;
+      setMetrics(next);
+    } catch (err) {
+      if (gen !== metricsGenRef.current || !mountedRef.current) return;
+      setMetricsError(err instanceof ApiError ? err.message : "Failed to load metrics");
+    } finally {
+      if (gen === metricsGenRef.current && mountedRef.current) {
+        setMetricsLoading(false);
+        metricsLoadedOnceRef.current = true;
       }
-    };
-    void load();
-    const timer = window.setInterval(() => {
-      void load();
-    }, 10_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [tab, id, rangeMs]);
+    }
+  }, [id, rangeMs]);
+
+  useEffect(() => {
+    metricsLoadedOnceRef.current = false;
+  }, [id, rangeMs]);
+
+  usePolling(loadMetrics, 10_000, tab === "overview" && !!id, `${id}:${rangeMs}`);
 
   useEffect(() => {
     if (tab !== "containers" || !id) return;
-    let cancelled = false;
+    const gen = ++containersGenRef.current;
     void api
       .containers(id)
       .then((res) => {
-        if (!cancelled) setContainers(res.containers);
+        if (gen !== containersGenRef.current || !mountedRef.current) return;
+        setContainers(res.containers);
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Failed to load containers");
-        }
+        if (gen !== containersGenRef.current || !mountedRef.current) return;
+        setError(err instanceof ApiError ? err.message : "Failed to load containers");
       });
-    return () => {
-      cancelled = true;
-    };
   }, [tab, id]);
 
   useEffect(() => {
@@ -156,7 +178,7 @@ export function HostPage() {
       setCMetrics({});
       return;
     }
-    let cancelled = false;
+    const gen = ++cMetricsGenRef.current;
     const load = async () => {
       setCMetricsLoading(true);
       const to = Date.now();
@@ -177,47 +199,37 @@ export function HostPage() {
             return [m, res.points] as const;
           }),
         );
-        if (cancelled) return;
+        if (gen !== cMetricsGenRef.current || !mountedRef.current) return;
         const next: Record<string, MetricPoint[]> = {};
         for (const [m, pts] of results) next[m] = pts;
         setCMetrics(next);
       } catch {
-        if (!cancelled) setCMetrics({});
+        if (gen !== cMetricsGenRef.current || !mountedRef.current) return;
+        setCMetrics({});
       } finally {
-        if (!cancelled) setCMetricsLoading(false);
+        if (gen === cMetricsGenRef.current && mountedRef.current) {
+          setCMetricsLoading(false);
+        }
       }
     };
     void load();
-    return () => {
-      cancelled = true;
-    };
   }, [selectedCid, id, rangeMs]);
 
-  useEffect(() => {
-    if (tab !== "logs" || !id) return;
-    let cancelled = false;
-    const load = () => {
-      void api
-        .logs(id, logLevel, 100)
-        .then((res) => {
-          if (!cancelled) {
-            setEvents(res.events);
-            setLogsError(null);
-          }
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setLogsError(err instanceof ApiError ? err.message : "Failed to load logs");
-          }
-        });
-    };
-    load();
-    const timer = window.setInterval(load, 10_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [tab, id, logLevel]);
+  const loadLogs = useCallback(async () => {
+    if (!id) return;
+    const gen = ++logsGenRef.current;
+    try {
+      const res = await api.logs(id, logLevel, 100);
+      if (gen !== logsGenRef.current || !mountedRef.current) return;
+      setEvents(res.events);
+      setLogsError(null);
+    } catch (err: unknown) {
+      if (gen !== logsGenRef.current || !mountedRef.current) return;
+      setLogsError(err instanceof ApiError ? err.message : "Failed to load logs");
+    }
+  }, [id, logLevel]);
+
+  usePolling(loadLogs, 10_000, tab === "logs" && !!id, `${id}:${logLevel}`);
 
   const byStack = useMemo(() => {
     const map = new Map<string, Container[]>();
@@ -241,6 +253,28 @@ export function HostPage() {
   const memTotalMax = memTotalPts.length > 0 ? memTotalPts[memTotalPts.length - 1]?.v : undefined;
   const diskTotalMax = diskTotalPts.length > 0 ? diskTotalPts[diskTotalPts.length - 1]?.v : undefined;
   const selected = containers.find((c) => c.id === selectedCid) ?? null;
+
+  const onTabListKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const idx = TABS.findIndex((t) => t.id === tab);
+    if (idx < 0) return;
+    let next = idx;
+    if (e.key === "ArrowRight") {
+      next = (idx + 1) % TABS.length;
+    } else if (e.key === "ArrowLeft") {
+      next = (idx - 1 + TABS.length) % TABS.length;
+    } else if (e.key === "Home") {
+      next = 0;
+    } else if (e.key === "End") {
+      next = TABS.length - 1;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const nextTab = TABS[next]!;
+    setTab(nextTab.id);
+    const btn = e.currentTarget.querySelector<HTMLElement>(`#tab-${nextTab.id}`);
+    btn?.focus();
+  };
 
   return (
     <div className="page">
@@ -267,20 +301,22 @@ export function HostPage() {
         <p className="muted">Loading…</p>
       )}
 
-      <div className="tabs" role="tablist" aria-label="Host sections">
-        {(
-          [
-            ["overview", "Overview"],
-            ["containers", "Containers"],
-            ["logs", "Logs"],
-          ] as const
-        ).map(([idTab, label]) => (
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label="Host sections"
+        onKeyDown={onTabListKeyDown}
+      >
+        {TABS.map(({ id: idTab, label }) => (
           <button
             key={idTab}
+            id={`tab-${idTab}`}
             type="button"
             role="tab"
             className="tab"
             aria-selected={tab === idTab}
+            aria-controls={`panel-${idTab}`}
+            tabIndex={tab === idTab ? 0 : -1}
             onClick={() => setTab(idTab)}
           >
             {label}
@@ -289,7 +325,12 @@ export function HostPage() {
       </div>
 
       {tab === "overview" ? (
-        <div className="stack">
+        <div
+          className="stack"
+          role="tabpanel"
+          id="panel-overview"
+          aria-labelledby="tab-overview"
+        >
           <div className="range-select" role="group" aria-label="Time range">
             {RANGES.map((r) => (
               <button
@@ -423,7 +464,12 @@ export function HostPage() {
       ) : null}
 
       {tab === "containers" ? (
-        <div className="stack">
+        <div
+          className="stack"
+          role="tabpanel"
+          id="panel-containers"
+          aria-labelledby="tab-containers"
+        >
           <div className="range-select" role="group" aria-label="Time range">
             {RANGES.map((r) => (
               <button
@@ -589,7 +635,7 @@ export function HostPage() {
       ) : null}
 
       {tab === "logs" ? (
-        <div className="stack">
+        <div className="stack" role="tabpanel" id="panel-logs" aria-labelledby="tab-logs">
           <div className="field" style={{ maxWidth: 240 }}>
             <label htmlFor="log-level">Minimum level</label>
             <select

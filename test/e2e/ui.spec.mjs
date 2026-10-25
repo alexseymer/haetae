@@ -13,9 +13,14 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
+
+/** Same CSP shape as internal/webui (style-src/script-src 'self', no unsafe-inline). */
+const APP_CSP =
+  "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 const WEB = process.env.E2E_WEB_URL;
 const SETUP_CODE_FILE = process.env.E2E_SETUP_CODE_FILE;
@@ -131,6 +136,84 @@ function attachNoiseListeners(p) {
   });
 }
 
+/**
+ * Prove React CSSOM style props take effect under the real app CSP.
+ * @param {string} label
+ * @param {"hosts"|"host-overview"} kind
+ */
+async function assertStylesUnderCsp(label, kind) {
+  if (kind === "host-overview") {
+    const chart = page.locator(".chart").first();
+    await chart.locator("svg").hover({ position: { x: 220, y: 90 } });
+    await eventuallyOk("chart tooltip visible", 5_000, async () => {
+      assert.ok((await page.locator(".chart-tooltip").count()) >= 1);
+    });
+  }
+  const evidence = await page.evaluate((mode) => {
+    const styleAttrCount = document.querySelectorAll("[style]").length;
+    const tooltip = document.querySelector(".chart-tooltip");
+    const swatches = [...document.querySelectorAll(".chart-swatch")];
+    const headerRow = document.querySelector(".page > .row");
+    return {
+      styleAttrCount,
+      tooltipPosition: tooltip ? getComputedStyle(tooltip).position : null,
+      tooltipLeft: tooltip ? getComputedStyle(tooltip).left : null,
+      swatchBackgrounds: swatches.map((el) => getComputedStyle(el).backgroundColor),
+      headerJustify:
+        mode === "hosts" && headerRow ? getComputedStyle(headerRow).justifyContent : null,
+    };
+  }, kind);
+  console.log(`CSP style evidence (${label}):`, JSON.stringify(evidence));
+  assert.ok(
+    evidence.styleAttrCount > 0,
+    `${label}: expected elements with style attributes from React CSSOM`,
+  );
+  if (kind === "hosts") {
+    assert.equal(
+      evidence.headerJustify,
+      "space-between",
+      `${label}: hosts header row justify-content should apply via CSSOM`,
+    );
+  }
+  if (kind === "host-overview") {
+    assert.equal(
+      evidence.tooltipPosition,
+      "absolute",
+      `${label}: chart tooltip computed position`,
+    );
+    assert.ok(
+      evidence.swatchBackgrounds.length > 0,
+      `${label}: expected legend swatches`,
+    );
+    for (const bg of evidence.swatchBackgrounds) {
+      assert.ok(
+        bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent",
+        `${label}: swatch background should be non-transparent, got ${bg}`,
+      );
+    }
+  }
+  return evidence;
+}
+
+/**
+ * Install CSP violation reporting that survives navigations (Node-side array).
+ * @param {import('playwright').BrowserContext} ctx
+ * @param {string[]} [sink]
+ */
+async function installCspReporting(ctx, sink = cspViolations) {
+  await ctx.exposeBinding("reportCspViolation", (_source, violation) => {
+    sink.push(String(violation));
+  });
+  await ctx.addInitScript(() => {
+    window.addEventListener("securitypolicyviolation", (e) => {
+      // report immediately to Node so navigations cannot wipe the list
+      window.reportCspViolation(
+        `${e.violatedDirective}:${e.blockedURI || e.sourceFile || ""}`,
+      );
+    });
+  });
+}
+
 async function signIn(email, password) {
   await page.goto(`${WEB}/login`);
   await eventuallyOk("login form", 10_000, async () => {
@@ -140,7 +223,7 @@ async function signIn(email, password) {
     });
   });
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   const respPromise = page.waitForResponse(
     (r) => r.url().includes("/api/login") && r.request().method() === "POST",
     { timeout: 15_000 },
@@ -199,29 +282,9 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       permissions: ["clipboard-read", "clipboard-write"],
       viewport: { width: 1280, height: 800 },
     });
-    await context.addInitScript(() => {
-      window.addEventListener("securitypolicyviolation", (e) => {
-        window.__cspViolations = window.__cspViolations || [];
-        window.__cspViolations.push(
-          `${e.violatedDirective}:${e.blockedURI || ""}`,
-        );
-      });
-    });
+    await installCspReporting(context);
     page = await context.newPage();
     attachNoiseListeners(page);
-    page.on("framenavigated", async () => {
-      try {
-        const v = await page.evaluate(() => window.__cspViolations || []);
-        if (Array.isArray(v) && v.length) {
-          cspViolations.push(...v);
-          await page.evaluate(() => {
-            window.__cspViolations = [];
-          });
-        }
-      } catch {
-        /* navigating */
-      }
-    });
   });
 
   after(async () => {
@@ -235,6 +298,46 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       await browser?.close();
     } catch {
       /* ignore */
+    }
+  });
+
+  it("0. negative control: harness records CSP violations for inline script/style", async () => {
+    const html = `<!DOCTYPE html><html><head><title>csp-neg</title></head><body>
+<div id="styled" style="color: red; background: blue">styled</div>
+<script>window.__inlineRan = 1</script>
+</body></html>`;
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy": APP_CSP,
+      });
+      res.end(html);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}/`;
+    // Separate page so closing the local server cannot poison the main page's
+    // console-error sink with ERR_CONNECTION_RESET.
+    const negPage = await context.newPage();
+    try {
+      cspViolations.length = 0;
+      await negPage.goto(url);
+      await eventuallyOk("CSP violations recorded for negative control", 5_000, () => {
+        assert.ok(
+          cspViolations.length >= 1,
+          `expected CSP violations, got ${JSON.stringify(cspViolations)}`,
+        );
+      });
+      const joined = cspViolations.join(" | ");
+      assert.match(joined, /script-src|style-src|inline/i);
+      console.log("negative-control CSP violations:", cspViolations.slice());
+      // Discard so later scenarios start clean.
+      cspViolations.length = 0;
+      consoleErrors.length = 0;
+      pageErrors.length = 0;
+    } finally {
+      await negPage.close();
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 
@@ -252,7 +355,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     await page.getByLabel("Setup code").fill("wrong-code");
     await page.getByLabel("Organisation name").fill(ORG_NAME);
     await page.getByLabel("Email").fill(ADMIN_EMAIL);
-    await page.getByLabel("Password").fill(ADMIN_PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(ADMIN_PASSWORD);
     await page.getByRole("button", { name: "Create organisation" }).click();
     await eventuallyOk("wrong setup code error", 10_000, async () => {
       const alert = page.getByRole("alert");
@@ -287,7 +390,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     });
 
     await page.getByLabel("Email").fill(ADMIN_EMAIL);
-    await page.getByLabel("Password").fill("definitely the wrong password");
+    await page.getByLabel("Password", { exact: true }).fill("definitely the wrong password");
     const badLogin = page.waitForResponse(
       (r) => r.url().includes("/api/login") && r.request().method() === "POST",
       { timeout: 15_000 },
@@ -301,7 +404,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       assert.match(await alert.innerText(), /invalid email or password/i);
     });
 
-    await page.getByLabel("Password").fill(ADMIN_PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(ADMIN_PASSWORD);
     const goodLogin = page.waitForResponse(
       (r) => r.url().includes("/api/login") && r.request().method() === "POST",
       { timeout: 15_000 },
@@ -317,7 +420,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     assertCleanPage("2.login");
   });
 
-  it("3. Add host dialog: Esc, create, copy, duplicate 409, token not reshown", async () => {
+  it("3. Add host dialog: Esc, create, copy, token not reshown", async () => {
     await ensureAdminSession();
     const addBtn = page.getByRole("button", { name: "Add host" });
     await addBtn.focus();
@@ -381,11 +484,10 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     const enrollCode = await new Promise((resolve) => enroll.on("close", resolve));
     assert.equal(enrollCode, 0, `enroll failed: ${enrollOut}`);
 
+    // Stay in the node process group (no detached) so Go harness kill(-pgid) reaps agent.
     agentProc = spawn(AGENT_BIN, ["run", "--state-dir", AGENT_STATE_DIR], {
       stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
     });
-    agentProc.unref();
 
     // Stay on hosts page; polling should flip the row to Online without reload.
     await eventuallyOk("host Online without reload", 30_000, async () => {
@@ -399,6 +501,8 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       assert.ok(href && href.startsWith("/hosts/"));
       hostId = href.replace("/hosts/", "");
     });
+
+    await assertStylesUnderCsp("4.hosts", "hosts");
 
     // Duplicate name 409 only applies once the host row exists (not for pending tokens).
     const addBtn = page.getByRole("button", { name: "Add host" });
@@ -484,10 +588,19 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       await card.waitFor({ state: "visible", timeout: 2000 });
       const text = await card.innerText();
       assert.match(text, /error/i);
-      assert.match(text, /×\d+|payment failed/);
+      assert.match(text, /×\d+/);
+      assert.match(text, /payment failed/);
       assert.ok(await card.locator(".badge", { hasText: /^error$/i }).count());
       assert.ok(await card.locator("pre.log-sample").count());
     });
+
+    // Back to overview so charts (and React style props) are in the DOM under CSP.
+    await page.getByRole("tab", { name: "Overview" }).click();
+    await eventuallyOk("overview charts again", 30_000, async () => {
+      const cpu = page.locator(".chart", { has: page.locator(".chart-title", { hasText: "CPU %" }) });
+      assert.ok((await cpu.locator("svg path").count()) >= 1);
+    });
+    await assertStylesUnderCsp("5.host-overview", "host-overview");
     assertCleanPage("5.host");
   });
 
@@ -557,54 +670,52 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       ignoreHTTPSErrors: true,
       viewport: { width: 1280, height: 800 },
     });
-    await memberCtx.addInitScript(() => {
-      window.addEventListener("securitypolicyviolation", (e) => {
-        window.__cspViolations = window.__cspViolations || [];
-        window.__cspViolations.push(`${e.violatedDirective}`);
+    try {
+      const memberCsp = [];
+      await installCspReporting(memberCtx, memberCsp);
+      const memberPage = await memberCtx.newPage();
+      const memberNoise = { console: [], page: [] };
+      memberPage.on("console", (msg) => {
+        if (msg.type() !== "error") return;
+        const text = msg.text();
+        if (isExpectedResourceConsoleError(text)) return;
+        memberNoise.console.push(text);
       });
-    });
-    const memberPage = await memberCtx.newPage();
-    const memberNoise = { console: [], page: [] };
-    memberPage.on("console", (msg) => {
-      if (msg.type() !== "error") return;
-      const text = msg.text();
-      if (isExpectedResourceConsoleError(text)) return;
-      memberNoise.console.push(text);
-    });
-    memberPage.on("pageerror", (err) => memberNoise.page.push(String(err)));
-    await memberPage.goto(`${WEB}/login`);
-    await memberPage.getByLabel("Email").fill(MEMBER_EMAIL);
-    await memberPage.getByLabel("Password").fill(MEMBER_PASSWORD);
-    await memberPage.getByRole("button", { name: "Sign in" }).click();
-    await eventuallyOk("member hosts page", 15_000, async () => {
-      await memberPage.getByRole("heading", { name: "Hosts" }).waitFor({
-        state: "visible",
-        timeout: 2000,
+      memberPage.on("pageerror", (err) => memberNoise.page.push(String(err)));
+      await memberPage.goto(`${WEB}/login`);
+      await memberPage.getByLabel("Email").fill(MEMBER_EMAIL);
+      await memberPage.getByLabel("Password", { exact: true }).fill(MEMBER_PASSWORD);
+      await memberPage.getByRole("button", { name: "Sign in" }).click();
+      await eventuallyOk("member hosts page", 15_000, async () => {
+        await memberPage.getByRole("heading", { name: "Hosts" }).waitFor({
+          state: "visible",
+          timeout: 2000,
+        });
       });
-    });
-    assert.equal(await memberPage.getByRole("button", { name: "Add host" }).count(), 0);
+      assert.equal(await memberPage.getByRole("button", { name: "Add host" }).count(), 0);
 
-    await memberPage.goto(`${WEB}/settings`);
-    await eventuallyOk("settings without add-user", 10_000, async () => {
-      await memberPage.getByRole("heading", { name: "Settings" }).waitFor({
-        state: "visible",
-        timeout: 2000,
+      await memberPage.goto(`${WEB}/settings`);
+      await eventuallyOk("settings without add-user", 10_000, async () => {
+        await memberPage.getByRole("heading", { name: "Settings" }).waitFor({
+          state: "visible",
+          timeout: 2000,
+        });
+        assert.equal(await memberPage.getByRole("heading", { name: "Add user" }).count(), 0);
+        assert.equal(await memberPage.locator("#new-user-email").count(), 0);
       });
-      assert.equal(await memberPage.getByRole("heading", { name: "Add user" }).count(), 0);
-      assert.equal(await memberPage.locator("#new-user-email").count(), 0);
-    });
 
-    const getHost = await memberPage.request.get(`${WEB}/api/hosts/${hostId}`);
-    assert.equal(getHost.status(), 200, await getHost.text());
-    const postEnroll = await memberPage.request.post(`${WEB}/api/hosts/enrollment`, {
-      data: { name: "member-should-fail", ttlHours: 1 },
-      headers: { "X-Haetae-Request": "1" },
-    });
-    assert.equal(postEnroll.status(), 403, await postEnroll.text());
-    assert.deepEqual(memberNoise.console, [], `member console: ${memberNoise.console}`);
-    assert.deepEqual(memberNoise.page, [], `member pageerror: ${memberNoise.page}`);
-
-    await memberCtx.close();
+      const getHost = await memberPage.request.get(`${WEB}/api/hosts/${hostId}`);
+      assert.equal(getHost.status(), 200, await getHost.text());
+      const postEnroll = await memberPage.request.post(`${WEB}/api/hosts/enrollment`, {
+        data: { name: "member-should-fail", ttlHours: 1 },
+        headers: { "X-Haetae-Request": "1" },
+      });
+      assert.equal(postEnroll.status(), 403, await postEnroll.text());
+      assert.deepEqual(memberNoise.console, [], `member console: ${memberNoise.console}`);
+      assert.deepEqual(memberNoise.page, [], `member pageerror: ${memberNoise.page}`);
+    } finally {
+      await memberCtx.close();
+    }
     assertCleanPage("7.settings");
   });
 
