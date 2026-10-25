@@ -340,6 +340,14 @@ func (g *Gateway) receiveLoop(ctx context.Context, stream *connect.BidiStream[ag
 			g.handleDeployLog(ctx, s, m.DeployLog)
 		case *agentv1.ConnectRequest_BranchUpdate:
 			g.handleBranchUpdate(ctx, s, m.BranchUpdate)
+		case *agentv1.ConnectRequest_SbomReport:
+			g.handleSbomReport(ctx, s, m.SbomReport)
+		case *agentv1.ConnectRequest_SecurityReport:
+			g.handleSecurityReport(ctx, s, m.SecurityReport)
+		case *agentv1.ConnectRequest_OutboundBatch:
+			g.handleOutboundBatch(ctx, s, m.OutboundBatch)
+		case *agentv1.ConnectRequest_ImageCandidates:
+			g.handleImageCandidates(ctx, s, m.ImageCandidates)
 		case *agentv1.ConnectRequest_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate hello"))
 		default:
