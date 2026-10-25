@@ -13,6 +13,7 @@ export function HostsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [hosts, setHosts] = useState<HostSummary[] | null>(null);
+  const [openIncidentCount, setOpenIncidentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [created, setCreated] = useState<EnrollmentResponse | null>(null);
@@ -40,6 +41,15 @@ export function HostsPage() {
     } catch (err) {
       if (gen !== loadGenRef.current || !mountedRef.current) return;
       setError(err instanceof ApiError ? err.message : "Failed to load hosts");
+      return;
+    }
+    try {
+      const incs = await api.incidents({ state: "open", limit: 100 });
+      if (gen !== loadGenRef.current || !mountedRef.current) return;
+      setOpenIncidentCount(incs.incidents.length);
+    } catch {
+      if (gen !== loadGenRef.current || !mountedRef.current) return;
+      setOpenIncidentCount(0);
     }
   }, []);
 
@@ -75,7 +85,15 @@ export function HostsPage() {
   return (
     <div className="page">
       <div className="row" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
-        <h1>Hosts</h1>
+        <div className="row">
+          <h1 style={{ margin: 0 }}>Hosts</h1>
+          {openIncidentCount > 0 ? (
+            <Link to="/incidents" className="incident-count-badge">
+              {openIncidentCount} open{" "}
+              {openIncidentCount === 1 ? "incident" : "incidents"}
+            </Link>
+          ) : null}
+        </div>
         {isAdmin ? (
           <button type="button" className="btn" onClick={openDialog}>
             Add host

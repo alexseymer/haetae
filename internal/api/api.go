@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/alexseymer/haetae/internal/auth"
+	"github.com/alexseymer/haetae/internal/chat"
 	"github.com/alexseymer/haetae/internal/deploys"
 	"github.com/alexseymer/haetae/internal/secrets"
 	"github.com/alexseymer/haetae/internal/store"
@@ -80,6 +81,10 @@ type Config struct {
 	Secrets *secrets.Box
 	// RefreshWatch pushes a new WatchSet to a connected agent after project changes.
 	RefreshWatch func(hostID uuid.UUID)
+
+	// Chat handles inbound web messages, actions and channel enablement.
+	// Nil disables chat write endpoints; channel list still reports web as enabled.
+	Chat *chat.Service
 }
 
 // API serves the JSON endpoints.
@@ -152,6 +157,8 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("POST /api/users", a.authenticate(a.requireAdmin(http.HandlerFunc(a.handleCreateUser))))
 	a.registerData(mux)
 	a.registerProjects(mux)
+	a.registerAlerts(mux)
+	a.registerChat(mux)
 
 	// Anything else under /api is a 404 in JSON, never the web app.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

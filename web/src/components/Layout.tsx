@@ -45,6 +45,13 @@ export function Layout() {
           <span className="brand-name">Haetae</span>
           {orgName ? <span className="brand-org">{orgName}</span> : null}
         </Link>
+        <nav className="topnav" aria-label="Main">
+          <NavLink to="/" end>
+            Hosts
+          </NavLink>
+          <NavLink to="/incidents">Incidents</NavLink>
+          <NavLink to="/chat">Chat</NavLink>
+        </nav>
         <div className="menu" ref={menuRef}>
           <button
             type="button"
