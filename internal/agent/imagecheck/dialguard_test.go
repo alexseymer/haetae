@@ -32,6 +32,12 @@ func TestIsPublic(t *testing.T) {
 		"fd00::1":          false,
 		"fe80::1":          false,
 		"::ffff:127.0.0.1": false,
+		"0.0.0.1":          false, // Linux routes 0.0.0.0/8 to localhost
+		"240.0.0.1":        false,
+		"203.0.113.9":      false,
+		"64:ff9b::7f00:1":  false, // NAT64 form of 127.0.0.1
+		"2002:7f00:1::":    false, // 6to4 form of 127.0.0.1
+		"2001::1":          false, // Teredo
 	} {
 		if got := isPublic(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("isPublic(%s) = %v, want %v", addr, got, want)
@@ -39,7 +45,7 @@ func TestIsPublic(t *testing.T) {
 	}
 }
 
-func TestRegistryIsPrivate(t *testing.T) {
+func TestPrivateRegistry(t *testing.T) {
 	ctx := context.Background()
 	for host, want := range map[string]bool{
 		"127.0.0.1:5000": true,
@@ -48,18 +54,19 @@ func TestRegistryIsPrivate(t *testing.T) {
 		"10.0.0.5":       true,
 		"8.8.8.8":        false,
 	} {
-		if got := registryIsPrivate(ctx, host); got != want {
-			t.Errorf("registryIsPrivate(%s) = %v, want %v", host, got, want)
+		if got := privateRegistry(ctx, host) != nil; got != want {
+			t.Errorf("privateRegistry(%s) allowance = %v, want %v", host, got, want)
 		}
 	}
 }
 
-func TestGuardedDialRefusesPrivateForPublicRegistry(t *testing.T) {
+func listen(t *testing.T) net.Listener {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	t.Cleanup(func() { _ = ln.Close() })
 	go func() {
 		for {
 			c, err := ln.Accept()
@@ -69,18 +76,48 @@ func TestGuardedDialRefusesPrivateForPublicRegistry(t *testing.T) {
 			_ = c.Close()
 		}
 	}()
+	return ln
+}
+
+func TestGuardedDialAllowance(t *testing.T) {
+	ln := listen(t)
 	ctx := context.Background()
+	port := portOf(ln)
+	loop := netip.MustParseAddr("127.0.0.1")
+
+	// No allowance (a public registry): loopback is refused, by IP and by name.
 	if _, err := guardedDial(ctx, "tcp", ln.Addr().String()); !errors.Is(err, errBlockedAddr) {
-		t.Fatalf("public registry context: want blocked, got %v", err)
+		t.Fatalf("no allowance, loopback IP: want blocked, got %v", err)
 	}
-	if _, err := guardedDial(withPrivateAllowed(ctx, false), "tcp", "localhost:"+portOf(ln)); !errors.Is(err, errBlockedAddr) {
-		t.Fatalf("hostname resolving to loopback: want blocked, got %v", err)
+	if _, err := guardedDial(ctx, "tcp", "localhost:"+port); !errors.Is(err, errBlockedAddr) {
+		t.Fatalf("no allowance, hostname resolving to loopback: want blocked, got %v", err)
 	}
-	c, err := guardedDial(withPrivateAllowed(ctx, true), "tcp", ln.Addr().String())
+
+	// A self-hosted registry on loopback may be dialled, and only at the
+	// resolved address.
+	allow := &privateAllowance{host: "127.0.0.1", addrs: []netip.Addr{loop}}
+	actx := withPrivateAllowance(ctx, allow)
+	c, err := guardedDial(actx, "tcp", ln.Addr().String())
 	if err != nil {
-		t.Fatalf("private registry context: %v", err)
+		t.Fatalf("registry host with allowance: %v", err)
 	}
 	_ = c.Close()
+
+	// The allowance is for that host only: a token realm or redirect target
+	// elsewhere on private space stays blocked, whatever name it uses.
+	for _, target := range []string{"localhost:" + port, "[::1]:" + port, "169.254.169.254:80", "10.1.2.3:443"} {
+		if _, err := guardedDial(actx, "tcp", target); !errors.Is(err, errBlockedAddr) {
+			t.Errorf("allowance for 127.0.0.1 must not cover %s, got %v", target, err)
+		}
+	}
+
+	// DNS rebinding: the allowance pins the addresses seen at lookup time. A
+	// host that now resolves somewhere else (or to a different private
+	// address) is not reachable through it.
+	pinned := &privateAllowance{host: "localhost", addrs: []netip.Addr{netip.MustParseAddr("10.9.9.9")}}
+	if _, err := guardedDial(withPrivateAllowance(ctx, pinned), "tcp", "localhost:"+port); !errors.Is(err, errBlockedAddr) {
+		t.Fatalf("address outside the pinned set: want blocked, got %v", err)
+	}
 }
 
 // A public HTTPS registry must not be able to bounce the agent to the local
@@ -116,7 +153,7 @@ func TestRegistryRedirectToLoopbackRefused(t *testing.T) {
 	// End to end through the production client: the token realm points at
 	// loopback while the registry is public; the guarded dialer refuses it.
 	c := &RegistryClient{Timeout: 2 * time.Second}
-	ctx := withPrivateAllowed(context.Background(), false)
+	ctx := context.Background()
 	_, err := c.bearerToken(ctx, `Bearer realm="https://`+strings.TrimPrefix(local.URL, "http://")+`/token"`, "library/x")
 	if err == nil || !errors.Is(err, errBlockedAddr) {
 		t.Fatalf("realm on loopback: want blocked, got %v", err)

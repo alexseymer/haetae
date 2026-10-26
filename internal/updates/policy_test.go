@@ -39,9 +39,9 @@ func TestDecideTable(t *testing.T) {
 			want: DecisionEligible,
 		},
 		{
-			name: "created unknown waits",
+			name: "created unknown is not eligible even when long seen",
 			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateFirstSeen: old, Status: "ok", Now: now},
-			want: DecisionWait,
+			want: DecisionUnknown,
 		},
 		{
 			name: "first seen unknown waits",

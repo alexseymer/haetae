@@ -145,8 +145,8 @@ func (l *Launcher) Run(ctx context.Context, req LaunchRequest) LaunchResult {
 		// child keeps the output pipes open and would block Wait for as long
 		// as it lives. WaitDelay bounds that wait regardless.
 		cmd.Cancel = func() error {
-			if cmd.Process == nil {
-				return nil
+			if cmd.Process == nil || cmd.Process.Pid <= 0 {
+				return nil // kill(0, ...) would signal the agent's own group
 			}
 			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 				return cmd.Process.Kill()
@@ -337,7 +337,7 @@ func killProcessGroup(cmd *exec.Cmd) {
 var helperEnvKeys = []string{
 	"PATH", "HOME", "TMPDIR", "LANG", "TZ",
 	"DOCKER_HOST", "DOCKER_API_VERSION", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY",
-	"SSL_CERT_FILE", "SSL_CERT_DIR",
+	"SSL_CERT_FILE", "SSL_CERT_DIR", "XDG_RUNTIME_DIR", // rootless Docker socket discovery
 	"HAETAE_INVENTORY_TEST", // test-only switch checked by the helper itself
 }
 

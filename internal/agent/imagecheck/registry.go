@@ -79,7 +79,7 @@ func (c *RegistryClient) Lookup(ctx context.Context, ref string) (ManifestInfo, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout())
 	defer cancel()
-	ctx = withPrivateAllowed(ctx, registryIsPrivate(ctx, host))
+	ctx = withPrivateAllowance(ctx, privateRegistry(ctx, host))
 
 	scheme := registryScheme(host)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", scheme, host, repo, url.PathEscape(tag))

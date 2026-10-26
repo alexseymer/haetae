@@ -3,6 +3,7 @@
 package scan
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -109,7 +111,8 @@ func livePids(cgroupPath string) []int {
 		if err != nil || pid <= 0 {
 			continue
 		}
-		if unix.Kill(pid, 0) == nil {
+		// EPERM still means the process exists (it changed credentials).
+		if err := unix.Kill(pid, 0); err == nil || errors.Is(err, unix.EPERM) {
 			out = append(out, pid)
 		}
 	}
@@ -221,8 +224,10 @@ func readMemoryPeak(cgroupPath string) int64 {
 	return n
 }
 
+var delegateMu sync.Mutex
+
 // agentLeaf holds the agent's own process once it has delegated its cgroup.
-const agentLeaf = "agent"
+const agentLeaf = "haetae-agent-self"
 
 // delegatedParent returns the agent's service cgroup with the memory and
 // pids controllers enabled for children. cgroup v2 only lets a cgroup
@@ -230,6 +235,8 @@ const agentLeaf = "agent"
 // into the "agent" leaf; inventory leaves become its siblings. The systemd
 // unit sets Delegate=yes so this subtree belongs to the agent user.
 func delegatedParent(base string) (string, error) {
+	delegateMu.Lock() // concurrent scans must not race on cgroup.procs / subtree_control
+	defer delegateMu.Unlock()
 	dir, err := agentCgroupDir(base)
 	if err != nil {
 		return "", err

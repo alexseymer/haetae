@@ -80,8 +80,13 @@ func Decide(in Input) Result {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	// Unknown age fails closed: it is treated as young.
-	young := in.CandidateCreated.IsZero() || in.CandidateFirstSeen.IsZero()
+	// Unknown age fails closed. Some builders (ko, apko, bazel) omit "created";
+	// the agent cannot verify such an image's age before pulling it, so it is
+	// never pulled automatically and the reason says so (not an endless wait).
+	if in.CandidateCreated.IsZero() {
+		return Result{Decision: DecisionUnknown, Reason: "candidate image has no creation time; not eligible for automatic pull"}
+	}
+	young := in.CandidateFirstSeen.IsZero()
 	if !young {
 		since := in.CandidateCreated
 		if in.CandidateFirstSeen.After(since) {
