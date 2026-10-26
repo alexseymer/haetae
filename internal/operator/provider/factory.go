@@ -61,7 +61,7 @@ func resolveBase(cfg Config, def string) (base string, local bool, err error) {
 		return "", false, errors.New("provider: base URL must be http(s) with a host")
 	}
 	local = isLocalHost(u.Hostname())
-	if u.Scheme == "http" && !(cfg.Kind == "local" && local) {
+	if u.Scheme == "http" && (cfg.Kind != "local" || !local) {
 		return "", false, errors.New("provider: base URL must use https unless kind is local and the host is local")
 	}
 	return strings.TrimRight(u.String(), "/"), local, nil

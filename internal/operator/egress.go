@@ -48,14 +48,14 @@ func Egress(ctx context.Context, p provider.Provider, redactFn func(string) (str
 	deadline := time.Now().Add(egressBudget)
 	for i, s := range in {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrRedaction, err)
+			return nil, fmt.Errorf("%w: %w", ErrRedaction, err)
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("%w: time budget exceeded", ErrRedaction)
 		}
 		r, err := safeRedact(redactFn, s)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrRedaction, err)
+			return nil, fmt.Errorf("%w: %w", ErrRedaction, err)
 		}
 		out[i] = r
 	}

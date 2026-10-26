@@ -195,7 +195,7 @@ func decodeStrict(text string, v any) error {
 	dec := json.NewDecoder(bytes.NewReader([]byte(text[i:])))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("%w: %v", ErrBadResponse, err)
+		return fmt.Errorf("%w: %w", ErrBadResponse, err)
 	}
 	return nil
 }

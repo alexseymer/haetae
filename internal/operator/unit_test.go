@@ -46,12 +46,12 @@ func TestValidateDropsStatementsWithoutValidEvidence(t *testing.T) {
 func TestStatementTextIsCleanedAndLimited(t *testing.T) {
 	c := mkConv(ev("ev_1", "hosts", true, `{}`))
 	long := strings.Repeat("ä", 900)
-	kept, _, _ := validate(c, []wireStatement{{Text: "a\x00b\nc‮d [ev_1 [ev_ " + long, Evidence: []string{"ev_1"}}})
+	kept, _, _ := validate(c, []wireStatement{{Text: "a\x00b\nc\u202ed [ev_1 [ev_ " + long, Evidence: []string{"ev_1"}}})
 	if len(kept) != 1 {
 		t.Fatal("dropped")
 	}
 	got := kept[0].Text
-	if strings.ContainsAny(got, "\x00\n‮") || strings.Contains(got, "[ev_") {
+	if strings.ContainsAny(got, "\x00\n\u202e") || strings.Contains(got, "[ev_") {
 		t.Fatalf("not cleaned: %q", got)
 	}
 	if n := len([]rune(got)); n > maxStatementLen {

@@ -38,7 +38,7 @@ func (f *Fake) Complete(ctx context.Context, req Request) (Response, error) {
 	f.mu.Unlock()
 	if f.Block {
 		<-ctx.Done()
-		return Response{}, fmt.Errorf("%w: %v", ErrUnavailable, ctx.Err())
+		return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, ctx.Err())
 	}
 	if f.Script != nil {
 		return f.Script(n, req)

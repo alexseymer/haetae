@@ -169,7 +169,7 @@ func (s *Service) askOperator(ctx context.Context, acc store.ChatAccount, channe
 				s.log.Error("operator ask panic", "panic", r)
 			}
 		}()
-		cctx, cancel := context.WithTimeout(context.Background(), askTimeout)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), askTimeout)
 		defer cancel()
 		ans, err := callTimeout(cctx, func(c context.Context) (operator.Answer, error) {
 			return op.Ask(c, acc.OrgID, question)

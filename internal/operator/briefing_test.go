@@ -42,7 +42,7 @@ func TestValidateBriefing(t *testing.T) {
 		"prefix number":  "22 hosts, 14 containers, 13 running. db-1 down",
 		"control":        "2 hosts, 14 containers, 13 running.\x07 db-1 down",
 		"carriage":       "2 hosts, 14 containers, 13 running.\r db-1 down",
-		"bidi":           "2 hosts, 14 containers, 13 running. db-1 down‮",
+		"bidi":           "2 hosts, 14 containers, 13 running. db-1 down\u202e",
 	}
 	for name, in := range cases {
 		err := validateBriefing(in, facts, rule)

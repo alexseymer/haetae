@@ -143,7 +143,7 @@ func briefingPreserves(ruleText, aiText string) bool {
 
 func tokens(s string) []string {
 	f := func(r rune) bool {
-		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("._:/-", r))
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("._:/-", r)
 	}
 	var out []string
 	for _, t := range strings.FieldsFunc(s, f) {

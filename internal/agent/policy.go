@@ -138,8 +138,7 @@ func checkAllowed(level string, cmd *agentv1.Command) string {
 		return ""
 	}
 	auth := cmd.GetAuthorization()
-	authName := "unspecified"
-	need := ""
+	var authName, need string
 	switch auth {
 	case agentv1.Authorization_AUTHORIZATION_APPROVED:
 		authName, need = "approved", LevelSuggest

@@ -607,9 +607,8 @@ func (s *Service) toolListEvents(ctx context.Context, org uuid.UUID, hostID *uui
 		if a.Container == "" {
 			continue
 		}
-		m, ok := idByName[a.HostID]
-		if !ok {
-			m = map[string]string{}
+		if _, ok := idByName[a.HostID]; !ok {
+			m := map[string]string{}
 			cs, err := s.cfg.Store.ListContainers(ctx, org, a.HostID)
 			if err != nil {
 				return nil, err
@@ -807,7 +806,7 @@ func (s *Service) toolGetLogs(ctx context.Context, org uuid.UUID, containerID st
 	res, err := s.cfg.Commander.Send(cctx, c.HostID, &agentv1.Command{
 		Id: uuid.NewString(),
 		Kind: &agentv1.Command_QueryLogs{QueryLogs: &agentv1.QueryLogs{
-			ContainerId: containerID, FromUnixMs: from.UnixMilli(), ToUnixMs: to.UnixMilli(), MaxLines: uint32(maxLines),
+			ContainerId: containerID, FromUnixMs: from.UnixMilli(), ToUnixMs: to.UnixMilli(), MaxLines: uint32(max(maxLines, 0)), //nolint:gosec // G115: validated to 1..200 by the caller
 		}},
 	})
 	if err != nil {

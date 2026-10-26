@@ -71,7 +71,7 @@ func doJSON(ctx context.Context, client *http.Client, endpoint string, headers m
 		}
 		return fmt.Errorf("%w: request failed: %s", ErrUnavailable, scrub(err.Error(), secret))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, rerr := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	tooBig := len(body) > maxBodyBytes
 

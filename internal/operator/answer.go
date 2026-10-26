@@ -57,7 +57,7 @@ func parseAnswer(text string) (wireAnswer, error) {
 	dec.DisallowUnknownFields()
 	var w wireAnswer
 	if err := dec.Decode(&w); err != nil {
-		return wireAnswer{}, fmt.Errorf("%w: %v", ErrBadResponse, err)
+		return wireAnswer{}, fmt.Errorf("%w: %w", ErrBadResponse, err)
 	}
 	return w, nil
 }
