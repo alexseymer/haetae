@@ -193,11 +193,11 @@ The first run (table further below) exposed a matcher bug: the compact SBOM hand
 
 | Item | Result |
 |---|---|
-| Real conntrack RSS | **Not measurable here:** `/proc/net/nf_conntrack` is missing; the agent’s kernel listener is unavailable on this VM. |
+| Real conntrack RSS | **Measured 2026-10-26, agent run as root with the netlink listener live** (`/proc/net/nf_conntrack` is absent here, but the `nf_conntrack` sysctls and netlink work; the first run wrongly treated that as unavailable): max **17.29 MiB**, mean 16.51 MiB, peak (VmHWM) **17.41 MiB**, 180 samples over 3 min, 4 busybox containers, budget 50 MiB. Without conntrack (non-root run): peak 20.21 MiB. |
 | Fake-source heap bench | `go test -bench=BenchmarkHighRateHeap -benchtime=1x -run=^$ -v ./internal/agent/conntrack/` |
 | Measured | ~**195 200** events over 10 s (~**19 520**/s); heap in-use growth **24 576** bytes (**0.02 MiB**); target ≪ 10 MiB — **pass** |
 
-Real conntrack RSS with a live netlink listener was **not** recorded on this host.
+Real conntrack RSS with a live netlink listener was measured as root on 2026-10-26 (table row above); the first run (2026-10-25) could not, because availability detection relied on `/proc/net/nf_conntrack`.
 
 ---
 
@@ -214,6 +214,6 @@ Bench pulls (`node:22-bookworm`, `python:3.12`, `debian:12-slim`, `ubuntu:24.04`
 - [x] Measured Syft peak / OOM under 256m and 128m (alpine, node, python)
 - [x] Measured Grype vs Trivy counts, Jaccard, and disagreement samples for all four images
 - [x] Measured agent VmRSS/VmHWM over 3 minutes with scan + security started
-- [x] Conntrack: fake-source heap measured; real RSS explicitly not measurable
+- [x] Conntrack: fake-source heap measured; real RSS measured as root (17.41 MiB peak)
 - [x] Scripts under `bench/m7/`; Go under `test/bench` with tag `bench`; `make bench-m7`
 - [x] Host noted as **4 GB** VM
