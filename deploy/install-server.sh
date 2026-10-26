@@ -121,9 +121,62 @@ valid_port "$HAETAE_GATEWAY_PORT" || die "haetae: invalid HAETAE_GATEWAY_PORT (i
 valid_project "$COMPOSE_PROJECT_NAME" || die "haetae: invalid COMPOSE_PROJECT_NAME (lowercase letters, digits, dash, underscore)"
 
 export COMPOSE_PROJECT_NAME
+# haetae.env is also read for interpolation so that HAETAE_VULN_DB_URL and
+# HAETAE_GATEWAY_NAMES set there override the defaults in compose.yaml.
+# (Plain env_file entries cannot override a value in "environment:".)
 compose() {
-	docker compose --project-directory "$HAETAE_DIR" -f "$HAETAE_DIR/compose.yaml" "$@"
+	docker compose --project-directory "$HAETAE_DIR" --env-file "$HAETAE_DIR/.env" --env-file "$HAETAE_DIR/haetae.env" -f "$HAETAE_DIR/compose.yaml" "$@"
 }
+
+# Create the user settings file once; never overwrite it (it may hold tokens).
+create_user_env() {
+	mkdir -p "$HAETAE_DIR"
+	if [ ! -e "$HAETAE_DIR/haetae.env" ]; then
+		: >"$HAETAE_DIR/haetae.env"
+		chmod 0600 "$HAETAE_DIR/haetae.env"
+		cat >"$HAETAE_DIR/haetae.env" <<'USERENV'
+# Haetae server settings. Uncomment and edit, then run: sh install-server.sh
+# (or: docker compose up -d in this directory). Keep this file private: it can
+# hold tokens. The installer creates it once and never overwrites it.
+# One KEY=value per line, no quotes needed.
+
+# Chat: Telegram bot token
+# HAETAE_TELEGRAM_TOKEN=
+# Chat: Slack bot token (xoxb-...) and app-level token (xapp-..., Socket Mode)
+# HAETAE_SLACK_BOT_TOKEN=
+# HAETAE_SLACK_APP_TOKEN=
+# Chat: email (SMTP server host:port, sender address, login)
+# HAETAE_SMTP_ADDR=smtp.example.com:587
+# HAETAE_SMTP_FROM=haetae@example.com
+# HAETAE_SMTP_USER=
+# HAETAE_SMTP_PASS=
+# HAETAE_SMTP_INSECURE=1 allows plain-text SMTP (testing only)
+# Chat: Signal (URL of your signal-cli REST add-on)
+# HAETAE_SIGNAL_URL=
+
+# AI provider (without these only rule-based alerts run)
+# HAETAE_AI_PROVIDER=
+# HAETAE_AI_BASE_URL=
+# HAETAE_AI_MODEL=
+# HAETAE_AI_API_KEY=
+
+# Web TLS: your own certificate and key (paths inside the container)
+# HAETAE_WEB_TLS_CERT=
+# HAETAE_WEB_TLS_KEY=
+# Reverse proxies (addresses or CIDRs) whose X-Forwarded-For is trusted
+# HAETAE_TRUSTED_PROXIES=
+
+# Vulnerability database listing URL (default: Anchore; "off" disables downloads)
+# HAETAE_VULN_DB_URL=
+# Extra names for the gateway certificate (default: HAETAE_HOST)
+# HAETAE_GATEWAY_NAMES=
+USERENV
+		printf 'haetae: created %s/haetae.env for your settings (chat, AI, TLS); it is kept on upgrades.\n' "$HAETAE_DIR"
+	fi
+	chmod 0600 "$HAETAE_DIR/haetae.env"
+}
+
+create_user_env
 
 # Refuse foreign listeners; our own stack may already hold the ports on upgrade.
 already=
@@ -174,13 +227,16 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    env_file:
+      - haetae.env
     environment:
       HAETAE_DATABASE_URL: postgres://haetae:${HAETAE_DB_PASSWORD:?HAETAE_DB_PASSWORD is required}@db:5432/haetae?sslmode=disable
       HAETAE_WEB_ADDR: ":8080"
       HAETAE_GATEWAY_ADDR: ":8443"
       HAETAE_WEB_URL: https://${HAETAE_HOST:?HAETAE_HOST is required}:${HAETAE_WEB_PORT:?HAETAE_WEB_PORT is required}
       HAETAE_GATEWAY_URL: https://${HAETAE_HOST:?HAETAE_HOST is required}:${HAETAE_GATEWAY_PORT:?HAETAE_GATEWAY_PORT is required}
-      HAETAE_GATEWAY_NAMES: ${HAETAE_HOST:?HAETAE_HOST is required}
+      HAETAE_GATEWAY_NAMES: ${HAETAE_GATEWAY_NAMES:-${HAETAE_HOST:?HAETAE_HOST is required}}
+      HAETAE_VULN_DB_URL: ${HAETAE_VULN_DB_URL:-https://grype.anchore.io/databases/v6/latest.json}
     ports:
       - "${HAETAE_WEB_PORT:?HAETAE_WEB_PORT is required}:8080"
       - "${HAETAE_GATEWAY_PORT:?HAETAE_GATEWAY_PORT is required}:8443"
@@ -279,5 +335,5 @@ fi
 
 cat <<EOF
 
-Files are in $HAETAE_DIR (compose.yaml and .env).
+Files are in $HAETAE_DIR (compose.yaml, .env and haetae.env for your settings).
 EOF

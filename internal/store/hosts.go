@@ -223,7 +223,7 @@ func (s *Store) EnrollHost(ctx context.Context, token string, info HostInfo, iss
 // GetHost returns the host with the given id in orgID, or ErrNotFound
 // (also when the host belongs to another org).
 func (s *Store) GetHost(ctx context.Context, orgID, id uuid.UUID) (Host, error) {
-	h, err := scanHost(s.pool.QueryRow(ctx, hostSelect+` WHERE org_id = $1 AND id = $2`, orgID, id))
+	h, err := scanHost(s.pool.QueryRow(ctx, hostSelect+` WHERE org_id = $1 AND id = $2 AND revoked_at IS NULL`, orgID, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Host{}, fmt.Errorf("store: GetHost: %w", ErrNotFound)
@@ -248,9 +248,48 @@ func (s *Store) HostForAgent(ctx context.Context, id uuid.UUID) (Host, error) {
 	return h, nil
 }
 
-// ListHosts returns all hosts for orgID ordered by name.
+// RevokeHost marks a host revoked: it disappears from every list and lookup,
+// and the gateway refuses its certificate. Open incidents and firing alerts of
+// the host are resolved (nothing is deleted). Returns ErrNotFound for an
+// unknown, foreign or already revoked host. Server role.
+func (s *Store) RevokeHost(ctx context.Context, orgID, id uuid.UUID) (Host, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Host{}, fmt.Errorf("store: RevokeHost: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	h, err := scanHost(tx.QueryRow(ctx, `
+		UPDATE hosts SET revoked_at = now(), connected = false
+		WHERE org_id = $1 AND id = $2 AND revoked_at IS NULL
+		RETURNING id, org_id, name, hostname, os, kernel, arch, docker_version, agent_version,
+			cert_serial, enrolled_at, last_seen_at, connected, revoked_at`, orgID, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Host{}, fmt.Errorf("store: RevokeHost: %w", ErrNotFound)
+		}
+		return Host{}, fmt.Errorf("store: RevokeHost: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE alerts SET state = $3, resolved_at = now(), last_at = now()
+		WHERE org_id = $1 AND host_id = $2 AND state = $4`,
+		orgID, id, AlertResolved, AlertFiring); err != nil {
+		return Host{}, fmt.Errorf("store: RevokeHost: alerts: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE incidents SET state = $3, resolved_at = now(), updated_at = now()
+		WHERE org_id = $1 AND host_id = $2 AND state = $4`,
+		orgID, id, IncidentResolved, IncidentOpen); err != nil {
+		return Host{}, fmt.Errorf("store: RevokeHost: incidents: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Host{}, fmt.Errorf("store: RevokeHost: %w", err)
+	}
+	return h, nil
+}
+
+// ListHosts returns the active (not revoked) hosts for orgID ordered by name.
 func (s *Store) ListHosts(ctx context.Context, orgID uuid.UUID) ([]Host, error) {
-	rows, err := s.pool.Query(ctx, hostSelect+` WHERE org_id = $1 ORDER BY name`, orgID)
+	rows, err := s.pool.Query(ctx, hostSelect+` WHERE org_id = $1 AND revoked_at IS NULL ORDER BY name`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("store: ListHosts: %w", err)
 	}
@@ -282,7 +321,7 @@ func (s *Store) MarkConnected(ctx context.Context, id uuid.UUID, info HostInfo, 
 			arch = $6,
 			docker_version = $7,
 			agent_version = $8
-		WHERE id = $1`,
+		WHERE id = $1 AND revoked_at IS NULL`,
 		id, at,
 		info.Hostname, info.OS, info.Kernel, info.Arch, info.DockerVersion, info.AgentVersion,
 	)

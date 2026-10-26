@@ -27,3 +27,16 @@ func TestEmailRejectsHeaderInjection(t *testing.T) {
 		t.Fatalf("want header rejection, got %v", err)
 	}
 }
+
+func TestSendLinkCodeRejectsBadAddressWithoutDialing(t *testing.T) {
+	ch := email.New(email.Config{
+		Addr: "127.0.0.1:1", From: "ok@example.com", Insecure: true,
+		Dial: func(network, addr string) (net.Conn, error) {
+			t.Fatal("should not dial")
+			return nil, nil
+		},
+	})
+	if err := ch.SendLinkCode(context.Background(), "evil@x.com\r\nBcc: a@b.c", "ABCD2345"); err == nil {
+		t.Fatal("want error")
+	}
+}

@@ -5,6 +5,8 @@ import type {
   ChatActionRequest,
   ChatActionResponse,
   ChatChannelsResponse,
+  ChatLinkConfirmRequest,
+  ChatLinkConfirmResponse,
   ChatLinkRequest,
   ChatLinkResponse,
   ChatMessagesQuery,
@@ -302,6 +304,12 @@ export const api = {
 
   chatLink: (body: ChatLinkRequest) =>
     request<ChatLinkResponse>("/api/chat/link", { method: "POST", body }),
+
+  removeHost: (id: string) =>
+    request<void>(`/api/hosts/${encodeURIComponent(id)}`, { method: "DELETE", body: {} }),
+
+  chatLinkConfirm: (body: ChatLinkConfirmRequest) =>
+    request<ChatLinkConfirmResponse>("/api/chat/link/confirm", { method: "POST", body }),
 
   hostSecurity: (id: string) =>
     request<HostSecurityResponse>(`/api/hosts/${encodeURIComponent(id)}/security`),

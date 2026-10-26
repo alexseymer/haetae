@@ -90,6 +90,9 @@ type Config struct {
 	OperatorSettings OperatorSettings
 	// PolicyPusher is told when an organisation's autonomy level changes.
 	PolicyPusher PolicyPusher
+	// HostDisconnecter closes the live agent session of a removed host. Nil
+	// skips it (the agent is then refused at its next connect).
+	HostDisconnecter HostDisconnecter
 
 	// Sender delivers agent commands (forced container scans). When nil, the
 	// Deploys service's Sender is used if set.
@@ -109,6 +112,8 @@ type API struct {
 	loginByAccount *auth.Limiter // email + address
 	loginByAddr    *auth.Limiter // address only
 	loginByEmail   *auth.Limiter // email only: many addresses cannot add up to unlimited guesses
+
+	linkConfirm *auth.Limiter // failed email link confirmations per user
 
 	scanMu   sync.Mutex
 	scanLast map[string]time.Time // host|container → last forced scan
@@ -131,6 +136,7 @@ func New(cfg Config) *API {
 		loginByAccount: auth.NewLimiter(8, 15*time.Minute),
 		loginByAddr:    auth.NewLimiter(40, 15*time.Minute),
 		loginByEmail:   auth.NewLimiter(30, 15*time.Minute),
+		linkConfirm:    auth.NewLimiter(5, store.LinkCodeTTL),
 	}
 }
 

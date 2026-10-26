@@ -48,10 +48,26 @@ func TestChannelEnabledUsesConfiguredChannels(t *testing.T) {
 
 func TestLinkInstructionsContainCodeNotSecrets(t *testing.T) {
 	code := "ABCD2345"
-	for _, ch := range []string{store.ChannelTelegram, store.ChannelSlack, store.ChannelEmail, store.ChannelSignal} {
+	for _, ch := range []string{store.ChannelTelegram, store.ChannelSlack, store.ChannelSignal} {
 		s := linkInstructions(ch, code)
 		if s == "" || !strings.Contains(s, code) {
 			t.Fatalf("%s instructions missing code: %q", ch, s)
+		}
+	}
+}
+
+func TestLinkInstructionsPerChannel(t *testing.T) {
+	code := "ABCD2345"
+	sl := linkInstructions("slack", code)
+	if !strings.Contains(sl, "link "+code) || strings.Contains(sl, "/link") || !strings.Contains(sl, "direct message") {
+		t.Fatalf("slack: %q", sl)
+	}
+	if em := linkInstructions("email", code); strings.Contains(em, "/link") || strings.Contains(em, code) {
+		t.Fatalf("email: %q", em)
+	}
+	for _, ch := range []string{"telegram", "signal"} {
+		if s := linkInstructions(ch, code); !strings.Contains(s, "/link "+code) {
+			t.Fatalf("%s: %q", ch, s)
 		}
 	}
 }

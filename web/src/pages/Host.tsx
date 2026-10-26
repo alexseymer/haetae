@@ -6,7 +6,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type {
   Container,
@@ -18,6 +18,8 @@ import type {
 } from "../api/types";
 import { Badge, OnlineBadge } from "../components/Badge";
 import { Chart } from "../components/Chart";
+import { Modal } from "../components/Modal";
+import { useAuth } from "../auth";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatPercent, formatRelativeTime, withheldPercent } from "../lib/format";
 import { HostDeployTab } from "./HostDeployTab";
@@ -54,6 +56,12 @@ function levelBadge(level: string) {
 
 export function HostPage() {
   const { id = "" } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const isAdmin = user?.role === "admin";
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const tab: Tab =
@@ -99,6 +107,18 @@ export function HostPage() {
       mountedRef.current = false;
     };
   }, []);
+
+  const onRemoveHost = async () => {
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await api.removeHost(id);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setRemoveError(err instanceof ApiError ? err.message : "Failed to remove host");
+      setRemoving(false);
+    }
+  };
 
   const setTab = (next: Tab) => {
     setSearchParams({ tab: next }, { replace: true });
@@ -315,6 +335,19 @@ export function HostPage() {
                 {openIncidentCount === 1 ? "incident" : "incidents"}
               </Link>
             ) : null}
+            {isAdmin ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ marginLeft: "auto" }}
+                onClick={() => {
+                  setRemoveError(null);
+                  setRemoveOpen(true);
+                }}
+              >
+                Remove host
+              </button>
+            ) : null}
           </div>
           <p className="muted">
             {host.hostname} · {host.os} / {host.kernel} / {host.arch} · Docker{" "}
@@ -324,6 +357,42 @@ export function HostPage() {
       ) : (
         <p className="muted">Loading…</p>
       )}
+
+      <Modal title="Remove host" open={removeOpen} onClose={() => setRemoveOpen(false)}>
+        <div className="stack">
+          <p>
+            Remove <strong>{host?.name}</strong> from Haetae? The agent is disconnected and
+            cannot reconnect, and the host disappears from lists, alerts and briefings.
+          </p>
+          <p>
+            The containers on the host keep running and nothing is deleted there. Uninstall
+            the agent on the server separately (stop and disable the{" "}
+            <code>haetae-agent</code> service and delete its files).
+          </p>
+          {removeError ? (
+            <div className="app-error" role="alert" aria-live="assertive">
+              {removeError}
+            </div>
+          ) : null}
+          <div className="row">
+            <button
+              type="button"
+              className="btn"
+              disabled={removing}
+              onClick={() => void onRemoveHost()}
+            >
+              {removing ? "Removing…" : "Remove host"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setRemoveOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <div
         className="tabs"

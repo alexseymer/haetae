@@ -115,7 +115,7 @@ func (s *Store) BriefingFacts(ctx context.Context, orgID uuid.UUID, since time.T
 	irows, err := s.pool.Query(ctx, `
 		SELECT i.severity, i.title, h.name, i.opened_at
 		FROM incidents i
-		JOIN hosts h ON h.id = i.host_id
+		JOIN hosts h ON h.id = i.host_id AND h.revoked_at IS NULL
 		WHERE i.org_id = $1 AND (
 			i.state = 'open'
 			OR (i.state = 'resolved' AND i.updated_at >= $2)
@@ -150,7 +150,7 @@ func (s *Store) BriefingFacts(ctx context.Context, orgID uuid.UUID, since time.T
 	arows, err := s.pool.Query(ctx, `
 		SELECT a.severity, a.summary, h.name, a.last_at
 		FROM alerts a
-		JOIN hosts h ON h.id = a.host_id
+		JOIN hosts h ON h.id = a.host_id AND h.revoked_at IS NULL
 		WHERE a.org_id = $1 AND a.state = 'firing' AND a.last_at >= $2
 		ORDER BY
 			CASE a.severity

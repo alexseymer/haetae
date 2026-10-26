@@ -148,9 +148,21 @@ export interface ChatLinkRequest {
 }
 
 export interface ChatLinkResponse {
-  code: string;
+  /** Absent for email: the code is only sent to the user's own address. */
+  code?: string;
   expiresAt: string;
   instructions: string;
+}
+
+export interface ChatLinkConfirmRequest {
+  channel: "email";
+  code: string;
+}
+
+export interface ChatLinkConfirmResponse {
+  linked: boolean;
+  channel: string;
+  externalId: string;
 }
 
 export interface IncidentsQuery {

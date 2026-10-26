@@ -63,6 +63,13 @@ func (c *Channel) Send(ctx context.Context, msg store.ChatMessage, account *stor
 	return c.sendMail(ctx, to, subject, body)
 }
 
+// SendLinkCode emails a one-time link code to to. The caller must pass the
+// signed-in user's own address.
+func (c *Channel) SendLinkCode(ctx context.Context, to, code string) error {
+	body := "Your Haetae email link code is " + code + ".\n\nEnter it in Settings, Link email, in the Haetae web interface. It expires in 10 minutes. If you did not ask for it, ignore this message."
+	return c.sendMail(ctx, to, "Haetae email link code", body)
+}
+
 func (c *Channel) sendMail(ctx context.Context, to, subject, body string) error {
 	fromHeader, err := sanitizeAddress(c.cfg.From)
 	if err != nil {

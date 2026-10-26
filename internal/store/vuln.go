@@ -882,7 +882,7 @@ func (s *Store) NewCriticalHighFindingsForRunningContainers(ctx context.Context,
 			f.org_id, f.image_id, f.vuln_id, f.package, f.version, f.pkg_type, f.fixed_version,
 			f.severity, f.description, f.urls, f.first_seen, f.last_seen
 		FROM containers c
-		JOIN hosts h ON h.id = c.host_id
+		JOIN hosts h ON h.id = c.host_id AND h.revoked_at IS NULL
 		JOIN latest_ok lo ON lo.host_id = c.host_id AND lo.container_id = c.container_id
 		JOIN image_findings f ON f.org_id = $1 AND f.image_id = lo.image_id
 		WHERE c.org_id = $1 AND c.removed_at IS NULL AND lower(c.state) = 'running'
@@ -928,7 +928,7 @@ func (s *Store) HighCriticalFindingsForRunningContainers(ctx context.Context, or
 			f.org_id, f.image_id, f.vuln_id, f.package, f.version, f.pkg_type, f.fixed_version,
 			f.severity, f.description, f.urls, f.first_seen, f.last_seen
 		FROM containers c
-		JOIN hosts h ON h.id = c.host_id
+		JOIN hosts h ON h.id = c.host_id AND h.revoked_at IS NULL
 		JOIN latest_ok lo ON lo.host_id = c.host_id AND lo.container_id = c.container_id
 		JOIN image_findings f ON f.org_id = $1 AND f.image_id = lo.image_id
 		WHERE c.org_id = $1 AND c.removed_at IS NULL AND lower(c.state) = 'running'

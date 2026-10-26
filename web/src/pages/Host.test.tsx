@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -8,14 +8,17 @@ import { AuthProvider, useAuth } from "../auth";
 import { HostPage } from "./Host";
 
 afterEach(() => {
+  seedRole = "admin";
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
+let seedRole: User["role"] = "admin";
+
 function Seed({ children }: { children: ReactNode }) {
   const { setSession } = useAuth();
   useEffect(() => {
-    setSession({ id: "1", email: "a@b.c", role: "admin" } satisfies User, "Acme");
+    setSession({ id: "1", email: "a@b.c", role: seedRole } satisfies User, "Acme");
   }, [setSession]);
   return children;
 }
@@ -91,6 +94,7 @@ function renderHost() {
         <Seed>
           <Routes>
             <Route path="/hosts/:id" element={<HostPage />} />
+            <Route path="/" element={<p>Hosts list page</p>} />
           </Routes>
         </Seed>
       </AuthProvider>
@@ -249,5 +253,65 @@ describe("HostPage", () => {
       expect(screen.getByRole("img", { name: /CPU %: 1 points, last value 99/ })).toBeInTheDocument();
     });
     expect(screen.queryByRole("img", { name: /last value 1\.0%/ })).not.toBeInTheDocument();
+  });
+
+  it("removes a host after a confirmation that explains the effects", async () => {
+    const calls: Array<{ url: string; method?: string }> = [];
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        calls.push({ url, method: init.method });
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return defaultFetch(url);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderHost();
+    await screen.findByRole("heading", { name: "web-1" });
+
+    await user.click(screen.getByRole("button", { name: "Remove host" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(/agent is disconnected/i);
+    expect(dialog).toHaveTextContent(/containers on the host keep running/i);
+    expect(dialog).toHaveTextContent(/Uninstall the agent/i);
+    expect(calls).toHaveLength(0); // nothing happens before the confirmation
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Remove host" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove host" }));
+    await waitFor(() => expect(calls).toEqual([{ url: "/api/hosts/h1", method: "DELETE" }]));
+    expect(await screen.findByText("Hosts list page")).toBeInTheDocument();
+  });
+
+  it("shows the error and stays on the page when removal fails", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "try again" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return defaultFetch(url);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderHost();
+    await screen.findByRole("heading", { name: "web-1" });
+    await user.click(screen.getByRole("button", { name: "Remove host" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove host" }));
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("try again");
+    expect(screen.queryByText("Hosts list page")).not.toBeInTheDocument();
+  });
+
+  it("hides Remove host from members", async () => {
+    seedRole = "member";
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(defaultFetch));
+    renderHost();
+    await screen.findByRole("heading", { name: "web-1" });
+    expect(screen.queryByRole("button", { name: "Remove host" })).not.toBeInTheDocument();
   });
 });
