@@ -35,26 +35,27 @@ const (
 
 // harness is one live server + enrolled agent + scripted AI provider.
 type harness struct {
-	t          *testing.T
-	repoRoot   string
-	serverBin  string
-	agentBin   string
-	dbURL      string
-	dataDir    string
-	agentState string
-	webURL     string
-	gwURL      string
-	webPort    string
-	gwPort     string
-	hostID     string
-	prefix     string
-	serverCmd  *exec.Cmd
-	agentCmd   *exec.Cmd
-	serverOut  *syncBuffer
-	agentOut   *syncBuffer
-	admin      *http.Client
-	prov       *scriptedProvider
-	pool       *pgxpool.Pool
+	seenBeforeAsk map[string]bool // chat messages that existed when the last question was posted
+	t             *testing.T
+	repoRoot      string
+	serverBin     string
+	agentBin      string
+	dbURL         string
+	dataDir       string
+	agentState    string
+	webURL        string
+	gwURL         string
+	webPort       string
+	gwPort        string
+	hostID        string
+	prefix        string
+	serverCmd     *exec.Cmd
+	agentCmd      *exec.Cmd
+	serverOut     *syncBuffer
+	agentOut      *syncBuffer
+	admin         *http.Client
+	prov          *scriptedProvider
+	pool          *pgxpool.Pool
 }
 
 func startHarness(t *testing.T) *harness {
@@ -397,7 +398,7 @@ func (h *harness) waitChat(since time.Time, pred func(chatMsg) bool, timeout tim
 	var found chatMsg
 	waitFor(h.t, timeout, "web chat message", func() bool {
 		for _, m := range h.listChat() {
-			if m.Direction != "out" || m.Channel != "web" {
+			if m.Direction != "out" || m.Channel != "web" || h.seenBeforeAsk[m.ID] {
 				continue
 			}
 			ct, err := time.Parse(time.RFC3339Nano, m.CreatedAt)
@@ -418,6 +419,12 @@ func (h *harness) waitChat(since time.Time, pred func(chatMsg) bool, timeout tim
 // the answer follows as a chat message).
 func (h *harness) ask(q string) string {
 	h.t.Helper()
+	// Messages that exist now cannot be the answer to this question; the time
+	// comparison alone accepts anything created up to a second earlier.
+	h.seenBeforeAsk = map[string]bool{}
+	for _, m := range h.listChat() {
+		h.seenBeforeAsk[m.ID] = true
+	}
 	var out struct {
 		Reply string `json:"reply"`
 	}

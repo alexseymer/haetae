@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -113,6 +114,19 @@ func (s *Service) Secret() []byte { return s.secret }
 
 // PublicURL returns the configured web UI base URL.
 func (s *Service) PublicURL() string { return s.publicURL }
+
+// ErrNoLinkCodeSender means the channel cannot deliver link codes.
+var ErrNoLinkCodeSender = errors.New("chat: channel cannot send link codes")
+
+// SendLinkCode delivers a link code to to (an address the caller took from the
+// signed-in user's own account) through the named channel.
+func (s *Service) SendLinkCode(ctx context.Context, channel, to, code string) error {
+	ch, ok := s.channels[channel].(LinkCodeSender)
+	if !ok {
+		return ErrNoLinkCodeSender
+	}
+	return ch.SendLinkCode(ctx, to, code)
+}
 
 // ChannelNames returns configured channel names (tests).
 func (s *Service) ChannelNames() []string {

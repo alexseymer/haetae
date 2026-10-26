@@ -46,3 +46,6 @@ internal/webui/app/*
 # Local compose data
 /data/
 selfhost-full.log
+
+# Raw acceptance run output (summary and measures are quoted in docs/acceptance.md)
+acceptance-results/

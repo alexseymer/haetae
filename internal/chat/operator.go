@@ -409,9 +409,11 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 		for _, acc := range accounts {
 			// Signal replies are keyword-only (later/mute/ack), so an
 			// approval cannot be pressed there: point admins elsewhere.
-			buttons := isAdmin[acc.ID] && name != store.ChannelSignal
+			// Email is outbound only: it cannot carry a working button.
+			noInbound := name == store.ChannelSignal || name == store.ChannelEmail
+			buttons := isAdmin[acc.ID] && !noInbound
 			note := askAdmin
-			if isAdmin[acc.ID] && name == store.ChannelSignal && otherApprovalChannel {
+			if isAdmin[acc.ID] && noInbound && otherApprovalChannel {
 				note = "Approve it in the web interface or another chat channel."
 			}
 			cp := build(name, buttons, note)

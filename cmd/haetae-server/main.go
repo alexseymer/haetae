@@ -352,6 +352,7 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		Chat:             chatSvc,
 		OperatorSettings: opSettings,
 		PolicyPusher:     gw,
+		HostDisconnecter: gw,
 		OnSetupDone: func() {
 			_ = os.Remove(codeFile)
 		},

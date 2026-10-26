@@ -238,7 +238,9 @@ func (c *Channel) handleEvents(ctx context.Context, payload json.RawMessage) {
 			User    string `json:"user"`
 			Text    string `json:"text"`
 			Channel string `json:"channel"`
-			BotID   string `json:"bot_id"`
+			// ChannelType is "im" for a direct message to the bot.
+			ChannelType string `json:"channel_type"`
+			BotID       string `json:"bot_id"`
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(payload, &wrap); err != nil {
@@ -248,10 +250,25 @@ func (c *Channel) handleEvents(ctx context.Context, payload json.RawMessage) {
 	if ev.Type != "message" || ev.BotID != "" || ev.Text == "" || ev.User == "" {
 		return
 	}
-	reply, _ := c.Handler.HandleInboundText(ctx, store.ChannelSlack, ev.User, ev.Text)
+	text := ev.Text
+	if ev.ChannelType == "im" {
+		text = slackLinkAsCommand(text)
+	}
+	reply, _ := c.Handler.HandleInboundText(ctx, store.ChannelSlack, ev.User, text)
 	if reply != "" {
 		_ = c.Send(ctx, store.ChatMessage{Body: reply}, &store.ChatAccount{ExternalID: ev.Channel})
 	}
+}
+
+// slackLinkAsCommand turns "link CODE" (what a user can send in Slack, where
+// "/link" is taken by Slack's own slash-command handling) into the "/link
+// CODE" form the chat service understands. Any other text is returned as is.
+func slackLinkAsCommand(text string) string {
+	parts := strings.Fields(text)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "link") {
+		return "/link " + parts[1]
+	}
+	return text
 }
 
 func (c *Channel) postResponse(ctx context.Context, rawURL, text string) {

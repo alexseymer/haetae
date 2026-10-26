@@ -425,6 +425,20 @@ func (g *Gateway) register(s *session) {
 	}
 }
 
+// DisconnectHost closes the live session of a host at once, if it has one.
+// It reports whether a session was closed. The agent cannot come back with
+// its old certificate once the host is revoked (authenticate refuses it).
+func (g *Gateway) DisconnectHost(hostID uuid.UUID) bool {
+	g.mu.Lock()
+	s := g.sessions[hostID]
+	g.mu.Unlock()
+	if s == nil {
+		return false
+	}
+	s.cancel(errors.New("host removed"))
+	return true
+}
+
 func (g *Gateway) unregister(s *session) {
 	g.mu.Lock()
 	current := g.sessions[s.hostID] == s

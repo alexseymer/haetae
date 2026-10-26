@@ -22,6 +22,9 @@ const (
 	replyStartUnlinked  = "Send /link CODE from the web UI to link this account."
 )
 
+// LinkOKReply is the HandleLink reply after a successful link.
+const LinkOKReply = replyLinkOK
+
 // HandleLink consumes a /link CODE from an external identity.
 func (s *Service) HandleLink(ctx context.Context, channel, externalID, code string) (string, error) {
 	_, err := s.st.LinkChatAccount(ctx, code, channel, externalID)

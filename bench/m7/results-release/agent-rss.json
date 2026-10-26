@@ -1,0 +1,11 @@
+{
+  "budgetBytes": 52428800,
+  "containers": 4,
+  "duration": "3m0s",
+  "hostContainersSeen": 5,
+  "maxRssBytes": 19337216,
+  "meanRssBytes": 18761523,
+  "note": "real conntrack RSS not measurable here (no usable nf_conntrack for the agent); see conntrack fake-source heap bench",
+  "peakVmHWMBytes": 19472384,
+  "samples": 180
+}

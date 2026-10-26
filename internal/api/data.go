@@ -35,6 +35,7 @@ func (a *API) registerData(mux *http.ServeMux) {
 	mux.Handle("GET /api/hosts/{id}/metrics", a.authenticate(http.HandlerFunc(a.handleHostMetrics)))
 	mux.Handle("GET /api/hosts/{id}/logs", a.authenticate(http.HandlerFunc(a.handleHostLogs)))
 	mux.Handle("GET /api/hosts/{id}", a.authenticate(http.HandlerFunc(a.handleHost)))
+	mux.Handle("DELETE /api/hosts/{id}", a.authenticate(a.requireAdmin(http.HandlerFunc(a.handleRemoveHost))))
 	mux.Handle("POST /api/hosts/enrollment", a.authenticate(a.requireAdmin(http.HandlerFunc(a.handleEnrollment))))
 }
 
@@ -310,6 +311,35 @@ func (a *API) handleEnrollment(w http.ResponseWriter, r *http.Request) {
 		"command":   a.installCommand(token),
 		"host":      in.Name,
 	})
+}
+
+// handleRemoveHost revokes a host: the agent is disconnected and refused from
+// now on, and the host vanishes from lists. Containers on the host are not
+// touched and no data is deleted.
+func (a *API) handleRemoveHost(w http.ResponseWriter, r *http.Request) {
+	_, p := a.scoped(r)
+	id, ok := parseHostID(w, r.PathValue("id"))
+	if !ok {
+		return
+	}
+	// Revocation is a server-role write (the request role cannot update hosts).
+	h, err := a.st.RevokeHost(r.Context(), p.OrgID, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		a.log.Error("revoke host", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "try again")
+		return
+	}
+	disconnected := false
+	if a.cfg.HostDisconnecter != nil {
+		disconnected = a.cfg.HostDisconnecter.DisconnectHost(id)
+	}
+	a.log.Info("audit: host removed",
+		"org", p.OrgID, "user", p.UserID, "host_id", h.ID, "host", h.Name, "disconnected", disconnected)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) requireHost(w http.ResponseWriter, r *http.Request, st *store.Store, orgID, id uuid.UUID) (store.Host, bool) {

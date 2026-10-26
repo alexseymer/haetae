@@ -23,3 +23,10 @@ type ActionHandler interface {
 	HandleInboundText(ctx context.Context, channel, externalID, text string) (reply string, err error)
 	HandleSignalKeyword(ctx context.Context, channel, externalID, keyword, messageRef string) (reply string, err error)
 }
+
+// LinkCodeSender is implemented by channels that cannot receive inbound
+// messages (email): the server sends the link code to the user's own address
+// and the user confirms it in the web UI.
+type LinkCodeSender interface {
+	SendLinkCode(ctx context.Context, to, code string) error
+}

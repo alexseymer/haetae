@@ -306,7 +306,7 @@ func (s *Store) ResolveAlert(ctx context.Context, orgID uuid.UUID, dedupeKey str
 func (s *Store) ListFiringAlerts(ctx context.Context, orgID uuid.UUID) ([]Alert, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+alertCols+` FROM alerts
-		WHERE org_id = $1 AND state = $2
+		WHERE org_id = $1 AND state = $2 AND (host_id IS NULL OR host_id IN (SELECT id FROM hosts WHERE org_id = $1 AND revoked_at IS NULL))
 		ORDER BY last_at DESC, id`,
 		orgID, AlertFiring,
 	)
@@ -331,13 +331,13 @@ func (s *Store) ListIncidents(ctx context.Context, orgID uuid.UUID, state string
 	if state == "" {
 		rows, err = s.pool.Query(ctx, `
 			SELECT `+incidentCols+` FROM incidents
-			WHERE org_id = $1
+			WHERE org_id = $1 AND (host_id IS NULL OR host_id IN (SELECT id FROM hosts WHERE org_id = $1 AND revoked_at IS NULL))
 			ORDER BY updated_at DESC, id DESC
 			LIMIT $2`, orgID, limit)
 	} else {
 		rows, err = s.pool.Query(ctx, `
 			SELECT `+incidentCols+` FROM incidents
-			WHERE org_id = $1 AND state = $2
+			WHERE org_id = $1 AND state = $2 AND (host_id IS NULL OR host_id IN (SELECT id FROM hosts WHERE org_id = $1 AND revoked_at IS NULL))
 			ORDER BY updated_at DESC, id DESC
 			LIMIT $3`, orgID, state, limit)
 	}
@@ -395,13 +395,13 @@ func (s *Store) ListAlerts(ctx context.Context, orgID uuid.UUID, state string, l
 	if state == "" {
 		rows, err = s.pool.Query(ctx, `
 			SELECT `+alertCols+` FROM alerts
-			WHERE org_id = $1
+			WHERE org_id = $1 AND (host_id IS NULL OR host_id IN (SELECT id FROM hosts WHERE org_id = $1 AND revoked_at IS NULL))
 			ORDER BY last_at DESC, id DESC
 			LIMIT $2`, orgID, limit)
 	} else {
 		rows, err = s.pool.Query(ctx, `
 			SELECT `+alertCols+` FROM alerts
-			WHERE org_id = $1 AND state = $2
+			WHERE org_id = $1 AND state = $2 AND (host_id IS NULL OR host_id IN (SELECT id FROM hosts WHERE org_id = $1 AND revoked_at IS NULL))
 			ORDER BY last_at DESC, id DESC
 			LIMIT $3`, orgID, state, limit)
 	}

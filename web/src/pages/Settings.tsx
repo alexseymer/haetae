@@ -92,6 +92,13 @@ export function SettingsPage() {
   const [linkChannel, setLinkChannel] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
+  // Email has no inbound path: "Send code" emails it, the user types it here.
+  const [emailPanel, setEmailPanel] = useState(false);
+  const [emailSent, setEmailSent] = useState<string | null>(null);
+  const [emailCode, setEmailCode] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailDone, setEmailDone] = useState(false);
+  const [emailBusy, setEmailBusy] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   const mountedRef = useRef(true);
@@ -230,14 +237,58 @@ export function SettingsPage() {
     setLinkChannel(null);
   };
 
+  const resetEmailPanel = () => {
+    setEmailSent(null);
+    setEmailCode("");
+    setEmailError(null);
+    setEmailDone(false);
+  };
+
+  const onSendEmailCode = async () => {
+    setEmailError(null);
+    setEmailDone(false);
+    setEmailBusy(true);
+    try {
+      const res = await api.chatLink({ channel: "email" });
+      setEmailSent(res.instructions);
+    } catch (err) {
+      setEmailError(err instanceof ApiError ? err.message : "Failed to send the code");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const onConfirmEmailCode = async (e: FormEvent) => {
+    e.preventDefault();
+    setEmailError(null);
+    setEmailBusy(true);
+    try {
+      await api.chatLinkConfirm({ channel: "email", code: emailCode.trim() });
+      setEmailDone(true);
+      setEmailSent(null);
+      setEmailCode("");
+      void loadChat();
+    } catch (err) {
+      setEmailError(err instanceof ApiError ? err.message : "Failed to confirm the code");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
   const onLink = async (channel: LinkableChannel) => {
     setLinkError(null);
-    setLinkBusy(true);
     clearLinkCode();
+    if (channel === "email") {
+      resetEmailPanel();
+      setEmailPanel(true);
+      return;
+    }
+    setEmailPanel(false);
+    setLinkBusy(true);
     try {
       const res = await api.chatLink({ channel });
       // Keep code in React state only — never sessionStorage/localStorage.
-      setLinkCode(res.code);
+      setLinkCode(res.code ?? null);
       setLinkExpiresAt(res.expiresAt);
       setLinkInstructions(res.instructions);
       setLinkChannel(channel);
@@ -782,6 +833,54 @@ export function SettingsPage() {
             {linkError ? (
               <div className="app-error" role="alert" aria-live="assertive">
                 {linkError}
+              </div>
+            ) : null}
+            {emailPanel ? (
+              <div className="link-code-panel" aria-label="Link email">
+                <p>
+                  Haetae emails a one-time code to the address you signed in with. There
+                  is no inbound email, so you enter the code here.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={emailBusy}
+                  onClick={() => void onSendEmailCode()}
+                >
+                  Send code
+                </button>
+                {emailSent ? (
+                  <form onSubmit={(e) => void onConfirmEmailCode(e)}>
+                    <p aria-live="polite">{emailSent}</p>
+                    <label htmlFor="email-link-code">Code from the email</label>
+                    <input
+                      id="email-link-code"
+                      name="code"
+                      type="text"
+                      autoComplete="one-time-code"
+                      value={emailCode}
+                      onChange={(e) => setEmailCode(e.target.value)}
+                      required
+                    />{" "}
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={emailBusy || emailCode.trim() === ""}
+                    >
+                      Confirm code
+                    </button>
+                  </form>
+                ) : null}
+                {emailError ? (
+                  <div className="app-error" role="alert" aria-live="assertive">
+                    {emailError}
+                  </div>
+                ) : null}
+                {emailDone ? (
+                  <p role="status" aria-live="polite">
+                    Email linked. You will receive alerts and briefings by email.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {linkCode && linkExpiresAt ? (

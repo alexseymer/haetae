@@ -56,7 +56,10 @@ func TestAgentRSSWithScanSecurity(t *testing.T) {
 	}
 
 	e := newBenchEnv(t)
-	docker(t, "pull", "-q", "busybox:1.37")
+	// Pull only when missing: anonymous Docker Hub pulls are rate limited.
+	if err := exec.Command("docker", "image", "inspect", "busybox:1.37").Run(); err != nil {
+		docker(t, "pull", "-q", "busybox:1.37")
+	}
 	label := "haetae-m7-rss=" + uuid.NewString()[:8]
 	for i := range rssContainers {
 		docker(t, "run", "-d", "--rm", "--name", fmt.Sprintf("haetae-m7-rss-%d-%s", i, label[len(label)-8:]),
@@ -76,11 +79,23 @@ func TestAgentRSSWithScanSecurity(t *testing.T) {
 	binDir := t.TempDir()
 	agentBin := filepath.Join(binDir, "haetae-agent")
 	invBin := filepath.Join(binDir, "haetae-inventory")
-	if out, err := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", agentBin, "../../cmd/haetae-agent").CombinedOutput(); err != nil {
-		t.Fatalf("build agent: %v\n%s", err, out)
-	}
-	if out, err := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", invBin, "../../cmd/haetae-inventory").CombinedOutput(); err != nil {
-		t.Fatalf("build inventory: %v\n%s", err, out)
+	if override := os.Getenv("HAETAE_BENCH_AGENT_BIN"); override != "" {
+		// Release-build mode: copy the given agent (and inventory helper) next to each other.
+		copyExecutable(t, override, agentBin)
+		invSrc := os.Getenv("HAETAE_BENCH_INV_BIN")
+		if invSrc == "" {
+			invSrc = filepath.Join(filepath.Dir(override), strings.Replace(filepath.Base(override), "haetae-agent", "haetae-inventory", 1))
+		}
+		copyExecutable(t, invSrc, invBin)
+		vout, _ := exec.Command(agentBin, "--version").CombinedOutput()
+		t.Logf("using prebuilt agent %s: %s", override, strings.TrimSpace(string(vout)))
+	} else {
+		if out, err := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", agentBin, "../../cmd/haetae-agent").CombinedOutput(); err != nil {
+			t.Fatalf("build agent: %v\n%s", err, out)
+		}
+		if out, err := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", invBin, "../../cmd/haetae-inventory").CombinedOutput(); err != nil {
+			t.Fatalf("build inventory: %v\n%s", err, out)
+		}
 	}
 
 	id, err := agent.Enroll(context.Background(), "https://"+e.addr, e.token("m7-rss-host"), e.pin(), dir)
@@ -151,6 +166,17 @@ func TestAgentRSSWithScanSecurity(t *testing.T) {
 	}
 	if hwm >= rssBudget {
 		t.Fatalf("agent peak RSS %s exceeds the %s budget", mib(hwm), mib(rssBudget))
+	}
+}
+
+func copyExecutable(t *testing.T, src, dst string) {
+	t.Helper()
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, b, 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 

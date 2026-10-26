@@ -1,0 +1,17 @@
+# Server image from prebuilt release binaries (make release-image).
+# Build context: bin/release-ctx (see scripts/release-image.sh). Keep in sync with the root Dockerfile.
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG VERSION=dev
+ARG TARGETARCH=amd64
+LABEL org.opencontainers.image.source="https://github.com/alexseymer/haetae" \
+	org.opencontainers.image.version="${VERSION}" \
+	org.opencontainers.image.licenses="AGPL-3.0-only"
+COPY haetae-server-linux-${TARGETARCH} /usr/local/bin/haetae-server
+COPY dist/ /usr/share/haetae/dist/
+COPY --chown=65532:65532 data/ /var/lib/haetae/
+USER 65532:65532
+ENV HAETAE_DATA_DIR=/var/lib/haetae \
+	HAETAE_DIST_DIR=/usr/share/haetae/dist
+EXPOSE 8080 8443
+ENTRYPOINT ["/usr/local/bin/haetae-server", "serve"]
+HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=12 CMD ["/usr/local/bin/haetae-server", "healthcheck"]

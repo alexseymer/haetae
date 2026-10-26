@@ -7,6 +7,7 @@ package integration
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -519,4 +520,63 @@ func listeningSockets(t *testing.T, pid int) (listening []string, total int) {
 		f.Close()
 	}
 	return listening, total
+}
+
+// Removing a host drops its live session at once, the old certificate cannot
+// reconnect, and the same name can be enrolled again with a new token.
+func TestRemovedHostIsDisconnectedAndCannotReconnect(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	id, err := agent.Enroll(ctx, "https://"+e.addr, e.token("gone"), e.pin(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := e.runAgent(id)
+	defer stop()
+	e.waitConnected(id.HostID, true, 30*time.Second)
+	hostID := uuid.MustParse(id.HostID)
+
+	if _, err := e.st.RevokeHost(ctx, e.org.ID, hostID); err != nil {
+		t.Fatal(err)
+	}
+	if !e.gw.DisconnectHost(hostID) {
+		t.Fatal("DisconnectHost found no live session")
+	}
+	waitFor(t, 10*time.Second, "session closed", func() bool {
+		_, err := e.gw.Send(ctx, hostID, &agentv1.Command{Kind: &agentv1.Command_Ping{Ping: &agentv1.Ping{}}})
+		return errors.Is(err, gateway.ErrNotConnected)
+	})
+	// The still running agent keeps retrying with its old certificate; it must
+	// never get a session again.
+	time.Sleep(3 * time.Second)
+	var connected bool
+	if err := e.st.Pool().QueryRow(ctx, `SELECT connected FROM hosts WHERE id = $1`, hostID).Scan(&connected); err != nil || connected {
+		t.Fatalf("revoked host connected=%v err=%v", connected, err)
+	}
+	cfg, err := pki.ClientTLSConfig(id.CADER, id.CertDER, id.Key, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := agentv1connect.NewAgentGatewayServiceClient(httpClientTLS(cfg), "https://"+e.addr)
+	stream := client.Connect(ctx)
+	defer stream.CloseRequest()
+	_ = stream.Send(&agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{}}})
+	if _, err := stream.Receive(); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("old certificate: err=%v, want permission_denied", err)
+	}
+	if _, err := e.st.GetHost(ctx, e.org.ID, hostID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetHost on a revoked host: %v", err)
+	}
+
+	// A fresh enrollment under the same name works and gets a new identity.
+	id2, err := agent.Enroll(ctx, "https://"+e.addr, e.token("gone"), e.pin(), t.TempDir())
+	if err != nil {
+		t.Fatalf("re-enroll under the same name: %v", err)
+	}
+	if id2.HostID == id.HostID {
+		t.Fatal("re-enrolled host reused the old id")
+	}
+	stop2 := e.runAgent(id2)
+	defer stop2()
+	e.waitConnected(id2.HostID, true, 30*time.Second)
 }

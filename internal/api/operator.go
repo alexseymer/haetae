@@ -48,6 +48,11 @@ type PolicyPusher interface {
 	PushPolicy(orgID uuid.UUID)
 }
 
+// HostDisconnecter closes a host's live agent session at once.
+type HostDisconnecter interface {
+	DisconnectHost(hostID uuid.UUID) bool
+}
+
 func (a *API) registerOperator(mux *http.ServeMux) {
 	mux.Handle("GET /api/settings/operator", a.authenticate(http.HandlerFunc(a.handleGetOperatorSettings)))
 	mux.Handle("PUT /api/settings/operator", a.authenticate(a.requireAdmin(http.HandlerFunc(a.handlePutOperatorSettings))))
