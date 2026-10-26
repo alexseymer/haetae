@@ -96,7 +96,7 @@ func guardedDial(ctx context.Context, network, address string) (net.Conn, error)
 	}
 	allowPrivate := privateAllowed(ctx)
 	d := net.Dialer{Timeout: 10 * time.Second}
-	var lastErr error = fmt.Errorf("%w: %s", errBlockedAddr, host)
+	lastErr := fmt.Errorf("%w: %s", errBlockedAddr, host)
 	for _, a := range addrs {
 		if !allowPrivate && !isPublic(a) {
 			continue
