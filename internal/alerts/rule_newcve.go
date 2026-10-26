@@ -27,12 +27,23 @@ type CVEFindingFact struct {
 	FixedVersion string
 	Severity     string
 	FirstSeen    time.Time
+	// Active is set by the evaluator when an alert for this container and CVE
+	// is currently firing (so it stays open while the finding persists).
+	Active bool
 }
 
-// ruleNewCVE collapses high/critical findings into one candidate per container.
-// Dedupe key is new_cve|<container>. Fires while any high/critical finding
-// remains on the running image; resolves when none remain (evaluator false-streak).
-// Works with no AI.
+// NewCVEKey is the dedupe key for one CVE on one container.
+func NewCVEKey(containerID, vulnID string) string {
+	return fmt.Sprintf("%s|%s|%s", store.RuleNewCVE, containerID, vulnID)
+}
+
+// ruleNewCVE emits, per container, one candidate for the findings first seen
+// after max(container start, previous evaluation) (snap.CVESince), keyed by the
+// top such CVE (new_cve|<container>|<vuln>) with the count of new findings in
+// the summary. A later new CVE therefore gets its own key and notification.
+// Findings whose alert is already firing (Active) are carried forward under
+// their own key so the alert stays open until the finding is gone. Findings
+// that are merely old backlog never fire. Works with no AI.
 func ruleNewCVE(snap Snapshot) []Candidate {
 	if len(snap.CVEFindings) == 0 {
 		return nil
@@ -43,7 +54,8 @@ func ruleNewCVE(snap Snapshot) []Candidate {
 		cid      string
 		name     string
 		image    string
-		findings []CVEFindingFact
+		fresh    []CVEFindingFact
+		active   []CVEFindingFact
 	}
 	byContainer := map[string]*group{}
 	order := []string{}
@@ -51,55 +63,74 @@ func ruleNewCVE(snap Snapshot) []Candidate {
 		if f.Severity != store.FindingHigh && f.Severity != store.FindingCritical {
 			continue
 		}
-		key := f.ContainerID
-		g, ok := byContainer[key]
+		fresh := isNewFinding(f, snap.CVESince)
+		if !fresh && !f.Active {
+			continue
+		}
+		g, ok := byContainer[f.ContainerID]
 		if !ok {
 			g = &group{
 				hostID: f.HostID, hostName: f.HostName, cid: f.ContainerID,
 				name: f.Name, image: f.Image,
 			}
-			byContainer[key] = g
-			order = append(order, key)
+			byContainer[f.ContainerID] = g
+			order = append(order, f.ContainerID)
 		}
-		g.findings = append(g.findings, f)
+		if fresh {
+			g.fresh = append(g.fresh, f)
+		}
+		if f.Active {
+			g.active = append(g.active, f)
+		}
 	}
 
-	var out []Candidate
-	for _, key := range order {
-		g := byContainer[key]
-		sort.SliceStable(g.findings, func(i, j int) bool {
-			// Prefer newest-since-watermark, then severity, then id.
-			ni := isNewFinding(g.findings[i], snap.CVESince)
-			nj := isNewFinding(g.findings[j], snap.CVESince)
-			if ni != nj {
-				return ni && !nj
-			}
-			ri := store.SeverityRank(mapFindingSev(g.findings[i].Severity))
-			rj := store.SeverityRank(mapFindingSev(g.findings[j].Severity))
+	less := func(fs []CVEFindingFact) func(i, j int) bool {
+		return func(i, j int) bool {
+			ri := store.SeverityRank(mapFindingSev(fs[i].Severity))
+			rj := store.SeverityRank(mapFindingSev(fs[j].Severity))
 			if ri != rj {
 				return ri > rj
 			}
-			return g.findings[i].VulnID < g.findings[j].VulnID
-		})
-		top := g.findings[0]
-		sev := mapFindingSev(top.Severity)
+			return fs[i].VulnID < fs[j].VulnID
+		}
+	}
+	var out []Candidate
+	for _, key := range order {
+		g := byContainer[key]
 		name := displayName(g.name, g.cid)
-		summary := newCVESummary(top, len(g.findings))
-		evidence, _ := json.Marshal(newCVEEvidence(g.image, g.findings))
-		out = append(out, Candidate{
-			HostID:    g.hostID,
-			HostName:  g.hostName,
-			Rule:      store.RuleNewCVE,
-			Container: name,
-			Severity:  sev,
-			DedupeKey: fmt.Sprintf("%s|%s", store.RuleNewCVE, g.cid),
-			Summary:   summary,
-			Evidence:  evidence,
-		})
+		emitted := map[string]bool{}
+		emit := func(top CVEFindingFact, n int, evidenceSet []CVEFindingFact) {
+			k := NewCVEKey(g.cid, top.VulnID)
+			if emitted[k] {
+				return
+			}
+			emitted[k] = true
+			ev, _ := json.Marshal(newCVEEvidence(g.image, evidenceSet))
+			out = append(out, Candidate{
+				HostID:    g.hostID,
+				HostName:  g.hostName,
+				Rule:      store.RuleNewCVE,
+				Container: name,
+				Severity:  mapFindingSev(top.Severity),
+				DedupeKey: k,
+				Summary:   newCVESummary(top, n),
+				Evidence:  ev,
+			})
+		}
+		if len(g.fresh) > 0 {
+			sort.SliceStable(g.fresh, less(g.fresh))
+			emit(g.fresh[0], len(g.fresh), g.fresh)
+		}
+		sort.SliceStable(g.active, less(g.active))
+		for _, f := range g.active {
+			emit(f, 1, []CVEFindingFact{f})
+		}
 	}
 	return out
 }
 
+// isNewFinding reports whether f was first seen after the later of the
+// container start and the previous evaluation watermark.
 func isNewFinding(f CVEFindingFact, since time.Time) bool {
 	cut := since
 	if f.StartedAt != nil && f.StartedAt.After(cut) {

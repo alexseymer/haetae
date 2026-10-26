@@ -86,13 +86,8 @@ func TestRegistryRefusesHTTPRedirect(t *testing.T) {
 
 	c := &RegistryClient{
 		HTTP: &http.Client{
-			Transport: httpsSrv.Client().Transport,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if req.URL.Scheme != "https" {
-					return fmt.Errorf("registry: refusing redirect to non-HTTPS")
-				}
-				return nil
-			},
+			Transport:     httpsSrv.Client().Transport,
+			CheckRedirect: checkRedirect,
 		},
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, httpsSrv.URL+"/", nil)
@@ -210,19 +205,8 @@ func (c *Checker) pullHost(ctx context.Context, host, repo, tag string, cmd *age
 	if err != nil {
 		return fmt.Errorf("pull: re-check: %w", err)
 	}
-	digest := strings.TrimSpace(cmd.GetDigest())
-	if info.Digest != digest {
-		return fmt.Errorf("pull: digest mismatch: registry has %s, expected %s", info.Digest, digest)
-	}
-	minAge := time.Duration(cmd.GetMinAgeHours()) * time.Hour
-	if minAge <= 0 {
-		minAge = 48 * time.Hour
-	}
-	if !cmd.GetAllowYoung() && !info.CreatedAt.IsZero() {
-		age := c.Now().Sub(info.CreatedAt)
-		if age < minAge {
-			return fmt.Errorf("pull: image too young (%s < %s)", age.Round(time.Minute), minAge)
-		}
+	if err := c.verifyCandidate(info, strings.TrimSpace(cmd.GetDigest()), cmd); err != nil {
+		return err
 	}
 	if c.Docker == nil {
 		return fmt.Errorf("pull: no docker client")

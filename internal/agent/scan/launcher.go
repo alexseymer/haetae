@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -126,13 +127,22 @@ func (l *Launcher) Run(ctx context.Context, req LaunchRequest) LaunchResult {
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(runCtx, bin, args...) //nolint:gosec // args are validated; no shell
-	cmd.Stdout = &limitWriter{buf: &stdout, max: maxHelperOutput + 1}
-	cmd.Stderr = &limitWriter{buf: &stderr, max: 64 << 10}
-	// Replace any inherited GOMEMLIMIT (Linux getenv returns the first value).
-	cmd.Env = withEnv(os.Environ(), "GOMEMLIMIT", strconv.FormatInt(l.memBytes(), 10))
-	// New process group so timeout can kill the whole tree.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	env := withEnv(helperEnv(os.Environ()), "GOMEMLIMIT", strconv.FormatInt(l.memBytes(), 10))
+	// newCmd is called again if starting inside the cgroup fails, since an
+	// exec.Cmd cannot be started twice.
+	newCmd := func() *exec.Cmd {
+		stdout.Reset()
+		stderr.Reset()
+		cmd := exec.CommandContext(runCtx, bin, args...) //nolint:gosec // args are validated; no shell
+		cmd.Stdout = &limitWriter{buf: &stdout, max: maxHelperOutput + 1}
+		cmd.Stderr = &limitWriter{buf: &stderr, max: 64 << 10}
+		// Only an allowlist of the agent's environment reaches the helper,
+		// which parses untrusted image content; GOMEMLIMIT is replaced.
+		cmd.Env = env
+		// New process group so timeout can kill the whole tree.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		return cmd
+	}
 
 	cgroupPath, limited, cgroupErr := l.setupCgroup()
 	if cgroupErr != nil {
@@ -144,7 +154,7 @@ func (l *Launcher) Run(ctx context.Context, req LaunchRequest) LaunchResult {
 	}
 
 	started := l.now()
-	err = l.startInCgroup(cmd, cgroupPath)
+	cmd, err := l.startInCgroup(newCmd, cgroupPath)
 	if err != nil {
 		return LaunchResult{
 			Status:  StatusFailed,
@@ -311,6 +321,24 @@ func killProcessGroup(cmd *exec.Cmd) {
 }
 
 // withEnv returns env with key=value, removing any prior entries for key.
+var helperEnvKeys = []string{
+	"PATH", "HOME", "TMPDIR", "LANG", "TZ",
+	"DOCKER_HOST", "DOCKER_API_VERSION", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY",
+	"SSL_CERT_FILE", "SSL_CERT_DIR",
+	"HAETAE_INVENTORY_TEST", // test-only switch checked by the helper itself
+}
+
+func helperEnv(env []string) []string {
+	out := make([]string, 0, len(helperEnvKeys))
+	for _, e := range env {
+		k, _, _ := strings.Cut(e, "=")
+		if slices.Contains(helperEnvKeys, k) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func withEnv(env []string, key, value string) []string {
 	prefix := key + "="
 	out := make([]string, 0, len(env)+1)

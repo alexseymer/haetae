@@ -46,10 +46,12 @@ CREATE TABLE sbom_packages (
 
 -- Matching state per SBOM: which database build it was last matched against.
 -- A matching failure is recorded as 'failed' and shown as "scan failed".
+-- 'pending' means the SBOM is stored but not matched yet (queue full, database
+-- not ready); the periodic re-match picks up pending and missing rows.
 CREATE TABLE image_match_state (
   org_id uuid NOT NULL,
   image_id text NOT NULL,
-  status text NOT NULL CHECK (status IN ('ok', 'failed')),
+  status text NOT NULL CHECK (status IN ('ok', 'failed', 'pending')),
   error text NOT NULL DEFAULT '',
   db_built_at timestamptz,
   matched_at timestamptz NOT NULL DEFAULT now(),
@@ -70,7 +72,7 @@ CREATE TABLE image_findings (
   urls jsonb NOT NULL DEFAULT '[]'::jsonb,
   first_seen timestamptz NOT NULL DEFAULT now(),
   last_seen timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (org_id, image_id, vuln_id, package, version),
+  PRIMARY KEY (org_id, image_id, vuln_id, package, version, pkg_type),
   FOREIGN KEY (org_id, image_id) REFERENCES sboms(org_id, image_id) ON DELETE CASCADE
 );
 
@@ -129,10 +131,26 @@ CREATE TABLE image_updates (
   running_digest text NOT NULL DEFAULT '',
   candidate_digest text NOT NULL DEFAULT '',
   candidate_created timestamptz,
+  -- When the server first saw candidate_digest (the publisher controls
+  -- 'created', so the age gate counts from the later of the two).
+  candidate_first_seen timestamptz,
   decision text NOT NULL CHECK (decision IN ('current', 'wait', 'eligible', 'eligible_critical_fix', 'unknown')),
   reason text NOT NULL DEFAULT '',
   decided_at timestamptz NOT NULL DEFAULT now(),
+  -- Pull bookkeeping: the loop sends PullImage once per candidate digest and
+  -- retries a failed send at most every 6 hours.
+  pulled_digest text NOT NULL DEFAULT '',
+  pulled_at timestamptz,
+  pull_attempt_digest text NOT NULL DEFAULT '',
+  pull_attempted_at timestamptz,
   PRIMARY KEY (host_id, container_id)
+);
+
+-- Previous new_cve evaluation time per org: only findings first seen after it
+-- (and after the container started) alert. Survives restarts.
+CREATE TABLE cve_eval_watermark (
+  org_id uuid PRIMARY KEY REFERENCES orgs(id),
+  evaluated_at timestamptz NOT NULL
 );
 
 ALTER TABLE org_settings ADD COLUMN auto_pull boolean NOT NULL DEFAULT false;
@@ -150,7 +168,7 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY ARRAY['scans', 'sboms', 'sbom_packages', 'image_match_state',
       'image_findings', 'misconfigs', 'host_security', 'outbound_conns',
-      'image_updates'] LOOP
+      'image_updates', 'cve_eval_watermark'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY tenant_isolation ON %I USING (org_id = %s) WITH CHECK (org_id = %s)',
@@ -162,4 +180,4 @@ $$;
 -- The request-scoped role only reads (the dashboard); all writes come from the
 -- gateway, the matcher and the database refresher running as the server role.
 GRANT SELECT ON scans, sboms, sbom_packages, image_match_state, image_findings,
-  misconfigs, host_security, outbound_conns, image_updates, vuln_db TO haetae_app;
+  misconfigs, host_security, outbound_conns, image_updates, vuln_db, cve_eval_watermark TO haetae_app;

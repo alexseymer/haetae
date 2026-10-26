@@ -35,6 +35,7 @@ type session struct {
 	securityLim  *tokenBucket
 	outboundLim  *tokenBucket
 	imageCandLim *tokenBucket
+	sbomLim      *tokenBucket
 
 	droppedEvents   atomic.Int64
 	droppedLogs     atomic.Int64
@@ -62,6 +63,7 @@ func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 		securityLim:  newTokenBucket(securityReportRate, securityReportRate),
 		outboundLim:  newTokenBucket(outboundBatchRate, outboundBatchRate),
 		imageCandLim: newTokenBucket(imageCandidatesRate, imageCandidatesRate),
+		sbomLim:      newTokenBucket(sbomReportRate, sbomReportBurst),
 		pending:      make(map[string]chan *agentv1.CommandResult),
 	}
 	s.touch()

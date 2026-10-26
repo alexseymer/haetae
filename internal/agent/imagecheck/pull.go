@@ -38,18 +38,8 @@ func (c *Checker) Pull(ctx context.Context, cmd *agentv1.PullImage) error {
 	if err != nil {
 		return fmt.Errorf("pull: re-check: %w", err)
 	}
-	if info.Digest != digest {
-		return fmt.Errorf("pull: digest mismatch: registry has %s, expected %s", info.Digest, digest)
-	}
-	minAge := time.Duration(cmd.GetMinAgeHours()) * time.Hour
-	if minAge <= 0 {
-		minAge = 48 * time.Hour
-	}
-	if !cmd.GetAllowYoung() && !info.CreatedAt.IsZero() {
-		age := c.Now().Sub(info.CreatedAt)
-		if age < minAge {
-			return fmt.Errorf("pull: image too young (%s < %s)", age.Round(time.Minute), minAge)
-		}
+	if err := c.verifyCandidate(info, digest, cmd); err != nil {
+		return err
 	}
 
 	pinned := ref
@@ -74,4 +64,26 @@ func (c *Checker) Handle(ctx context.Context, cmd *agentv1.Command) *agentv1.Com
 		res.Error = err.Error()
 	}
 	return res
+}
+
+// verifyCandidate re-checks the registry answer against the server's command:
+// same digest, and old enough unless the server allowed a young image.
+func (c *Checker) verifyCandidate(info ManifestInfo, digest string, cmd *agentv1.PullImage) error {
+	if info.Digest != digest {
+		return fmt.Errorf("pull: digest mismatch: registry has %s, expected %s", info.Digest, digest)
+	}
+	if cmd.GetAllowYoung() {
+		return nil
+	}
+	minAge := time.Duration(cmd.GetMinAgeHours()) * time.Hour
+	if minAge <= 0 {
+		minAge = 48 * time.Hour
+	}
+	if info.CreatedAt.IsZero() {
+		return fmt.Errorf("pull: image creation time unknown")
+	}
+	if age := c.Now().Sub(info.CreatedAt); age < minAge {
+		return fmt.Errorf("pull: image too young (%s < %s)", age.Round(time.Minute), minAge)
+	}
+	return nil
 }

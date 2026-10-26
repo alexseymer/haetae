@@ -39,12 +39,16 @@ type Input struct {
 	RunningDigest    string
 	CandidateDigest  string
 	CandidateCreated time.Time
-	Status           string // ok, unknown, error from the agent
-	Error            string
-	Now              time.Time
-	OrgID            string
-	RunningImageID   string // for FindingsLookup; often the running digest
-	Lookup           FindingsLookup
+	// CandidateFirstSeen is when the server first saw CandidateDigest. The
+	// image config "created" time is chosen by the publisher and can be
+	// backdated, so the age counts from the later of the two.
+	CandidateFirstSeen time.Time
+	Status             string // ok, unknown, error from the agent
+	Error              string
+	Now                time.Time
+	OrgID              string
+	RunningImageID     string // for FindingsLookup; often the running digest
+	Lookup             FindingsLookup
 }
 
 // Result is a decision with a short reason.
@@ -64,14 +68,27 @@ func Decide(in Input) Result {
 	if in.CandidateDigest == "" {
 		return Result{Decision: DecisionUnknown, Reason: reasonOr(in.Error, "no candidate digest")}
 	}
-	if in.RunningDigest != "" && in.RunningDigest == in.CandidateDigest {
+	if in.RunningDigest == "" {
+		// Locally built or retagged image: comparing it with whatever the
+		// registry serves under that name would replace a different image.
+		return Result{Decision: DecisionUnknown, Reason: "running image has no registry digest"}
+	}
+	if in.RunningDigest == in.CandidateDigest {
 		return Result{Decision: DecisionCurrent, Reason: "same digest"}
 	}
 	now := in.Now
 	if now.IsZero() {
 		now = time.Now()
 	}
-	young := !in.CandidateCreated.IsZero() && now.Sub(in.CandidateCreated) < youngWindow
+	// Unknown age fails closed: it is treated as young.
+	young := in.CandidateCreated.IsZero() || in.CandidateFirstSeen.IsZero()
+	if !young {
+		since := in.CandidateCreated
+		if in.CandidateFirstSeen.After(since) {
+			since = in.CandidateFirstSeen
+		}
+		young = now.Sub(since) < youngWindow
+	}
 	if !young {
 		return Result{Decision: DecisionEligible, Reason: "candidate age >= 48h"}
 	}

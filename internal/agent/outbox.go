@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/alexseymer/haetae/internal/deployphase"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 )
@@ -27,7 +29,8 @@ type Outbox struct {
 	logs     []*agentv1.LogBatch
 	deploy   []deployMsg
 	security []securityMsg
-	sboms    []*agentv1.SbomReport
+	sboms    []sbomEntry
+	sbomSize int // total proto bytes of non-stub queued SBOM reports
 	dropped  uint64
 }
 
@@ -40,8 +43,43 @@ type securityMsg struct {
 // maxSecurityMsgs bounds queued security messages while disconnected.
 const maxSecurityMsgs = 32
 
-// maxSbomReports bounds queued inventory reports while disconnected.
+// maxSbomReports bounds queued inventory reports (including stubs) while disconnected.
 const maxSbomReports = 32
+
+// maxSbomBytes bounds the total encoded size of queued full SBOM reports.
+const maxSbomBytes = 4 << 20
+
+// sbomEntry is one queued report. A stub is a tiny failed report standing in
+// for a full report that was superseded or dropped, so the server's scan row
+// still resolves (as failed, never as clean).
+type sbomEntry struct {
+	r    *agentv1.SbomReport
+	size int
+	key  string
+	stub bool
+}
+
+func sbomKey(r *agentv1.SbomReport) string {
+	if r.GetImageId() != "" {
+		return r.GetImageId()
+	}
+	return r.GetImage()
+}
+
+func sbomStub(r *agentv1.SbomReport) *agentv1.SbomReport {
+	return &agentv1.SbomReport{
+		ScanId:         r.GetScanId(),
+		ContainerId:    r.GetContainerId(),
+		Image:          r.GetImage(),
+		ImageId:        r.GetImageId(),
+		Trigger:        r.GetTrigger(),
+		Status:         "failed",
+		Error:          "report dropped while the agent was disconnected",
+		StartedUnixMs:  r.GetStartedUnixMs(),
+		FinishedUnixMs: r.GetFinishedUnixMs(),
+		SourceRef:      r.GetSourceRef(),
+	}
+}
 
 type deployMsg struct {
 	event  *agentv1.DeployEvent
@@ -122,15 +160,49 @@ func (o *Outbox) PutBranchUpdate(u *agentv1.BranchUpdate) {
 	o.wake()
 }
 
-// PutSbom queues an inventory report, dropping the oldest when full.
+// PutSbom queues an inventory report. Only the latest full report per image
+// is kept, and the total encoded size is bounded by maxSbomBytes (oldest
+// dropped first, newest always kept). A superseded or dropped report with a
+// different scan_id is replaced by a tiny failed stub so no scan waits forever.
 func (o *Outbox) PutSbom(r *agentv1.SbomReport) {
 	o.mu.Lock()
-	if len(o.sboms) >= maxSbomReports {
-		o.sboms[0] = nil
+	key := sbomKey(r)
+	for i := range o.sboms {
+		e := &o.sboms[i]
+		if e.stub || e.key != key {
+			continue
+		}
+		o.sbomSize -= e.size
+		o.dropped++
+		if e.r.GetScanId() != r.GetScanId() {
+			e.r, e.size, e.stub = sbomStub(e.r), 0, true
+		} else {
+			o.sboms = append(o.sboms[:i], o.sboms[i+1:]...)
+		}
+		break
+	}
+	size := proto.Size(r)
+	o.sboms = append(o.sboms, sbomEntry{r: r, size: size, key: key})
+	o.sbomSize += size
+	// Over budget: stub out the oldest full reports (never the newest).
+	for i := 0; i < len(o.sboms)-1 && o.sbomSize > maxSbomBytes; i++ {
+		e := &o.sboms[i]
+		if e.stub {
+			continue
+		}
+		o.sbomSize -= e.size
+		o.dropped++
+		e.r, e.size, e.stub = sbomStub(e.r), 0, true
+	}
+	// Bound the entry count (stubs are oldest-first victims).
+	for len(o.sboms) > maxSbomReports {
+		if !o.sboms[0].stub {
+			o.sbomSize -= o.sboms[0].size
+		}
+		o.sboms[0] = sbomEntry{}
 		o.sboms = o.sboms[1:]
 		o.dropped++
 	}
-	o.sboms = append(o.sboms, r)
 	o.mu.Unlock()
 	o.wake()
 }
@@ -427,9 +499,13 @@ func (o *Outbox) take() *agentv1.ConnectRequest {
 		}
 	}
 	if len(o.sboms) > 0 {
-		r := o.sboms[0]
-		o.sboms[0] = nil
+		e := o.sboms[0]
+		o.sboms[0] = sbomEntry{}
 		o.sboms = o.sboms[1:]
+		if !e.stub {
+			o.sbomSize -= e.size
+		}
+		r := e.r
 		return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_SbomReport{SbomReport: r}}
 	}
 	if len(o.logs) > 0 { // problems first: log events can carry errors

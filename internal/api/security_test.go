@@ -60,6 +60,23 @@ func TestScanRateLimit(t *testing.T) {
 	}
 }
 
+func TestScanRateMapEvictsExpiredEntries(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := New(Config{Now: func() time.Time { return now }})
+	for i := 0; i < 100; i++ {
+		a.allowScan("h|c" + string(rune('a'+i%26)) + time.Duration(i).String())
+	}
+	now = now.Add(2 * time.Minute)
+	a.now = func() time.Time { return now }
+	a.allowScan("fresh")
+	a.scanMu.Lock()
+	n := len(a.scanLast)
+	a.scanMu.Unlock()
+	if n != 1 {
+		t.Fatalf("scanLast has %d entries, want 1 after the rate window", n)
+	}
+}
+
 func TestForceScanRequiresCSRFHeader(t *testing.T) {
 	a := New(Config{})
 	mux := a.Handler()

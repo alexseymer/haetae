@@ -240,11 +240,17 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=$STATE_Q
-MemoryHigh=60M
-MemoryMax=100M
+# The agent delegates its cgroup: it moves itself into an "agent" leaf
+# (60M high / 100M max, set by the agent) and runs the inventory helper in
+# sibling leaves capped at 256M. MemoryMax covers agent plus helper.
+Delegate=memory pids cpu
+MemoryMax=400M
 ProtectKernelModules=yes
-ProtectControlGroups=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# CAP_NET_ADMIN and AF_NETLINK for the conntrack listener. The agent clears
+# its ambient set at start so child processes do not inherit the capability.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=yes
 
 [Install]

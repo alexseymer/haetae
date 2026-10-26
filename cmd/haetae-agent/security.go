@@ -32,6 +32,8 @@ func startSecurity(ctx context.Context, docker *dockerapi.Client, out *agent.Out
 	sf.Caddy = secfacts.CaddyPorts{ContainerName: caddyName, HTTPPort: httpPort, HTTPSPort: httpsPort}
 	sf.Domains = func() []string { return readIngressDomains(stateDir) }
 	sf.Conntrack = ct
+	// The security report carries the conntrack state; resend it on change.
+	ct.OnStateChange = sf.Trigger
 	img := imagecheck.New(docker, out, log.With("component", "imagecheck"))
 	// HAETAE_IMAGECHECK_EVERY is test-only; ignored unless HAETAE_TEST_HOOKS=1.
 	if os.Getenv("HAETAE_TEST_HOOKS") == "1" {

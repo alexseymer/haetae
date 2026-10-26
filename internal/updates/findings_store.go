@@ -25,11 +25,13 @@ func (l StoreFindings) RunningFindings(orgID, runningImageID string) ([]Finding,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	fs, err := l.Store.ListFindingsForImage(ctx, org, runningImageID, 200)
+	// Exact, untruncated: a LIMIT could hide a present critical CVE and make it
+	// look fixed in the candidate.
+	ids, err := l.Store.ImageVulnIDs(ctx, org, runningImageID, true)
 	if err != nil {
 		return nil, err
 	}
-	return toUpdateFindings(fs), nil
+	return idsToFindings(ids, "critical"), nil
 }
 
 // CandidateFindings returns findings for a candidate digest after ScanImage.
@@ -51,17 +53,17 @@ func (l StoreFindings) CandidateFindings(orgID, candidateDigest string) ([]Findi
 	if ms.Status != store.MatchOK {
 		return nil, false, nil
 	}
-	fs, err := l.Store.ListFindingsForImage(ctx, org, candidateDigest, 200)
+	ids, err := l.Store.ImageVulnIDs(ctx, org, candidateDigest, false)
 	if err != nil {
 		return nil, false, err
 	}
-	return toUpdateFindings(fs), true, nil
+	return idsToFindings(ids, ""), true, nil
 }
 
-func toUpdateFindings(fs []store.Finding) []Finding {
-	out := make([]Finding, 0, len(fs))
-	for _, f := range fs {
-		out = append(out, Finding{VulnID: f.VulnID, Severity: f.Severity})
+func idsToFindings(ids []string, severity string) []Finding {
+	out := make([]Finding, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, Finding{VulnID: id, Severity: severity})
 	}
 	return out
 }

@@ -35,8 +35,33 @@ func TestDecideTable(t *testing.T) {
 		},
 		{
 			name: "old eligible",
-			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateCreated: old, Status: "ok", Now: now},
+			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateCreated: old, CandidateFirstSeen: old, Status: "ok", Now: now},
 			want: DecisionEligible,
+		},
+		{
+			name: "created unknown waits",
+			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateFirstSeen: old, Status: "ok", Now: now},
+			want: DecisionWait,
+		},
+		{
+			name: "first seen unknown waits",
+			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateCreated: old, Status: "ok", Now: now},
+			want: DecisionWait,
+		},
+		{
+			name: "backdated created but first seen recently waits",
+			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateCreated: old, CandidateFirstSeen: young, Status: "ok", Now: now},
+			want: DecisionWait,
+		},
+		{
+			name: "future created waits",
+			in:   Input{RunningDigest: "sha256:aaa", CandidateDigest: "sha256:bbb", CandidateCreated: now.Add(time.Hour), CandidateFirstSeen: old, Status: "ok", Now: now},
+			want: DecisionWait,
+		},
+		{
+			name: "running digest unknown",
+			in:   Input{CandidateDigest: "sha256:bbb", CandidateCreated: old, CandidateFirstSeen: old, Status: "ok", Now: now},
+			want: DecisionUnknown,
 		},
 		{
 			name: "young no critical",

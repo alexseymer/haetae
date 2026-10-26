@@ -38,7 +38,7 @@ func TestRuleNewCVE(t *testing.T) {
 				}},
 			},
 			wantFire: true, wantSev: store.SeverityCritical,
-			wantKey: "new_cve|" + cid,
+			wantKey: "new_cve|" + cid + "|CVE-2024-1",
 		},
 		{
 			name: "collapses multiple into one",
@@ -55,7 +55,7 @@ func TestRuleNewCVE(t *testing.T) {
 					},
 				},
 			},
-			wantFire: true, wantSev: store.SeverityCritical, wantKey: "new_cve|" + cid,
+			wantFire: true, wantSev: store.SeverityCritical, wantKey: "new_cve|" + cid + "|CVE-B",
 		},
 		{
 			name: "ignores medium",
@@ -110,5 +110,69 @@ func TestRuleNewCVE(t *testing.T) {
 				t.Error("expected vulns in evidence")
 			}
 		})
+	}
+}
+
+func newCVECandidates(t *testing.T, snap alerts.Snapshot) map[string]alerts.Candidate {
+	t.Helper()
+	out := map[string]alerts.Candidate{}
+	for _, c := range alerts.EvaluateRules(snap) {
+		if c.Rule == store.RuleNewCVE {
+			out[c.DedupeKey] = c
+		}
+	}
+	return out
+}
+
+func TestRuleNewCVEIgnoresBacklog(t *testing.T) {
+	host := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-time.Hour)
+	f := alerts.CVEFindingFact{
+		HostID: host, ContainerID: "c1", Name: "web", Image: "img", StartedAt: &started,
+		VulnID: "CVE-OLD", Package: "p", Severity: store.FindingCritical,
+	}
+	// First seen long before the previous evaluation: backlog, no alert.
+	old := f
+	old.FirstSeen = now.Add(-48 * time.Hour)
+	if got := newCVECandidates(t, alerts.Snapshot{Now: now, CVESince: now.Add(-15 * time.Second), CVEFindings: []alerts.CVEFindingFact{old}}); len(got) != 0 {
+		t.Fatalf("backlog finding fired: %v", got)
+	}
+	// First seen after the previous evaluation but before the container
+	// started: not new for this container.
+	beforeStart := f
+	beforeStart.FirstSeen = now.Add(-2 * time.Hour)
+	if got := newCVECandidates(t, alerts.Snapshot{Now: now, CVESince: now.Add(-3 * time.Hour), CVEFindings: []alerts.CVEFindingFact{beforeStart}}); len(got) != 0 {
+		t.Fatalf("finding older than container start fired: %v", got)
+	}
+}
+
+func TestRuleNewCVESecondCVEGetsOwnKey(t *testing.T) {
+	host := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-time.Hour)
+	a := alerts.CVEFindingFact{
+		HostID: host, ContainerID: "c1", Name: "web", Image: "img", StartedAt: &started,
+		VulnID: "CVE-A", Package: "p", Severity: store.FindingHigh,
+		FirstSeen: now.Add(-30 * time.Minute), Active: true, // alert for A is firing
+	}
+	b := a
+	b.VulnID, b.Active, b.FirstSeen = "CVE-B", false, now.Add(-5*time.Second)
+	got := newCVECandidates(t, alerts.Snapshot{Now: now, CVESince: now.Add(-15 * time.Second), CVEFindings: []alerts.CVEFindingFact{a, b}})
+	if _, ok := got[alerts.NewCVEKey("c1", "CVE-B")]; !ok {
+		t.Fatalf("new CVE-B must have its own dedupe key: %v", got)
+	}
+	if _, ok := got[alerts.NewCVEKey("c1", "CVE-A")]; !ok {
+		t.Fatalf("firing alert for CVE-A must be carried forward: %v", got)
+	}
+	// Next evaluation: B is no longer new but its alert is firing, so both stay.
+	b.Active = true
+	got = newCVECandidates(t, alerts.Snapshot{Now: now.Add(time.Minute), CVESince: now, CVEFindings: []alerts.CVEFindingFact{a, b}})
+	if len(got) != 2 {
+		t.Fatalf("both alerts must stay open: %v", got)
+	}
+	// Finding gone: nothing fires, so the evaluator resolves both.
+	if got := newCVECandidates(t, alerts.Snapshot{Now: now, CVESince: now}); len(got) != 0 {
+		t.Fatalf("fired with no findings: %v", got)
 	}
 }

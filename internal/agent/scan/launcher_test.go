@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -52,6 +53,25 @@ func TestHelperProcess(t *testing.T) {
 			_, _ = os.Stdout.WriteString(chunk)
 		}
 		os.Exit(0)
+	case "alloc": // touch 512 MiB, far above the 64 MiB test limit
+		var keep [][]byte
+		for i := 0; i < 512; i++ {
+			b := make([]byte, 1<<20)
+			for j := range b {
+				b[j] = 1
+			}
+			keep = append(keep, b)
+		}
+		_ = keep
+		os.Exit(0)
+	case "orphan": // leave a grandchild behind in the helper's cgroup
+		c := exec.Command("sleep", "300")
+		c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := c.Start(); err != nil {
+			os.Exit(1)
+		}
+		_ = os.WriteFile(os.Getenv("HELPER_PIDFILE"), []byte(strconv.Itoa(c.Process.Pid)), 0o644)
+		os.Exit(1)
 	default:
 		fmt.Fprintln(os.Stderr, "unknown HELPER_MODE")
 		os.Exit(1)
@@ -76,7 +96,7 @@ func writeHelperShim(t *testing.T, mode string) string {
 	if err != nil {
 		self = os.Args[0]
 	}
-	content := fmt.Sprintf("#!/bin/sh\nexport GO_WANT_HELPER_PROCESS=1\nexport HELPER_MODE=%s\nexec %q -test.run=^TestHelperProcess$ -- \"$@\"\n", mode, self)
+	content := fmt.Sprintf("#!/bin/sh\nexport GO_WANT_HELPER_PROCESS=1\nexport HELPER_MODE=%s\nexport HELPER_PIDFILE=%q\nexec %q -test.run=^TestHelperProcess$ -- \"$@\"\n", mode, filepath.Join(dir, "pid"), self)
 	if err := os.WriteFile(shim, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}

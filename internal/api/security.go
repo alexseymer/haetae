@@ -93,7 +93,8 @@ func (a *API) handleHostSecurity(w http.ResponseWriter, r *http.Request) {
 			"medium":   badge.Medium,
 			"low":      badge.Low,
 		},
-		"scanFailed": badge.ScanFailed,
+		"scanFailed":   badge.ScanFailed,
+		"matchPending": badge.Pending,
 	})
 }
 
@@ -385,6 +386,12 @@ func (a *API) allowScan(key string) bool {
 		a.scanLast = map[string]time.Time{}
 	}
 	now := a.now()
+	// Evict entries past the rate window so the map cannot grow without bound.
+	for k, t := range a.scanLast {
+		if now.Sub(t) >= scanRateLimit {
+			delete(a.scanLast, k)
+		}
+	}
 	if t, ok := a.scanLast[key]; ok && now.Sub(t) < scanRateLimit {
 		return false
 	}

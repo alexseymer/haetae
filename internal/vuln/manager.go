@@ -37,6 +37,9 @@ type Config struct {
 	DataDir string
 	// CheckEvery defaults to 10 minutes.
 	CheckEvery time.Duration
+	// PendingEvery is how often SBOMs without a finished match are retried
+	// (default 1 minute).
+	PendingEvery time.Duration
 	// RematchConcurrency defaults to 2.
 	RematchConcurrency int
 	// Matcher factory; nil uses grypedb.OpenMatcher on the active DB dir.
@@ -108,6 +111,12 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 	t := time.NewTicker(m.cfg.CheckEvery)
 	defer t.Stop()
+	pendingEvery := m.cfg.PendingEvery
+	if pendingEvery <= 0 {
+		pendingEvery = time.Minute
+	}
+	pt := time.NewTicker(pendingEvery)
+	defer pt.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -116,8 +125,62 @@ func (m *Manager) Run(ctx context.Context) {
 			if err := m.CheckOnce(ctx); err != nil {
 				m.log.Error("vuln db check", "err", err)
 			}
+		case <-pt.C:
+			if err := m.RematchPending(ctx); err != nil {
+				m.log.Error("rematch pending", "err", err)
+			}
 		}
 	}
+}
+
+// unmatchedLister is implemented by stores that can list SBOMs without a
+// finished match (no match row, or pending).
+type unmatchedLister interface {
+	ListUnmatchedSboms(ctx context.Context, afterOrg uuid.UUID, afterImage string, limit int) ([]struct {
+		OrgID   uuid.UUID
+		ImageID string
+	}, error)
+}
+
+// RematchPending matches SBOMs that were stored while the database was not
+// ready or whose queued match job was dropped (match state missing or
+// pending). It is a no-op until a matcher is loaded.
+func (m *Manager) RematchPending(ctx context.Context) error {
+	if !m.Ready() {
+		return nil
+	}
+	lister, ok := m.st.(unmatchedLister)
+	if !ok {
+		return nil
+	}
+	var afterOrg uuid.UUID
+	afterImage := ""
+	matched := false
+	var firstErr error
+	for {
+		page, err := lister.ListUnmatchedSboms(ctx, afterOrg, afterImage, 50)
+		if err != nil {
+			return err
+		}
+		for _, row := range page {
+			afterOrg, afterImage = row.OrgID, row.ImageID
+			if err := m.MatchImage(ctx, row.OrgID, row.ImageID); err != nil {
+				m.log.Error("rematch pending", "org", row.OrgID, "image", row.ImageID, "err", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			matched = true
+		}
+		if len(page) < 50 {
+			break
+		}
+	}
+	if matched && m.nudge != nil {
+		m.nudge()
+	}
+	return firstErr
 }
 
 func (m *Manager) bootstrap(ctx context.Context) error {
@@ -228,23 +291,21 @@ func (m *Manager) openActive() error {
 	if _, err := os.Stat(filepath.Join(dir, "vulnerability.db")); err != nil {
 		return err
 	}
-	// Close the old matcher before opening the new one: while the replaced
-	// file is still open, a reader opened at the same path sees the old data.
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.matcher != nil {
-		if c, ok := m.matcher.(interface{ Close() error }); ok {
-			_ = c.Close()
-		}
-		m.matcher = nil
-		m.ready = false
-	}
+	// Open the new matcher first and swap only on success: a bad database
+	// must not take down the working one. The old matcher is closed after the
+	// swap.
 	matcher, err := m.cfg.OpenMatcher(dir)
 	if err != nil {
 		return err
 	}
+	m.mu.Lock()
+	old := m.matcher
 	m.matcher = matcher
 	m.ready = true
+	m.mu.Unlock()
+	if c, ok := old.(interface{ Close() error }); ok && old != nil {
+		_ = c.Close()
+	}
 	return nil
 }
 

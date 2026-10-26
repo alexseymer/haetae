@@ -28,25 +28,33 @@ type RegistryClient struct {
 	Timeout time.Duration
 }
 
+var guardedTransport = newGuardedTransport()
+
 func (c *RegistryClient) client() *http.Client {
 	if c != nil && c.HTTP != nil {
 		return c.HTTP
 	}
 	return &http.Client{
-		Timeout: defaultTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if req.URL.Scheme != "https" {
-				// Allow http only when the redirect target is loopback (local registry).
-				if req.URL.Hostname() != "localhost" && req.URL.Hostname() != "127.0.0.1" && req.URL.Hostname() != "::1" {
-					return errors.New("registry: refusing redirect to non-HTTPS")
-				}
-			}
-			if len(via) >= 5 {
-				return errors.New("registry: too many redirects")
-			}
-			return nil
-		},
+		Timeout:       defaultTimeout,
+		Transport:     guardedTransport,
+		CheckRedirect: checkRedirect,
 	}
+}
+
+// checkRedirect allows plain HTTP only between loopback hosts (a local
+// registry on 127.0.0.0/8, which Docker treats as insecure), never from an
+// HTTPS registry down to HTTP. Address checks happen in guardedDial.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("registry: too many redirects")
+	}
+	if req.URL.Scheme == "https" {
+		return nil
+	}
+	if req.URL.Scheme == "http" && via[0].URL.Scheme == "http" && registryScheme(req.URL.Host) == "http" {
+		return nil
+	}
+	return errors.New("registry: refusing redirect to non-HTTPS")
 }
 
 func (c *RegistryClient) timeout() time.Duration {
@@ -71,6 +79,7 @@ func (c *RegistryClient) Lookup(ctx context.Context, ref string) (ManifestInfo, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout())
 	defer cancel()
+	ctx = withPrivateAllowed(ctx, registryIsPrivate(ctx, host))
 
 	scheme := registryScheme(host)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", scheme, host, repo, url.PathEscape(tag))

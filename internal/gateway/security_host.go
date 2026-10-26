@@ -216,7 +216,15 @@ func (g *Gateway) handleImageCandidates(ctx context.Context, s *session, c *agen
 				findingsImageID = sc.ImageID
 			}
 		}
-		u := updates.ApplyCandidate(s.orgID, s.hostID, cand, g.findings, now, findingsImageID)
+		var prev *store.ImageUpdate
+		if full, ok := g.store.(interface {
+			GetImageUpdate(context.Context, uuid.UUID, uuid.UUID, string) (store.ImageUpdate, error)
+		}); ok {
+			if p, err := full.GetImageUpdate(ctx, s.orgID, s.hostID, cid); err == nil {
+				prev = &p
+			}
+		}
+		u := updates.ApplyCandidate(s.orgID, s.hostID, cand, g.findings, now, findingsImageID, prev)
 		if err := st.UpsertImageUpdate(ctx, u); err != nil {
 			g.log.Error("store image update", "host_id", s.hostID, "err", err)
 		}

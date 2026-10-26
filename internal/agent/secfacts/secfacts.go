@@ -76,6 +76,8 @@ func (o Options) withDefaults() Options {
 }
 
 // Collect inspects every container and returns misconfigs. It never reads env.
+// Any inspect error other than "not found" fails the whole collection, because
+// the server treats the resulting SecurityReport as a full replacement.
 func Collect(ctx context.Context, docker *dockerapi.Client, opts Options) ([]*agentv1.Misconfig, error) {
 	opts = opts.withDefaults()
 	list, err := docker.ListContainers(ctx, true)
@@ -87,7 +89,12 @@ func Collect(ctx context.Context, docker *dockerapi.Client, opts Options) ([]*ag
 	for _, c := range list {
 		d, err := docker.InspectContainer(ctx, c.ID)
 		if err != nil {
-			continue
+			if strings.Contains(err.Error(), "status 404") {
+				continue // removed since the list: genuinely gone
+			}
+			// The report is a full replacement on the server: a partial one would
+			// mark the missing container's misconfigs resolved. Fail whole.
+			return nil, fmt.Errorf("secfacts: inspect %s: %w", c.ID, err)
 		}
 		out = append(out, FromInspect(c.ID, d, opts.Caddy)...)
 		tlsTargets = append(tlsTargets, publishedTLSTargets(c.ID, d)...)

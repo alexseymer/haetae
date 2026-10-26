@@ -307,3 +307,69 @@ func TestOutboxLastResortDropsOldestWhenOnlyTerminals(t *testing.T) {
 		t.Fatalf("newest ts = %d, want %d", maxTS, maxDeployMsgs+9)
 	}
 }
+
+func bigSbom(scan, img string, pkgs int) *agentv1.SbomReport {
+	r := &agentv1.SbomReport{ScanId: scan, ImageId: img, Status: "ok"}
+	for i := 0; i < pkgs; i++ {
+		r.Packages = append(r.Packages, &agentv1.SbomPackage{Name: "pkg-" + strconv.Itoa(i), Version: "1.0.0", Purl: "pkg:deb/debian/pkg-" + strconv.Itoa(i) + "@1.0.0"})
+	}
+	return r
+}
+
+func drainSboms(t *testing.T, o *Outbox) []*agentv1.SbomReport {
+	t.Helper()
+	var out []*agentv1.SbomReport
+	for o.Len() > 0 {
+		msg, err := o.Next(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, msg.GetSbomReport())
+	}
+	return out
+}
+
+func TestOutboxSbomByteBudget(t *testing.T) {
+	o := NewOutbox(3)
+	for i := 0; i < 20; i++ {
+		o.PutSbom(bigSbom("s"+strconv.Itoa(i), "img-"+strconv.Itoa(i), 20000))
+	}
+	o.mu.Lock()
+	size := o.sbomSize
+	o.mu.Unlock()
+	if size > maxSbomBytes+2*1024*1024 { // budget plus at most the newest oversized report
+		t.Fatalf("queued sbom bytes %d exceed budget", size)
+	}
+	got := drainSboms(t, o)
+	last := got[len(got)-1]
+	if last.GetScanId() != "s19" || len(last.GetPackages()) != 20000 {
+		t.Fatalf("newest report not kept intact: %s %d", last.GetScanId(), len(last.GetPackages()))
+	}
+	for _, r := range got[:len(got)-1] {
+		if r.GetStatus() == "ok" && len(r.GetPackages()) == 0 {
+			t.Fatalf("dropped report %s must not look like a clean ok", r.GetScanId())
+		}
+	}
+}
+
+func TestOutboxSbomLatestPerImage(t *testing.T) {
+	o := NewOutbox(3)
+	o.PutSbom(bigSbom("old", "img", 100))
+	o.PutSbom(bigSbom("new", "img", 100))
+	got := drainSboms(t, o)
+	if len(got) != 2 {
+		t.Fatalf("got %d reports", len(got))
+	}
+	if got[0].GetScanId() != "old" || got[0].GetStatus() != "failed" || len(got[0].GetPackages()) != 0 {
+		t.Fatalf("superseded report must become a failed stub: %v", got[0])
+	}
+	if got[1].GetScanId() != "new" || got[1].GetStatus() != "ok" {
+		t.Fatalf("latest lost: %v", got[1])
+	}
+	// Same scan id replaces outright.
+	o.PutSbom(bigSbom("x", "img2", 1))
+	o.PutSbom(bigSbom("x", "img2", 2))
+	if n := o.Len(); n != 1 {
+		t.Fatalf("same scan_id should replace, Len=%d", n)
+	}
+}

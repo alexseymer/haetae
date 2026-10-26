@@ -22,7 +22,13 @@ type Store interface {
 	ListOrgIDs(ctx context.Context) ([]uuid.UUID, error)
 	OrgAutoPull(ctx context.Context, orgID uuid.UUID) (bool, error)
 	ListImageUpdatesByDecision(ctx context.Context, orgID uuid.UUID, decisions []string) ([]store.ImageUpdate, error)
+	UpsertImageUpdate(ctx context.Context, u store.ImageUpdate) error
+	MarkImagePull(ctx context.Context, orgID, hostID uuid.UUID, containerID, digest string, ok bool) error
 }
+
+// pullRetry is the minimum gap between PullImage sends for the same
+// candidate digest after a failed attempt.
+const pullRetry = 6 * time.Hour
 
 // Loop sends PullImage / ScanImage according to policy and org auto_pull.
 type Loop struct {
@@ -87,10 +93,20 @@ func (l *Loop) tickOrg(ctx context.Context, orgID uuid.UUID) {
 	if err != nil {
 		return
 	}
-	// Always consider wait rows that need a candidate scan.
+	// Re-run Decide for rows still waiting, every tick: the decision depends on
+	// time (48 h) and on the candidate scan, not only on the daily report.
 	waiting, _ := l.Store.ListImageUpdatesByDecision(ctx, orgID, []string{DecisionWait})
 	for _, u := range waiting {
-		l.maybeScan(ctx, u)
+		res := l.decide(ctx, u)
+		if res.NeedsCandidateScan {
+			l.maybeScan(ctx, u)
+		}
+		if res.Decision != u.Decision {
+			u.Decision, u.Reason = res.Decision, res.Reason
+			if err := l.Store.UpsertImageUpdate(ctx, u); err != nil {
+				l.Log.Debug("updates persist decision", "host", u.HostID, "err", err)
+			}
+		}
 	}
 	if !auto {
 		return
@@ -104,10 +120,8 @@ func (l *Loop) tickOrg(ctx context.Context, orgID uuid.UUID) {
 	}
 }
 
-func (l *Loop) maybeScan(ctx context.Context, u store.ImageUpdate) {
-	if l.Sender == nil || u.CandidateDigest == "" {
-		return
-	}
+// decide runs the policy for a stored row.
+func (l *Loop) decide(ctx context.Context, u store.ImageUpdate) Result {
 	runningFindingsID := u.RunningDigest
 	if rs, ok := l.Store.(interface {
 		LatestScanForContainer(context.Context, uuid.UUID, uuid.UUID, string) (store.Scan, error)
@@ -116,18 +130,21 @@ func (l *Loop) maybeScan(ctx context.Context, u store.ImageUpdate) {
 			runningFindingsID = sc.ImageID
 		}
 	}
-	in := Input{
-		RunningDigest:    u.RunningDigest,
-		CandidateDigest:  u.CandidateDigest,
-		CandidateCreated: timeOrZero(u.CandidateCreated),
-		Status:           "ok",
-		Now:              time.Now(),
-		OrgID:            u.OrgID.String(),
-		RunningImageID:   runningFindingsID,
-		Lookup:           l.Lookup,
-	}
-	dec := Decide(in)
-	if !dec.NeedsCandidateScan {
+	return Decide(Input{
+		RunningDigest:      u.RunningDigest,
+		CandidateDigest:    u.CandidateDigest,
+		CandidateCreated:   timeOrZero(u.CandidateCreated),
+		CandidateFirstSeen: timeOrZero(u.CandidateFirstSeen),
+		Status:             "ok",
+		Now:                time.Now(),
+		OrgID:              u.OrgID.String(),
+		RunningImageID:     runningFindingsID,
+		Lookup:             l.Lookup,
+	})
+}
+
+func (l *Loop) maybeScan(ctx context.Context, u store.ImageUpdate) {
+	if l.Sender == nil || u.CandidateDigest == "" {
 		return
 	}
 	l.mu.Lock()
@@ -153,6 +170,13 @@ func (l *Loop) sendPull(ctx context.Context, u store.ImageUpdate) {
 	if l.Sender == nil || u.CandidateDigest == "" {
 		return
 	}
+	if u.PulledDigest == u.CandidateDigest {
+		return // already pulled for this candidate
+	}
+	if u.PullAttemptDigest == u.CandidateDigest && u.PullAttemptedAt != nil &&
+		time.Since(*u.PullAttemptedAt) < pullRetry {
+		return // failed recently; retry at most every pullRetry
+	}
 	allowYoung := u.Decision == DecisionEligibleCriticalFix
 	cmd := &agentv1.Command{Kind: &agentv1.Command_PullImage{PullImage: &agentv1.PullImage{
 		Ref:         u.Image,
@@ -160,8 +184,13 @@ func (l *Loop) sendPull(ctx context.Context, u store.ImageUpdate) {
 		AllowYoung:  allowYoung,
 		MinAgeHours: 48,
 	}}}
-	if _, err := l.Sender.Send(ctx, u.HostID, cmd); err != nil {
+	res, err := l.Sender.Send(ctx, u.HostID, cmd)
+	ok := err == nil && res.GetError() == ""
+	if err != nil {
 		l.Log.Debug("pull image send", "host", u.HostID, "err", err)
+	}
+	if merr := l.Store.MarkImagePull(ctx, u.OrgID, u.HostID, u.ContainerID, u.CandidateDigest, ok); merr != nil {
+		l.Log.Debug("mark image pull", "host", u.HostID, "err", merr)
 	}
 }
 
@@ -175,7 +204,15 @@ func timeOrZero(t *time.Time) time.Time {
 // ApplyCandidate runs Decide and returns the ImageUpdate to store.
 // findingsImageID is the SBOM image id used for RunningFindings (typically the
 // container's latest ok scan image_id). When empty, RunningDigest is used.
-func ApplyCandidate(orgID, hostID uuid.UUID, c *agentv1.ImageCandidate, lookup FindingsLookup, now time.Time, findingsImageID string) store.ImageUpdate {
+//
+// prev is the stored row for the container (nil when none). The candidate's
+// first-seen time is kept from prev while the digest is unchanged and is now
+// for a new digest, matching store.UpsertImageUpdate.
+func ApplyCandidate(orgID, hostID uuid.UUID, c *agentv1.ImageCandidate, lookup FindingsLookup, now time.Time, findingsImageID string, prev *store.ImageUpdate) store.ImageUpdate {
+	firstSeen := now
+	if prev != nil && prev.CandidateDigest == c.GetCandidateDigest() && prev.CandidateFirstSeen != nil {
+		firstSeen = *prev.CandidateFirstSeen
+	}
 	var created *time.Time
 	if c.GetCandidateCreatedUnixMs() > 0 {
 		t := time.UnixMilli(c.GetCandidateCreatedUnixMs()).UTC()
@@ -186,26 +223,28 @@ func ApplyCandidate(orgID, hostID uuid.UUID, c *agentv1.ImageCandidate, lookup F
 		runningFindingsID = c.GetRunningDigest()
 	}
 	in := Input{
-		RunningDigest:    c.GetRunningDigest(),
-		CandidateDigest:  c.GetCandidateDigest(),
-		CandidateCreated: timeOrZero(created),
-		Status:           c.GetStatus(),
-		Error:            c.GetError(),
-		Now:              now,
-		OrgID:            orgID.String(),
-		RunningImageID:   runningFindingsID,
-		Lookup:           lookup,
+		RunningDigest:      c.GetRunningDigest(),
+		CandidateDigest:    c.GetCandidateDigest(),
+		CandidateCreated:   timeOrZero(created),
+		CandidateFirstSeen: firstSeen,
+		Status:             c.GetStatus(),
+		Error:              c.GetError(),
+		Now:                now,
+		OrgID:              orgID.String(),
+		RunningImageID:     runningFindingsID,
+		Lookup:             lookup,
 	}
 	dec := Decide(in)
 	return store.ImageUpdate{
-		OrgID:            orgID,
-		HostID:           hostID,
-		ContainerID:      c.GetContainerId(),
-		Image:            c.GetImage(),
-		RunningDigest:    c.GetRunningDigest(),
-		CandidateDigest:  c.GetCandidateDigest(),
-		CandidateCreated: created,
-		Decision:         dec.Decision,
-		Reason:           dec.Reason,
+		OrgID:              orgID,
+		HostID:             hostID,
+		ContainerID:        c.GetContainerId(),
+		Image:              c.GetImage(),
+		RunningDigest:      c.GetRunningDigest(),
+		CandidateDigest:    c.GetCandidateDigest(),
+		CandidateCreated:   created,
+		CandidateFirstSeen: &firstSeen,
+		Decision:           dec.Decision,
+		Reason:             dec.Reason,
 	}
 }

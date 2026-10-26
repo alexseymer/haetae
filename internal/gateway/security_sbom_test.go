@@ -15,6 +15,7 @@ import (
 
 type fakeSbomStore struct {
 	mu            sync.Mutex
+	matchStates   []string
 	belong        map[string]bool
 	saved         []store.SaveSbomInput
 	failed        []store.FailedScanInput
@@ -53,17 +54,27 @@ func (f *fakeSbomStore) RecordFailedScan(_ context.Context, _ uuid.UUID, in stor
 func (f *fakeSbomStore) ReplaceFindings(context.Context, uuid.UUID, string, []store.Finding) error {
 	return nil
 }
-func (f *fakeSbomStore) SetMatchState(context.Context, uuid.UUID, string, string, string, *time.Time) error {
+func (f *fakeSbomStore) SetMatchState(_ context.Context, _ uuid.UUID, img, status, _ string, _ *time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.matchStates = append(f.matchStates, img+":"+status)
 	return nil
 }
 
 type fakeMatchQueue struct {
 	ready bool
+	full  bool
 	n     int
 }
 
-func (q *fakeMatchQueue) EnqueueMatch(uuid.UUID, string) { q.n++ }
-func (q *fakeMatchQueue) Ready() bool                    { return q.ready }
+func (q *fakeMatchQueue) EnqueueMatch(uuid.UUID, string) bool {
+	if q.full {
+		return false
+	}
+	q.n++
+	return true
+}
+func (q *fakeMatchQueue) Ready() bool { return q.ready }
 
 func TestHandleSbomReportRejectsForeignContainer(t *testing.T) {
 	g := New(nil, nil, Config{}, slog.Default())
@@ -121,5 +132,64 @@ func TestHandleSbomReportOK(t *testing.T) {
 	}
 	if q.n != 1 {
 		t.Fatalf("match enqueue = %d", q.n)
+	}
+}
+
+func TestHandleSbomReportMarksPendingWhenQueueFullOrNotReady(t *testing.T) {
+	for name, q := range map[string]*fakeMatchQueue{
+		"full":      {ready: true, full: true},
+		"not ready": {ready: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := New(nil, nil, Config{}, slog.Default())
+			st := &fakeSbomStore{}
+			g.SetSbomHandlers(st, q)
+			s := &session{hostID: uuid.New(), orgID: uuid.New()}
+			g.handleSbomReport(context.Background(), s, &agentv1.SbomReport{
+				ImageId: "sha256:x", Status: "ok", Trigger: "deploy",
+				Packages: []*agentv1.SbomPackage{{Name: "p", Version: "1"}},
+			})
+			st.mu.Lock()
+			defer st.mu.Unlock()
+			if len(st.saved) != 1 || len(st.matchStates) != 1 || st.matchStates[0] != "sha256:x:pending" {
+				t.Fatalf("saved=%d matchStates=%v", len(st.saved), st.matchStates)
+			}
+		})
+	}
+}
+
+func TestHandleSbomReportOversizeForeignContainerNotRecorded(t *testing.T) {
+	g := New(nil, nil, Config{}, slog.Default())
+	st := &fakeSbomStore{belong: map[string]bool{"mine": true}}
+	g.SetSbomHandlers(st, &fakeMatchQueue{})
+	s := &session{hostID: uuid.New(), orgID: uuid.New()}
+	pkgs := make([]*agentv1.SbomPackage, store.MaxSbomPackages+1)
+	for i := range pkgs {
+		pkgs[i] = &agentv1.SbomPackage{Name: "p", Version: "1"}
+	}
+	g.handleSbomReport(context.Background(), s, &agentv1.SbomReport{
+		ContainerId: "other", ImageId: "sha", Status: "ok", Trigger: "start", Packages: pkgs,
+	})
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.failed) != 0 {
+		t.Fatalf("oversize report for a foreign container must not be recorded: %+v", st.failed)
+	}
+}
+
+func TestHandleSbomReportRateLimited(t *testing.T) {
+	g := New(nil, nil, Config{}, slog.Default())
+	st := &fakeSbomStore{}
+	g.SetSbomHandlers(st, &fakeMatchQueue{})
+	s := &session{hostID: uuid.New(), orgID: uuid.New(), sbomLim: newTokenBucket(1, 2)}
+	for i := 0; i < 10; i++ {
+		g.handleSbomReport(context.Background(), s, &agentv1.SbomReport{
+			ImageId: "sha", Status: "failed", Error: "x", Trigger: "start",
+		})
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.failed) > 3 || s.droppedSecurity.Load() < 7 {
+		t.Fatalf("recorded=%d dropped=%d", len(st.failed), s.droppedSecurity.Load())
 	}
 }

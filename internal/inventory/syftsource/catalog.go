@@ -4,6 +4,7 @@ package syftsource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -81,7 +82,7 @@ func Catalog(ctx context.Context, kind SourceKind, input, dockerSocket, tempDir 
 
 	src, err := syft.GetSource(ctx, input, srcCfg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
+		return nil, classifySourceErr(err)
 	}
 	defer func() { _ = src.Close() }()
 
@@ -99,9 +100,60 @@ func Catalog(ctx context.Context, kind SourceKind, input, dockerSocket, tempDir 
 
 	doc, err := syft.CreateSBOM(ctx, src, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
+		return nil, fmt.Errorf("catalog: %w", err)
 	}
-	return fromSBOM(doc, src), nil
+	res := fromSBOM(doc, src)
+	if err := checkOSPackages(res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// classifySourceErr marks only "no recognised source" as ErrUnsupported.
+// Docker socket failures, missing images, timeouts etc. stay generic failures.
+func classifySourceErr(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("resolve source: %w", err)
+	}
+	if strings.Contains(err.Error(), "no source providers were able to resolve") {
+		return fmt.Errorf("%w: %w", ErrUnsupported, err)
+	}
+	return fmt.Errorf("resolve source: %w", err)
+}
+
+// osPkgType maps a distro id (and id_like) to its package type, "" if unknown.
+func osPkgType(ids ...string) string {
+	for _, id := range ids {
+		switch strings.ToLower(id) {
+		case "debian", "ubuntu", "raspbian", "kali":
+			return "deb"
+		case "alpine", "wolfi", "chainguard":
+			return "apk"
+		case "rhel", "centos", "fedora", "rocky", "almalinux", "amzn", "ol",
+			"opensuse", "suse", "sles", "opensuse-leap", "photon", "mariner", "azurelinux":
+			return "rpm"
+		}
+	}
+	return ""
+}
+
+// checkOSPackages fails a scan that detected a distro but found none of that
+// distro's OS packages (e.g. unreadable package database). No distro
+// (distroless/scratch) is fine.
+func checkOSPackages(r *Result) error {
+	if r.DistroName == "" {
+		return nil
+	}
+	want := osPkgType(append([]string{r.DistroName}, strings.Fields(r.DistroLike)...)...)
+	if want == "" {
+		return nil
+	}
+	for _, p := range r.Packages {
+		if p.Type == want {
+			return nil
+		}
+	}
+	return fmt.Errorf("no OS packages found for %s", r.DistroName)
 }
 
 func fromSBOM(doc *sbom.SBOM, src source.Source) *Result {

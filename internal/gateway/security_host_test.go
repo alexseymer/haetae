@@ -17,6 +17,14 @@ type memSecurityStore struct {
 	misconfigs []store.Misconfig
 	hostSec    *store.HostSecurity
 	updates    []store.ImageUpdate
+	prev       *store.ImageUpdate
+}
+
+func (m *memSecurityStore) GetImageUpdate(context.Context, uuid.UUID, uuid.UUID, string) (store.ImageUpdate, error) {
+	if m.prev == nil {
+		return store.ImageUpdate{}, store.ErrNotFound
+	}
+	return *m.prev, nil
 }
 
 func (m *memSecurityStore) ReplaceMisconfigs(_ context.Context, _, _ uuid.UUID, ms []store.Misconfig) error {
@@ -67,14 +75,9 @@ func TestHandleSecurityReportClipsAndStores(t *testing.T) {
 	}
 }
 
-func TestHandleImageCandidatesDecides(t *testing.T) {
-	sec := &memSecurityStore{}
-	g := New(securityStoreAdapter{sec}, nil, Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s := newSession(uuid.New(), func(error) {})
-	s.orgID = uuid.New()
-
+func candidateReport() *agentv1.ImageCandidates {
 	old := time.Now().Add(-72 * time.Hour).UnixMilli()
-	g.handleImageCandidates(context.Background(), s, &agentv1.ImageCandidates{
+	return &agentv1.ImageCandidates{
 		Candidates: []*agentv1.ImageCandidate{{
 			ContainerId:            "c1",
 			Image:                  "busybox:latest",
@@ -83,13 +86,39 @@ func TestHandleImageCandidatesDecides(t *testing.T) {
 			CandidateCreatedUnixMs: old,
 			Status:                 "ok",
 		}},
-	})
+	}
+}
+
+// A digest the server has just seen is young whatever "created" claims.
+func TestHandleImageCandidatesFirstSightWaits(t *testing.T) {
+	sec := &memSecurityStore{}
+	g := New(securityStoreAdapter{sec}, nil, Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := newSession(uuid.New(), func(error) {})
+	s.orgID = uuid.New()
+	g.handleImageCandidates(context.Background(), s, candidateReport())
+	if len(sec.updates) != 1 || sec.updates[0].Decision != "wait" {
+		t.Fatalf("updates=%+v", sec.updates)
+	}
+}
+
+func TestHandleImageCandidatesDecides(t *testing.T) {
+	sec := &memSecurityStore{}
+	seen := time.Now().Add(-72 * time.Hour)
+	sec.prev = &store.ImageUpdate{CandidateDigest: "sha256:bbb", CandidateFirstSeen: &seen}
+	g := New(securityStoreAdapter{sec}, nil, Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := newSession(uuid.New(), func(error) {})
+	s.orgID = uuid.New()
+	g.handleImageCandidates(context.Background(), s, candidateReport())
 	if len(sec.updates) != 1 {
 		t.Fatalf("updates=%d", len(sec.updates))
 	}
 	if sec.updates[0].Decision != "eligible" {
 		t.Fatalf("decision=%s reason=%s", sec.updates[0].Decision, sec.updates[0].Reason)
 	}
+}
+
+func (a securityStoreAdapter) GetImageUpdate(ctx context.Context, o, h uuid.UUID, c string) (store.ImageUpdate, error) {
+	return a.securityStore.(*memSecurityStore).GetImageUpdate(ctx, o, h, c)
 }
 
 type securityStoreAdapter struct{ securityStore }

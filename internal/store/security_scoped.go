@@ -31,7 +31,7 @@ type ContainerScanView struct {
 	ScanError   string
 	ScanAt      *time.Time
 	ToolVersion string
-	MatchStatus string // ok|failed|none
+	MatchStatus string // ok|failed|pending|none (none = never matched)
 	MatchError  string
 	DBBuiltAt   *time.Time
 	Counts      SeverityCounts
@@ -45,6 +45,9 @@ type HostVulnSummary struct {
 	Medium     int
 	Low        int
 	ScanFailed bool
+	// Pending counts containers whose scan succeeded but whose image is not
+	// matched yet (no match row or pending). Never shown as "no vulnerabilities".
+	Pending int
 }
 
 // HTTPSOnlyURLs keeps only https:// URLs (scheme exactly https).
@@ -269,7 +272,8 @@ func (s *Store) ContainerVulnViews(ctx context.Context, orgID, hostID uuid.UUID)
 	return out, nil
 }
 
-// HostVulnBadgeSummary aggregates critical/high counts and whether any scan failed.
+// HostVulnBadgeSummary aggregates counts, whether any scan failed, and how many
+// scanned containers still wait for matching (Pending).
 func (s *Store) HostVulnBadgeSummary(ctx context.Context, orgID, hostID uuid.UUID) (HostVulnSummary, error) {
 	views, err := s.ContainerVulnViews(ctx, orgID, hostID)
 	if err != nil {
@@ -286,6 +290,9 @@ func (s *Store) HostVulnBadgeSummary(ctx context.Context, orgID, hostID uuid.UUI
 			sum.High += v.Counts.High
 			sum.Medium += v.Counts.Medium
 			sum.Low += v.Counts.Low
+		} else if v.ScanStatus == ScanOK {
+			// Scan ok but not matched yet: unknown, not clean.
+			sum.Pending++
 		}
 	}
 	return sum, nil

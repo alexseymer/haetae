@@ -753,7 +753,9 @@ func scenarioImageUpdates(t *testing.T, h *harness) {
 		t.Fatalf("young candidate must not be pulled with decision=wait; inspect ok:\n%s", out)
 	}
 
-	// Eligible: candidate older than 48h (same tag overwrite with old created).
+	// A backdated "created" alone must not skip the wait: the server counts
+	// age from when it first saw the digest. Then age first_seen as if the
+	// digest had been known for 72 h, and the candidate becomes eligible.
 	oldRepo := "htest/old"
 	oldRef := "127.0.0.1:" + regPort + "/" + oldRepo
 	_ = exec.Command("docker", "tag", "alpine:3.20", oldRef+":latest").Run()
@@ -765,20 +767,34 @@ func scenarioImageUpdates(t *testing.T, h *harness) {
 	_ = pushRegistryImage(t, "127.0.0.1:"+regPort, oldRepo, "latest", oldCreated, map[string][]byte{
 		"bin/x": []byte("old-candidate\n"),
 	})
-	waitFor(t, 2*time.Minute, "decision eligible (old)", func() bool {
+	decisionFor := func(repo string) string {
 		var out struct {
 			Updates []map[string]any `json:"updates"`
 		}
 		status, _ := h.api(h.admin, "GET", "/api/hosts/"+h.hostID+"/image-updates", nil, &out)
 		if status != 200 {
-			return false
+			return ""
 		}
 		for _, u := range out.Updates {
 			img, _ := u["image"].(string)
-			if strings.Contains(img, oldRepo) && u["decision"] == "eligible" {
-				measure(t, "image_update_eligible", time.Since(start))
-				return true
+			if strings.Contains(img, repo) {
+				d, _ := u["decision"].(string)
+				return d
 			}
+		}
+		return ""
+	}
+	waitFor(t, 2*time.Minute, "backdated candidate waits", func() bool {
+		return decisionFor(oldRepo) == "wait"
+	})
+	if _, err := h.pool.Exec(context.Background(),
+		`UPDATE image_updates SET candidate_first_seen = now() - interval '72 hours' WHERE image LIKE '%' || $1 || '%'`, oldRepo); err != nil {
+		t.Fatalf("age first_seen: %v", err)
+	}
+	waitFor(t, 2*time.Minute, "decision eligible (old)", func() bool {
+		if decisionFor(oldRepo) == "eligible" {
+			measure(t, "image_update_eligible", time.Since(start))
+			return true
 		}
 		return false
 	})

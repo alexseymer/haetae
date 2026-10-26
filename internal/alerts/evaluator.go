@@ -35,6 +35,9 @@ type Evaluator struct {
 	unhealthySince map[uuid.UUID]map[string]time.Time
 	// restartSamples[orgID][host|cid] holds recent restart_count observations.
 	restartSamples map[uuid.UUID]map[string][]restartSample
+	// cveMark[orgID] is the previous new_cve evaluation time (persisted via
+	// cveWatermarkStore when the Reader supports it).
+	cveMark map[uuid.UUID]time.Time
 	// seededOrgs remembers orgs whose DB trackers have been loaded into memory.
 	seededOrgs map[uuid.UUID]bool
 
@@ -68,6 +71,7 @@ func NewEvaluator(r Reader, n Notifier, cfg Config, log *slog.Logger) *Evaluator
 		unhealthySince:   make(map[uuid.UUID]map[string]time.Time),
 		restartSamples:   make(map[uuid.UUID]map[string][]restartSample),
 		seededOrgs:       make(map[uuid.UUID]bool),
+		cveMark:          make(map[uuid.UUID]time.Time),
 		wake:             make(chan struct{}, 1),
 	}
 }
@@ -137,12 +141,6 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	firing := EvaluateRules(snap)
-	firingKeys := make(map[string]Candidate, len(firing))
-	for _, c := range firing {
-		firingKeys[c.DedupeKey] = c
-	}
-
 	existing, err := e.r.ListFiringAlerts(ctx, orgID)
 	if err != nil {
 		return err
@@ -150,6 +148,19 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 	existingByKey := make(map[string]store.Alert, len(existing))
 	for _, a := range existing {
 		existingByKey[a.DedupeKey] = a
+	}
+	// Keep new_cve alerts open while their finding persists.
+	for i := range snap.CVEFindings {
+		f := &snap.CVEFindings[i]
+		if _, ok := existingByKey[NewCVEKey(f.ContainerID, f.VulnID)]; ok {
+			f.Active = true
+		}
+	}
+
+	firing := EvaluateRules(snap)
+	firingKeys := make(map[string]Candidate, len(firing))
+	for _, c := range firing {
+		firingKeys[c.DedupeKey] = c
 	}
 
 	mutes, err := e.r.ActiveMutes(ctx, orgID, now)
@@ -207,7 +218,57 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 			e.log.Error("apply host alerts", "org_id", orgID, "host_id", hostID, "err", err)
 		}
 	}
+	e.commitCVEWatermark(ctx, orgID, now)
 	return nil
+}
+
+// cveWatermarkStore is implemented by stores that persist the new_cve
+// watermark; other readers keep it in memory only.
+type cveWatermarkStore interface {
+	GetCVEWatermark(ctx context.Context, orgID uuid.UUID) (time.Time, bool, error)
+	SetCVEWatermark(ctx context.Context, orgID uuid.UUID, at time.Time) error
+}
+
+// cveWatermark returns the previous evaluation time for new_cve. On the very
+// first evaluation for an org there is no previous time: it returns now, so
+// the existing backlog is shown in the UI but never alerted.
+func (e *Evaluator) cveWatermark(ctx context.Context, orgID uuid.UUID, now time.Time) time.Time {
+	e.mu.Lock()
+	t, ok := e.cveMark[orgID]
+	e.mu.Unlock()
+	if ok {
+		return t
+	}
+	if ws, isWS := e.r.(cveWatermarkStore); isWS {
+		if got, found, err := ws.GetCVEWatermark(ctx, orgID); err == nil && found {
+			t, ok = got, true
+		} else if err != nil {
+			e.log.Error("cve watermark load", "org_id", orgID, "err", err)
+		}
+	}
+	if !ok {
+		t = now
+	}
+	e.mu.Lock()
+	e.cveMark[orgID] = t
+	e.mu.Unlock()
+	return t
+}
+
+// commitCVEWatermark advances the watermark after a completed evaluation.
+func (e *Evaluator) commitCVEWatermark(ctx context.Context, orgID uuid.UUID, now time.Time) {
+	e.mu.Lock()
+	if prev, ok := e.cveMark[orgID]; ok && !now.After(prev) {
+		e.mu.Unlock()
+		return
+	}
+	e.cveMark[orgID] = now
+	e.mu.Unlock()
+	if ws, ok := e.r.(cveWatermarkStore); ok {
+		if err := ws.SetCVEWatermark(ctx, orgID, now); err != nil {
+			e.log.Error("cve watermark save", "org_id", orgID, "err", err)
+		}
+	}
 }
 
 func (e *Evaluator) applyHost(
@@ -572,11 +633,9 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 			FirstSeen: row.Finding.FirstSeen,
 		})
 	}
-	// Watermark: one evaluator interval ago so a rematch's new first_seen ranks first.
-	cveSince := now.Add(-e.cfg.Interval)
-	if cveSince.After(now) {
-		cveSince = now.Add(-15 * time.Second)
-	}
+	// Watermark: the previous evaluation (persisted); only findings first seen
+	// after it, and after the container started, alert as new.
+	cveSince := e.cveWatermark(ctx, orgID, now)
 
 	return Snapshot{
 		Now:         now,

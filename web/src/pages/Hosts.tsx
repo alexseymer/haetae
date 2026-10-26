@@ -11,7 +11,7 @@ import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { hostSecurityBadgeText } from "../lib/security";
 
-type HostSecBadge = { scanFailed: boolean; summary: SeveritySummary };
+type HostSecBadge = { scanFailed: boolean; matchPending: number; summary: SeveritySummary };
 
 export function HostsPage() {
   const { user } = useAuth();
@@ -63,7 +63,7 @@ export function HostsPage() {
         list.map(async (h) => {
           try {
             const sec = await api.hostSecurity(h.id);
-            return [h.id, { scanFailed: !!sec.scanFailed, summary: sec.summary }] as const;
+            return [h.id, { scanFailed: !!sec.scanFailed, matchPending: sec.matchPending ?? 0, summary: sec.summary }] as const;
           } catch {
             return null;
           }
@@ -166,6 +166,7 @@ export function HostsPage() {
                   const badgeText = hostSecurityBadgeText(
                     badge?.scanFailed,
                     badge?.summary ?? null,
+                    badge?.matchPending,
                   );
                   return (
                   <tr key={h.id}>
@@ -204,6 +205,7 @@ export function HostsPage() {
               const badgeText = hostSecurityBadgeText(
                 badge?.scanFailed,
                 badge?.summary ?? null,
+                badge?.matchPending,
               );
               return (
                 <div key={h.id} className="host-card">

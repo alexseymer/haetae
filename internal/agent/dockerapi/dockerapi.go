@@ -19,6 +19,13 @@ const APIVersion = "v1.41"
 
 const maxBody = 8 << 20 // 8 MiB
 
+// requestTimeout bounds every non-streaming call (a hung daemon must not pin
+// goroutines); pullTimeout bounds image pulls. Events/logs streams are exempt.
+const (
+	requestTimeout = 30 * time.Second
+	pullTimeout    = 15 * time.Minute
+)
+
 // Client talks to the Docker Engine API over a Unix socket.
 type Client struct {
 	http *http.Client
@@ -248,6 +255,8 @@ func (c *Client) PullImage(ctx context.Context, ref string) error {
 		q.Set("tag", tag)
 	}
 	path := "/images/create?" + q.Encode()
+	ctx, cancel := context.WithTimeout(ctx, pullTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, nil)
 	if err != nil {
 		return fmt.Errorf("dockerapi: pull: %w", err)
@@ -353,7 +362,14 @@ type Event struct {
 // until ctx ends or the stream fails. It calls fn for each event; it returns
 // the stream error (nil when ctx is cancelled).
 func (c *Client) Events(ctx context.Context, fn func(Event)) error {
-	filters := `{"type":["container"]}`
+	return c.EventsFor(ctx, []string{"container"}, fn)
+}
+
+// EventsFor is Events for the given event types (e.g. "container", "network").
+// Like Events it is a long-lived stream with no timeout.
+func (c *Client) EventsFor(ctx context.Context, types []string, fn func(Event)) error {
+	tj, _ := json.Marshal(types)
+	filters := `{"type":` + string(tj) + `}`
 	path := "/events?filters=" + url.QueryEscape(filters)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
@@ -389,6 +405,8 @@ func (c *Client) Events(ctx context.Context, fn func(Event)) error {
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, dst any) error {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
 		return fmt.Errorf("dockerapi: %w", err)

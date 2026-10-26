@@ -56,9 +56,29 @@ type ImageUpdate struct {
 	RunningDigest    string
 	CandidateDigest  string
 	CandidateCreated *time.Time
-	Decision         string
-	Reason           string
-	DecidedAt        time.Time
+	// CandidateFirstSeen is when the server first saw CandidateDigest; set by
+	// UpsertImageUpdate (kept while the digest is unchanged, reset on change).
+	CandidateFirstSeen *time.Time
+	Decision           string
+	Reason             string
+	DecidedAt          time.Time
+	// Pull bookkeeping (see MarkImagePull).
+	PulledDigest      string
+	PulledAt          *time.Time
+	PullAttemptDigest string
+	PullAttemptedAt   *time.Time
+}
+
+const imageUpdateCols = `org_id, host_id, container_id, image, running_digest, candidate_digest,
+	candidate_created, candidate_first_seen, decision, reason, decided_at,
+	pulled_digest, pulled_at, pull_attempt_digest, pull_attempted_at`
+
+func scanImageUpdate(row pgx.Row) (ImageUpdate, error) {
+	var u ImageUpdate
+	err := row.Scan(&u.OrgID, &u.HostID, &u.ContainerID, &u.Image, &u.RunningDigest, &u.CandidateDigest,
+		&u.CandidateCreated, &u.CandidateFirstSeen, &u.Decision, &u.Reason, &u.DecidedAt,
+		&u.PulledDigest, &u.PulledAt, &u.PullAttemptDigest, &u.PullAttemptedAt)
+	return u, err
 }
 
 const (
@@ -219,17 +239,25 @@ func (s *Store) PurgeOutboundOlderThan(ctx context.Context, days int) (int64, er
 	return tag.RowsAffected(), nil
 }
 
-// UpsertImageUpdate stores a decision for one container.
+// UpsertImageUpdate stores a decision for one container. candidate_first_seen
+// is kept while candidate_digest is unchanged and reset to now() when it
+// changes; pull bookkeeping is never touched here.
 func (s *Store) UpsertImageUpdate(ctx context.Context, u ImageUpdate) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO image_updates (
 			org_id, host_id, container_id, image, running_digest, candidate_digest,
-			candidate_created, decision, reason, decided_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
+			candidate_created, candidate_first_seen, decision, reason, decided_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $6 = '' THEN NULL ELSE now() END, $8,$9,now())
 		ON CONFLICT (host_id, container_id) DO UPDATE SET
 			org_id = EXCLUDED.org_id,
 			image = EXCLUDED.image,
 			running_digest = EXCLUDED.running_digest,
+			candidate_first_seen = CASE
+				WHEN EXCLUDED.candidate_digest = '' THEN NULL
+				WHEN image_updates.candidate_digest = EXCLUDED.candidate_digest
+					AND image_updates.candidate_first_seen IS NOT NULL
+					THEN image_updates.candidate_first_seen
+				ELSE now() END,
 			candidate_digest = EXCLUDED.candidate_digest,
 			candidate_created = EXCLUDED.candidate_created,
 			decision = EXCLUDED.decision,
@@ -244,6 +272,37 @@ func (s *Store) UpsertImageUpdate(ctx context.Context, u ImageUpdate) error {
 	return nil
 }
 
+// GetImageUpdate returns the stored decision for a container, or ErrNotFound.
+func (s *Store) GetImageUpdate(ctx context.Context, orgID, hostID uuid.UUID, containerID string) (ImageUpdate, error) {
+	u, err := scanImageUpdate(s.pool.QueryRow(ctx, `SELECT `+imageUpdateCols+`
+		FROM image_updates WHERE org_id = $1 AND host_id = $2 AND container_id = $3`,
+		orgID, hostID, containerID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ImageUpdate{}, ErrNotFound
+		}
+		return ImageUpdate{}, fmt.Errorf("store: GetImageUpdate: %w", err)
+	}
+	return u, nil
+}
+
+// MarkImagePull records a PullImage attempt for digest. When ok, the digest
+// is also recorded as pulled so the loop never sends it again.
+func (s *Store) MarkImagePull(ctx context.Context, orgID, hostID uuid.UUID, containerID, digest string, ok bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE image_updates SET
+			pull_attempt_digest = $4,
+			pull_attempted_at = now(),
+			pulled_digest = CASE WHEN $5 THEN $4 ELSE pulled_digest END,
+			pulled_at = CASE WHEN $5 THEN now() ELSE pulled_at END
+		WHERE org_id = $1 AND host_id = $2 AND container_id = $3`,
+		orgID, hostID, containerID, digest, ok)
+	if err != nil {
+		return fmt.Errorf("store: MarkImagePull: %w", err)
+	}
+	return nil
+}
+
 // ListMisconfigs returns findings for a host (org-scoped). openOnly skips resolved.
 func (s *Store) ListMisconfigs(ctx context.Context, orgID, hostID uuid.UUID, openOnly bool) ([]Misconfig, error) {
 	q := `
@@ -252,7 +311,7 @@ func (s *Store) ListMisconfigs(ctx context.Context, orgID, hostID uuid.UUID, ope
 	if openOnly {
 		q += ` AND resolved_at IS NULL`
 	}
-	q += ` ORDER BY severity DESC, first_seen ASC`
+	q += ` ORDER BY ` + severityRank("severity") + `, first_seen ASC`
 	rows, err := s.pool.Query(ctx, q, orgID, hostID)
 	if err != nil {
 		return nil, fmt.Errorf("store: ListMisconfigs: %w", err)
@@ -318,8 +377,7 @@ func (s *Store) ListOutbound(ctx context.Context, orgID, hostID uuid.UUID, limit
 // ListImageUpdates returns image update decisions for a host.
 func (s *Store) ListImageUpdates(ctx context.Context, orgID, hostID uuid.UUID) ([]ImageUpdate, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT org_id, host_id, container_id, image, running_digest, candidate_digest,
-			candidate_created, decision, reason, decided_at
+		SELECT `+imageUpdateCols+`
 		FROM image_updates WHERE org_id = $1 AND host_id = $2
 		ORDER BY decided_at DESC`, orgID, hostID)
 	if err != nil {
@@ -328,9 +386,8 @@ func (s *Store) ListImageUpdates(ctx context.Context, orgID, hostID uuid.UUID) (
 	defer rows.Close()
 	var out []ImageUpdate
 	for rows.Next() {
-		var u ImageUpdate
-		if err := rows.Scan(&u.OrgID, &u.HostID, &u.ContainerID, &u.Image, &u.RunningDigest, &u.CandidateDigest,
-			&u.CandidateCreated, &u.Decision, &u.Reason, &u.DecidedAt); err != nil {
+		u, err := scanImageUpdate(rows)
+		if err != nil {
 			return nil, fmt.Errorf("store: ListImageUpdates: %w", err)
 		}
 		out = append(out, u)
@@ -341,8 +398,7 @@ func (s *Store) ListImageUpdates(ctx context.Context, orgID, hostID uuid.UUID) (
 // ListImageUpdatesByDecision returns updates matching decision across an org.
 func (s *Store) ListImageUpdatesByDecision(ctx context.Context, orgID uuid.UUID, decisions []string) ([]ImageUpdate, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT org_id, host_id, container_id, image, running_digest, candidate_digest,
-			candidate_created, decision, reason, decided_at
+		SELECT `+imageUpdateCols+`
 		FROM image_updates WHERE org_id = $1 AND decision = ANY($2)
 		ORDER BY decided_at ASC`, orgID, decisions)
 	if err != nil {
@@ -351,9 +407,8 @@ func (s *Store) ListImageUpdatesByDecision(ctx context.Context, orgID uuid.UUID,
 	defer rows.Close()
 	var out []ImageUpdate
 	for rows.Next() {
-		var u ImageUpdate
-		if err := rows.Scan(&u.OrgID, &u.HostID, &u.ContainerID, &u.Image, &u.RunningDigest, &u.CandidateDigest,
-			&u.CandidateCreated, &u.Decision, &u.Reason, &u.DecidedAt); err != nil {
+		u, err := scanImageUpdate(rows)
+		if err != nil {
 			return nil, fmt.Errorf("store: ListImageUpdatesByDecision: %w", err)
 		}
 		out = append(out, u)

@@ -35,8 +35,16 @@ type Listener struct {
 	MaxBackoff time.Duration // default 30s
 	Log        *slog.Logger
 	Now        func() time.Time
+	// DegradedHold is how long "degraded" stays reported after the last event
+	// loss / error, even when the source restarted fine (default 5m).
+	DegradedHold time.Duration
+	// OnStateChange, if set, is called (outside locks) whenever the reported
+	// state changes, so the caller can send a state sync promptly.
+	OnStateChange func()
 
 	mu            sync.Mutex
+	degradedUntil time.Time
+	degradedWhy   string
 	state         string
 	reason        string
 	notMonitored  []string
@@ -83,9 +91,10 @@ func NewListener(docker *dockerapi.Client, emit Emitter, log *slog.Logger) *List
 func (l *Listener) Status() *agentv1.ConntrackStatus {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	state, reason := l.effectiveLocked()
 	out := &agentv1.ConntrackStatus{
-		State:  l.state,
-		Reason: l.reason,
+		State:  state,
+		Reason: reason,
 	}
 	out.NotMonitoredContainerIds = append([]string(nil), l.notMonitored...)
 	return out
@@ -314,11 +323,35 @@ func (l *Listener) flush(ctx context.Context) {
 	}
 }
 
+const defaultDegradedHold = 5 * time.Minute
+
+// effectiveLocked applies the sticky degraded hold on top of the raw state.
+func (l *Listener) effectiveLocked() (state, reason string) {
+	if l.state == "ok" && l.Now().Before(l.degradedUntil) {
+		return "degraded", l.degradedWhy
+	}
+	return l.state, l.reason
+}
+
 func (l *Listener) setState(state, reason string) {
 	l.mu.Lock()
+	oldS, oldR := l.effectiveLocked()
+	if state == "degraded" {
+		hold := l.DegradedHold
+		if hold <= 0 {
+			hold = defaultDegradedHold
+		}
+		l.degradedUntil = l.Now().Add(hold)
+		l.degradedWhy = reason
+	}
 	l.state = state
 	l.reason = reason
+	newS, newR := l.effectiveLocked()
+	cb := l.OnStateChange
 	l.mu.Unlock()
+	if cb != nil && (oldS != newS || oldR != newR) {
+		cb()
+	}
 }
 
 func (l *Listener) inDockerNetLocked(addr netip.Addr) bool {
@@ -344,12 +377,44 @@ func isDegraded(err error) bool {
 	return errors.As(err, &d)
 }
 
+// refreshEvent reports whether a Docker event can change the IP→container map.
+func refreshEvent(ev dockerapi.Event) bool {
+	action, _, _ := strings.Cut(ev.Action, ":")
+	switch ev.Type {
+	case "container":
+		return action == "start" || action == "die" || action == "destroy"
+	case "network":
+		return action == "connect" || action == "disconnect"
+	}
+	return false
+}
+
+// refresher runs RefreshInventory for each trigger; triggers arriving while a
+// refresh is in flight collapse into one pending run.
+func (l *Listener) refresher(ctx context.Context, trigger <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-trigger:
+			_ = l.RefreshInventory(ctx)
+		}
+	}
+}
+
 func (l *Listener) watchDocker(ctx context.Context) {
 	if l.Docker == nil {
 		return
 	}
-	// Periodic refresh covers network changes; Docker Events here is
-	// container-typed only (shared client), so poll as a backstop.
+	trigger := make(chan struct{}, 1) // one in flight (worker) + one pending (buffer)
+	kick := func() {
+		select {
+		case trigger <- struct{}{}:
+		default:
+		}
+	}
+	go l.refresher(ctx, trigger)
+	// Periodic refresh is a backstop for missed events.
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -358,18 +423,15 @@ func (l *Listener) watchDocker(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				_ = l.RefreshInventory(ctx)
+				kick()
 			}
 		}
 	}()
 	backoff := time.Second
 	for ctx.Err() == nil {
-		err := l.Docker.Events(ctx, func(ev dockerapi.Event) {
-			switch {
-			case ev.Type == "container", ev.Type == "network",
-				strings.Contains(ev.Action, "start"), strings.Contains(ev.Action, "die"),
-				strings.Contains(ev.Action, "connect"), strings.Contains(ev.Action, "disconnect"):
-				_ = l.RefreshInventory(ctx)
+		err := l.Docker.EventsFor(ctx, []string{"container", "network"}, func(ev dockerapi.Event) {
+			if refreshEvent(ev) {
+				kick()
 			}
 		})
 		if ctx.Err() != nil {

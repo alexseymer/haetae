@@ -37,7 +37,17 @@ const (
 const (
 	MatchOK     = "ok"
 	MatchFailed = "failed"
+	// MatchPending: SBOM stored but not matched yet (queue full, database not
+	// ready). The periodic re-match picks it up; the UI says "matching pending".
+	MatchPending = "pending"
 )
+
+// severityRank returns a SQL expression ranking col critical (0) .. unknown (5)
+// so ORDER BY does not sort severity names alphabetically.
+func severityRank(col string) string {
+	return "CASE " + col + ` WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
+		WHEN 'low' THEN 3 WHEN 'negligible' THEN 4 ELSE 5 END`
+}
 
 // Vuln DB statuses.
 const (
@@ -605,7 +615,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 		return ErrNotFound
 	}
 
-	type key struct{ v, p, ver string }
+	type key struct{ v, p, ver, t string }
 	keep := make(map[key]bool, len(findings))
 	now := time.Now().UTC()
 	for i := range findings {
@@ -625,7 +635,10 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 		for j := range f.URLs {
 			f.URLs[j] = clipVuln(f.URLs[j], MaxVulnStringBytes)
 		}
-		k := key{f.VulnID, f.Package, f.Version}
+		k := key{f.VulnID, f.Package, f.Version, f.PkgType}
+		if keep[k] {
+			continue // duplicate primary key within one batch
+		}
 		keep[k] = true
 		urls, err := json.Marshal(f.URLs)
 		if err != nil {
@@ -639,8 +652,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 				org_id, image_id, vuln_id, package, version, pkg_type, fixed_version,
 				severity, description, urls, first_seen, last_seen
 			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
-			ON CONFLICT (org_id, image_id, vuln_id, package, version) DO UPDATE SET
-				pkg_type = EXCLUDED.pkg_type,
+			ON CONFLICT (org_id, image_id, vuln_id, package, version, pkg_type) DO UPDATE SET
 				fixed_version = EXCLUDED.fixed_version,
 				severity = EXCLUDED.severity,
 				description = EXCLUDED.description,
@@ -655,7 +667,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 	}
 
 	rows, err := tx.Query(ctx, `
-		SELECT vuln_id, package, version FROM image_findings
+		SELECT vuln_id, package, version, pkg_type FROM image_findings
 		WHERE org_id = $1 AND image_id = $2`, orgID, imageID)
 	if err != nil {
 		return fmt.Errorf("store: ReplaceFindings list: %w", err)
@@ -663,7 +675,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 	var gone []key
 	for rows.Next() {
 		var k key
-		if err := rows.Scan(&k.v, &k.p, &k.ver); err != nil {
+		if err := rows.Scan(&k.v, &k.p, &k.ver, &k.t); err != nil {
 			rows.Close()
 			return fmt.Errorf("store: ReplaceFindings list: %w", err)
 		}
@@ -678,8 +690,8 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 	for _, k := range gone {
 		_, err = tx.Exec(ctx, `
 			DELETE FROM image_findings
-			WHERE org_id = $1 AND image_id = $2 AND vuln_id = $3 AND package = $4 AND version = $5`,
-			orgID, imageID, k.v, k.p, k.ver,
+			WHERE org_id = $1 AND image_id = $2 AND vuln_id = $3 AND package = $4 AND version = $5 AND pkg_type = $6`,
+			orgID, imageID, k.v, k.p, k.ver, k.t,
 		)
 		if err != nil {
 			return fmt.Errorf("store: ReplaceFindings delete: %w", err)
@@ -694,7 +706,7 @@ func (s *Store) ReplaceFindings(ctx context.Context, orgID uuid.UUID, imageID st
 
 // SetMatchState upserts the match result for an image.
 func (s *Store) SetMatchState(ctx context.Context, orgID uuid.UUID, imageID, status, errText string, dbBuiltAt *time.Time) error {
-	if status != MatchOK && status != MatchFailed {
+	if status != MatchOK && status != MatchFailed && status != MatchPending {
 		return fmt.Errorf("store: SetMatchState: bad status %q", status)
 	}
 	errText = clipVuln(errText, MaxVulnErrorBytes)
@@ -764,7 +776,7 @@ func (s *Store) ListFindingsForHost(ctx context.Context, orgID, hostID uuid.UUID
 				WHERE org_id = $1 AND host_id = $2 AND removed_at IS NULL
 			  )
 		)
-		ORDER BY f.severity, f.vuln_id`,
+		ORDER BY `+severityRank("f.severity")+`, f.vuln_id`,
 		orgID, hostID, ScanOK,
 	)
 	if err != nil {
@@ -795,7 +807,7 @@ func (s *Store) FindingsForContainer(ctx context.Context, orgID, hostID uuid.UUI
 			severity, description, urls, first_seen, last_seen
 		FROM image_findings
 		WHERE org_id = $1 AND image_id = $2
-		ORDER BY severity, vuln_id`,
+		ORDER BY `+severityRank("severity")+`, vuln_id`,
 		orgID, imageID,
 	)
 	if err != nil {
@@ -876,7 +888,7 @@ func (s *Store) NewCriticalHighFindingsForRunningContainers(ctx context.Context,
 		WHERE c.org_id = $1 AND c.removed_at IS NULL AND lower(c.state) = 'running'
 		  AND f.severity IN ('high', 'critical')
 		  AND f.first_seen >= $3
-		ORDER BY c.host_id, c.container_id, f.severity DESC, f.vuln_id`,
+		ORDER BY c.host_id, c.container_id, `+severityRank("f.severity")+`, f.vuln_id`,
 		orgID, ScanOK, since,
 	)
 	if err != nil {
@@ -921,7 +933,7 @@ func (s *Store) HighCriticalFindingsForRunningContainers(ctx context.Context, or
 		JOIN image_findings f ON f.org_id = $1 AND f.image_id = lo.image_id
 		WHERE c.org_id = $1 AND c.removed_at IS NULL AND lower(c.state) = 'running'
 		  AND f.severity IN ('high', 'critical')
-		ORDER BY c.host_id, c.container_id, f.severity DESC, f.vuln_id`,
+		ORDER BY c.host_id, c.container_id, `+severityRank("f.severity")+`, f.vuln_id`,
 		orgID, ScanOK,
 	)
 	if err != nil {
@@ -996,4 +1008,89 @@ func NormalizeFindingSeverity(s string) string {
 	default:
 		return FindingUnknown
 	}
+}
+
+// ListUnmatchedSboms pages SBOMs that have no match state or a pending one
+// (matching was dropped or the database was not ready). Cross-org, for the
+// periodic re-match.
+func (s *Store) ListUnmatchedSboms(ctx context.Context, afterOrg uuid.UUID, afterImage string, limit int) ([]struct {
+	OrgID   uuid.UUID
+	ImageID string
+}, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT b.org_id, b.image_id FROM sboms b
+		LEFT JOIN image_match_state m ON m.org_id = b.org_id AND m.image_id = b.image_id
+		WHERE (m.image_id IS NULL OR m.status = 'pending')
+		  AND ((b.org_id > $1) OR (b.org_id = $1 AND b.image_id > $2))
+		ORDER BY b.org_id, b.image_id
+		LIMIT $3`, afterOrg, afterImage, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: ListUnmatchedSboms: %w", err)
+	}
+	defer rows.Close()
+	var out []struct {
+		OrgID   uuid.UUID
+		ImageID string
+	}
+	for rows.Next() {
+		var row struct {
+			OrgID   uuid.UUID
+			ImageID string
+		}
+		if err := rows.Scan(&row.OrgID, &row.ImageID); err != nil {
+			return nil, fmt.Errorf("store: ListUnmatchedSboms: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// ImageVulnIDs returns every distinct vuln id for an image (no truncation).
+// criticalOnly restricts to severity critical.
+func (s *Store) ImageVulnIDs(ctx context.Context, orgID uuid.UUID, imageID string, criticalOnly bool) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT vuln_id FROM image_findings
+		WHERE org_id = $1 AND image_id = $2 AND ($3 = false OR severity = 'critical')`,
+		orgID, imageID, criticalOnly)
+	if err != nil {
+		return nil, fmt.Errorf("store: ImageVulnIDs: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("store: ImageVulnIDs: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// GetCVEWatermark returns the previous new_cve evaluation time for an org.
+func (s *Store) GetCVEWatermark(ctx context.Context, orgID uuid.UUID) (time.Time, bool, error) {
+	var t time.Time
+	err := s.pool.QueryRow(ctx, `SELECT evaluated_at FROM cve_eval_watermark WHERE org_id = $1`, orgID).Scan(&t)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, false, nil
+		}
+		return time.Time{}, false, fmt.Errorf("store: GetCVEWatermark: %w", err)
+	}
+	return t.UTC(), true, nil
+}
+
+// SetCVEWatermark records the new_cve evaluation time (never moves backwards).
+func (s *Store) SetCVEWatermark(ctx context.Context, orgID uuid.UUID, at time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO cve_eval_watermark (org_id, evaluated_at) VALUES ($1, $2)
+		ON CONFLICT (org_id) DO UPDATE SET evaluated_at = GREATEST(cve_eval_watermark.evaluated_at, EXCLUDED.evaluated_at)`,
+		orgID, at)
+	if err != nil {
+		return fmt.Errorf("store: SetCVEWatermark: %w", err)
+	}
+	return nil
 }

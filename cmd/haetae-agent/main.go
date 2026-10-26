@@ -119,6 +119,9 @@ func enroll(ctx context.Context, args []string) error {
 }
 
 func run(ctx context.Context, args []string, log *slog.Logger) error {
+	if err := dropAmbientCaps(); err != nil {
+		return fmt.Errorf("drop ambient capabilities: %w", err)
+	}
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	stateDir := fs.String("state-dir", defaultStateDir, "where the agent keeps its identity")
 	dockerSocket := fs.String("docker-socket", "/var/run/docker.sock", "Docker Engine API socket")

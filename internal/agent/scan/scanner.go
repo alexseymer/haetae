@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math/rand/v2"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,8 @@ const (
 	defaultDailyEvery = 24 * time.Hour
 	maxDailyJitter    = time.Hour
 	maxPackagesReport = 20000
+	syncTimeout       = 30 * time.Second
+	freeMemPackages   = 1000
 )
 
 // Reporter sends completed SbomReports (implemented by the agent outbox).
@@ -51,7 +54,10 @@ type Scanner struct {
 
 	mu        sync.Mutex
 	queue     []job
-	pending   map[string]bool // image key currently queued or running
+	pending   map[string]uint64 // image key -> generation of its newest queued/running job
+	gen       uint64
+	latestRun map[string]string // newest unprocessed OnRunning snapshot (latest wins)
+	runWake   chan struct{}
 	running   map[string]containerInfo
 	seen      map[string]bool // container ids already triggered on start
 	wake      chan struct{}
@@ -73,6 +79,7 @@ type job struct {
 	registry    string // if set, --registry instead of --docker-image
 	trigger     string
 	sourceRef   string
+	gen         uint64
 }
 
 // NewScanner returns a Scanner. Call Run in a goroutine.
@@ -92,7 +99,8 @@ func NewScanner(cfg Config, docker *dockerapi.Client, run Runner, out Reporter, 
 		run:     run,
 		out:     out,
 		log:     log,
-		pending: make(map[string]bool),
+		pending: make(map[string]uint64),
+		runWake: make(chan struct{}, 1),
 		running: make(map[string]containerInfo),
 		seen:    make(map[string]bool),
 		wake:    make(chan struct{}, 1),
@@ -125,6 +133,7 @@ func (c Config) withDefaults() Config {
 
 // Run processes the queue until ctx ends.
 func (s *Scanner) Run(ctx context.Context) {
+	go s.runningWorker(ctx)
 	daily := time.NewTimer(s.nextDailyDelay())
 	defer daily.Stop()
 	for {
@@ -160,9 +169,41 @@ func (s *Scanner) nextDailyDelay() time.Duration {
 }
 
 // OnRunning is called after each monitor snapshot with id→name of running containers.
-// It must not block.
+// It must not block. Snapshots are coalesced: only the newest is processed, by
+// a single worker, so a hung Docker daemon cannot pile up goroutines or let an
+// older snapshot overwrite a newer one.
 func (s *Scanner) OnRunning(running map[string]string) {
-	go s.syncRunning(context.Background(), running)
+	cp := make(map[string]string, len(running))
+	for k, v := range running {
+		cp[k] = v
+	}
+	s.mu.Lock()
+	s.latestRun = cp
+	s.mu.Unlock()
+	select {
+	case s.runWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Scanner) runningWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.runWake:
+		}
+		s.mu.Lock()
+		snap := s.latestRun
+		s.latestRun = nil
+		s.mu.Unlock()
+		if snap == nil {
+			continue
+		}
+		cctx, cancel := context.WithTimeout(ctx, syncTimeout)
+		s.syncRunning(cctx, snap)
+		cancel()
+	}
 }
 
 func (s *Scanner) syncRunning(ctx context.Context, running map[string]string) {
@@ -327,43 +368,62 @@ func dedupeKey(imageID, image string) string {
 	return image
 }
 
-func (s *Scanner) enqueueLocked(j job) {
+func (s *Scanner) enqueueLocked(j job) { s.enqueueLockedOpt(j, false) }
+
+// enqueueForcedLocked always results in a run: a queued job for the same image
+// is replaced, and a running one gets a follow-up job queued behind it.
+func (s *Scanner) enqueueForcedLocked(j job) { s.enqueueLockedOpt(j, true) }
+
+func (s *Scanner) enqueueLockedOpt(j job, forced bool) {
 	if j.imageID == "" {
 		return
 	}
-	if s.pending[j.imageID] {
-		return
-	}
-	if len(s.queue) >= s.cfg.QueueCap {
-		// Drop oldest to keep the queue bounded.
-		old := s.queue[0]
-		s.queue = s.queue[1:]
-		delete(s.pending, old.imageID)
-		s.log.Warn("scan queue full; dropped oldest", "image", old.imageID)
-	}
-	s.pending[j.imageID] = true
-	s.queue = append(s.queue, j)
-	s.kick()
-}
-
-func (s *Scanner) enqueueForcedLocked(j job) {
-	// Forced scans always run; if already pending, replace the queued entry's scan_id.
-	if j.imageID != "" && s.pending[j.imageID] {
+	if cur, ok := s.pending[j.imageID]; ok {
+		if !forced {
+			return
+		}
 		for i := range s.queue {
 			if s.queue[i].imageID == j.imageID {
+				if prev := s.queue[i]; prev.scanID != "" && prev.scanID != j.scanID {
+					// The server tracks the replaced request by its id.
+					s.reportFailedLocked(prev, "superseded by a newer scan request")
+				}
+				j.gen = s.queue[i].gen
 				s.queue[i] = j
+				s.pending[j.imageID] = j.gen
 				s.kick()
 				return
 			}
 		}
-		// Currently running: enqueue a follow-up after it finishes by clearing pending mark
-		// once done; for simplicity enqueue with a distinct pending key suffix is avoided —
-		// drop pending so a new job can be added.
+		_ = cur // running: fall through and queue a follow-up with a new generation
 	}
-	if j.imageID != "" {
-		delete(s.pending, j.imageID)
+	if len(s.queue) >= s.cfg.QueueCap {
+		// Bounded: drop the oldest, but tell the server it failed.
+		old := s.queue[0]
+		s.queue = s.queue[1:]
+		if s.pending[old.imageID] == old.gen {
+			delete(s.pending, old.imageID)
+		}
+		s.log.Warn("scan queue full; dropped oldest", "image", old.imageID)
+		s.reportFailedLocked(old, "scan queue full")
 	}
-	s.enqueueLocked(j)
+	s.gen++
+	j.gen = s.gen
+	s.pending[j.imageID] = j.gen
+	s.queue = append(s.queue, j)
+	s.kick()
+}
+
+func (s *Scanner) reportFailedLocked(j job, msg string) {
+	if s.out == nil {
+		return
+	}
+	now := s.cfg.Now().UnixMilli()
+	s.out.PutSbom(&agentv1.SbomReport{
+		ScanId: j.scanID, ContainerId: j.containerID, Image: j.image, ImageId: j.imageID,
+		Trigger: j.trigger, Status: StatusFailed, Error: msg,
+		StartedUnixMs: now, FinishedUnixMs: now, SourceRef: j.sourceRef,
+	})
 }
 
 func (s *Scanner) kick() {
@@ -376,7 +436,9 @@ func (s *Scanner) kick() {
 func (s *Scanner) execJob(ctx context.Context, j job) {
 	defer func() {
 		s.mu.Lock()
-		delete(s.pending, j.imageID)
+		if s.pending[j.imageID] == j.gen {
+			delete(s.pending, j.imageID)
+		}
 		s.mu.Unlock()
 	}()
 
@@ -398,6 +460,7 @@ func (s *Scanner) execJob(ctx context.Context, j job) {
 	lr := s.run.Run(ctx, req)
 	finished := s.cfg.Now()
 
+	big := false
 	report := &agentv1.SbomReport{
 		ScanId:          j.scanID,
 		ContainerId:     j.containerID,
@@ -428,6 +491,7 @@ func (s *Scanner) execJob(ctx context.Context, j job) {
 		if report.PeakMemoryBytes == 0 {
 			report.PeakMemoryBytes = lr.Doc.PeakRSSBytes
 		}
+		npkgs := len(lr.Doc.Packages)
 		if lr.Status == StatusOK {
 			pkgs := lr.Doc.Packages
 			if len(pkgs) > maxPackagesReport {
@@ -441,8 +505,9 @@ func (s *Scanner) execJob(ctx context.Context, j job) {
 				})
 			}
 		}
-		// Free the document promptly.
+		// Free the document promptly (the stdout buffer is already gone with Run).
 		lr.Doc = nil
+		big = npkgs > freeMemPackages
 	} else if !lr.Limited {
 		report.ToolVersion = appendLimitedFalse(report.ToolVersion)
 	}
@@ -452,6 +517,10 @@ func (s *Scanner) execJob(ctx context.Context, j job) {
 			report.Error = "scan failed"
 		}
 		report.Error = clipError(report.Error)
+	}
+	if big {
+		// Return the parsed document / helper output pages to the OS.
+		debug.FreeOSMemory()
 	}
 	if s.out != nil {
 		s.out.PutSbom(report)

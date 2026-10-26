@@ -70,6 +70,9 @@ export function containerScanStatusLine(
     if (c.scan.status === "pending") return "Scan pending…";
     return "Not scanned yet";
   }
+  if (c.scan.status === "ok" && c.match.status !== "ok") {
+    return "Matching pending";
+  }
   if (c.scan.status === "ok") {
     const when = formatRelative(c.scan.at);
     const db = c.match.dbBuiltAt ? formatDate(c.match.dbBuiltAt) : null;
@@ -92,10 +95,11 @@ export function vulnIdHref(vulnId: string, urls: string[]): string | null {
 export function hostSecurityBadgeText(
   scanFailed: boolean | undefined,
   summary: { critical: number; high: number } | null,
+  matchPending?: number,
 ): string | null {
   if (scanFailed) return "scan failed";
   if (!summary) return null;
   const n = summary.critical + summary.high;
-  if (n <= 0) return null;
+  if (n <= 0) return matchPending && matchPending > 0 ? "matching pending" : null;
   return String(n);
 }

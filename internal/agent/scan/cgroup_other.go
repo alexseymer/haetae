@@ -13,8 +13,12 @@ func (l *Launcher) setupCgroup() (string, bool, error) {
 
 func (l *Launcher) teardownCgroup(string) {}
 
-func (l *Launcher) startInCgroup(cmd *exec.Cmd, _ string) error {
-	return cmd.Start()
+func (l *Launcher) startInCgroup(newCmd func() *exec.Cmd, _ string) (*exec.Cmd, error) {
+	cmd := newCmd()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
 }
 
 func readOOMKill(string) bool     { return false }

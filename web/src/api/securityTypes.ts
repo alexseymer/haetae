@@ -7,7 +7,7 @@ export type ScanStatus =
   | "pending"
   | "none";
 
-export type MatchStatus = "ok" | "failed" | "none";
+export type MatchStatus = "ok" | "failed" | "pending" | "none";
 
 export interface SeveritySummary {
   critical: number;
@@ -37,6 +37,8 @@ export interface HostSecurityResponse {
   misconfigs: MisconfigFinding[];
   summary: SeveritySummary;
   scanFailed?: boolean;
+  /** Containers scanned but not yet matched (not "clean"). */
+  matchPending?: number;
 }
 
 export interface VulnFinding {

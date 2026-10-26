@@ -240,6 +240,17 @@ describe("HostSecurityTab", () => {
     expect(screen.getByText("Not scanned yet")).toBeInTheDocument();
   });
 
+  it("shows matching pending, never clean, when scan ok but match is pending", async () => {
+    renderTab(
+      admin,
+      stubFetch(
+        payload({ scanStatus: "ok", matchStatus: "pending" }),
+      ) as unknown as typeof fetch,
+    );
+    expect(await screen.findByText("Matching pending")).toBeInTheDocument();
+    expect(screen.queryByText(/^critical 0$/)).not.toBeInTheDocument();
+  });
+
   it("shows degraded conntrack banner with reason", async () => {
     renderTab(
       admin,
