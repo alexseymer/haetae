@@ -40,7 +40,7 @@ const CauseNotFound = "cause not found"
 
 // Errors every use maps to its rule-based fallback.
 var (
-	ErrDisabled  = errors.New("operator disabled")         // no provider configured, or the org turned it off
+	ErrDisabled  = errors.New("operator disabled")          // no provider configured, or the org turned it off
 	ErrCapped    = errors.New("daily AI usage cap reached") // org token cap
 	ErrRedaction = errors.New("redaction failed; nothing was sent")
 )
@@ -98,10 +98,10 @@ type ActionDecision struct {
 // Answer is a validated operator reply.
 type Answer struct {
 	ConversationID uuid.UUID        `json:"conversationId"`
-	Statements     []Statement      `json:"statements"`      // only supported statements
-	Evidence       []Evidence       `json:"evidence"`        // only the evidence they cite
-	CauseNotFound  bool             `json:"causeNotFound"`   // no supported statement
-	DroppedCount   int              `json:"droppedCount"`    // statements removed for missing evidence
+	Statements     []Statement      `json:"statements"`    // only supported statements
+	Evidence       []Evidence       `json:"evidence"`      // only the evidence they cite
+	CauseNotFound  bool             `json:"causeNotFound"` // no supported statement
+	DroppedCount   int              `json:"droppedCount"`  // statements removed for missing evidence
 	Actions        []ActionDecision `json:"actions,omitempty"`
 }
 
