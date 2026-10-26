@@ -291,21 +291,26 @@ func (m *Manager) openActive() error {
 	if _, err := os.Stat(filepath.Join(dir, "vulnerability.db")); err != nil {
 		return err
 	}
-	// Open the new matcher first and swap only on success: a bad database
-	// must not take down the working one. The old matcher is closed after the
-	// swap.
+	// Close the old matcher before opening the new one: while the replaced
+	// file is still open, a reader opened at the same path sees the old data
+	// (the database is then re-downloaded on every check). Refresh has already
+	// verified the new database before swapping it in, so a failure here means
+	// a bad install: not ready, error returned and recorded by the caller.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.matcher != nil {
+		if c, ok := m.matcher.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+		m.matcher = nil
+		m.ready = false
+	}
 	matcher, err := m.cfg.OpenMatcher(dir)
 	if err != nil {
 		return err
 	}
-	m.mu.Lock()
-	old := m.matcher
 	m.matcher = matcher
 	m.ready = true
-	m.mu.Unlock()
-	if c, ok := old.(interface{ Close() error }); ok && old != nil {
-		_ = c.Close()
-	}
 	return nil
 }
 

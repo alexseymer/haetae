@@ -24,7 +24,10 @@ func (c *closeMatcher) Match(context.Context, Sbom) ([]Finding, time.Time, error
 }
 func (c *closeMatcher) Close() error { c.closed.Store(true); return nil }
 
-func TestOpenActiveKeepsWorkingMatcherWhenNewDBFails(t *testing.T) {
+// The old matcher must be closed before the new one is opened (a reader opened
+// at the same path while the replaced file is still open sees the old data),
+// and a database that fails to open leaves the manager not ready.
+func TestOpenActiveClosesOldBeforeOpeningNew(t *testing.T) {
 	dir := t.TempDir()
 	active := grypedb.ActiveDBDir(dir)
 	if err := os.MkdirAll(active, 0o755); err != nil {
@@ -33,33 +36,35 @@ func TestOpenActiveKeepsWorkingMatcherWhenNewDBFails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(active, "vulnerability.db"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	good, next := &closeMatcher{}, &closeMatcher{}
+	first, second := &closeMatcher{}, &closeMatcher{}
 	calls := 0
+	var firstClosedAtSecondOpen bool
 	m := NewManager(nil, Config{ListingURL: "http://x", DataDir: dir, OpenMatcher: func(string) (Matcher, error) {
 		calls++
 		switch calls {
 		case 1:
-			return good, nil
+			return first, nil
 		case 2:
+			firstClosedAtSecondOpen = first.closed.Load()
 			return nil, errors.New("corrupt database")
 		}
-		return next, nil
+		return second, nil
 	}}, nil, nil)
 
-	if err := m.openActive(); err != nil {
-		t.Fatal(err)
+	if err := m.openActive(); err != nil || !m.Ready() {
+		t.Fatalf("first open: ready=%v err=%v", m.Ready(), err)
 	}
 	if err := m.openActive(); err == nil {
 		t.Fatal("want error from corrupt database")
 	}
-	if !m.Ready() || m.Matcher() != Matcher(good) || good.closed.Load() {
-		t.Fatal("working matcher must stay open and installed after a failed swap")
+	if !firstClosedAtSecondOpen {
+		t.Fatal("old matcher was still open when the new database was opened")
 	}
-	if err := m.openActive(); err != nil {
-		t.Fatal(err)
+	if m.Ready() {
+		t.Fatal("manager must not be ready after a failed open")
 	}
-	if m.Matcher() != Matcher(next) || !good.closed.Load() {
-		t.Fatal("old matcher must be closed after a successful swap")
+	if err := m.openActive(); err != nil || !m.Ready() || m.Matcher() != Matcher(second) {
+		t.Fatalf("recovery open: ready=%v err=%v", m.Ready(), err)
 	}
 }
 
