@@ -30,6 +30,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Authorization int32
+
+const (
+	Authorization_AUTHORIZATION_UNSPECIFIED Authorization = 0
+	Authorization_AUTHORIZATION_APPROVED    Authorization = 1 // after a verified account pressed an approval button
+	Authorization_AUTHORIZATION_AUTO        Authorization = 2 // the operator acted on its own at level act
+)
+
+// Enum value maps for Authorization.
+var (
+	Authorization_name = map[int32]string{
+		0: "AUTHORIZATION_UNSPECIFIED",
+		1: "AUTHORIZATION_APPROVED",
+		2: "AUTHORIZATION_AUTO",
+	}
+	Authorization_value = map[string]int32{
+		"AUTHORIZATION_UNSPECIFIED": 0,
+		"AUTHORIZATION_APPROVED":    1,
+		"AUTHORIZATION_AUTO":        2,
+	}
+)
+
+func (x Authorization) Enum() *Authorization {
+	p := new(Authorization)
+	*p = x
+	return p
+}
+
+func (x Authorization) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Authorization) Descriptor() protoreflect.EnumDescriptor {
+	return file_haetae_agent_v1_agent_proto_enumTypes[0].Descriptor()
+}
+
+func (Authorization) Type() protoreflect.EnumType {
+	return &file_haetae_agent_v1_agent_proto_enumTypes[0]
+}
+
+func (x Authorization) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Authorization.Descriptor instead.
+func (Authorization) EnumDescriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
 type LogLevel int32
 
 const (
@@ -75,11 +124,11 @@ func (x LogLevel) String() string {
 }
 
 func (LogLevel) Descriptor() protoreflect.EnumDescriptor {
-	return file_haetae_agent_v1_agent_proto_enumTypes[0].Descriptor()
+	return file_haetae_agent_v1_agent_proto_enumTypes[1].Descriptor()
 }
 
 func (LogLevel) Type() protoreflect.EnumType {
-	return &file_haetae_agent_v1_agent_proto_enumTypes[0]
+	return &file_haetae_agent_v1_agent_proto_enumTypes[1]
 }
 
 func (x LogLevel) Number() protoreflect.EnumNumber {
@@ -88,7 +137,7 @@ func (x LogLevel) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LogLevel.Descriptor instead.
 func (LogLevel) EnumDescriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{1}
 }
 
 type DeployPhase int32
@@ -148,11 +197,11 @@ func (x DeployPhase) String() string {
 }
 
 func (DeployPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_haetae_agent_v1_agent_proto_enumTypes[1].Descriptor()
+	return file_haetae_agent_v1_agent_proto_enumTypes[2].Descriptor()
 }
 
 func (DeployPhase) Type() protoreflect.EnumType {
-	return &file_haetae_agent_v1_agent_proto_enumTypes[1]
+	return &file_haetae_agent_v1_agent_proto_enumTypes[2]
 }
 
 func (x DeployPhase) Number() protoreflect.EnumNumber {
@@ -161,7 +210,7 @@ func (x DeployPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeployPhase.Descriptor instead.
 func (DeployPhase) EnumDescriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{1}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{2}
 }
 
 type EnrollRequest struct {
@@ -638,6 +687,7 @@ type ConnectResponse struct {
 	//	*ConnectResponse_Command
 	//	*ConnectResponse_Green
 	//	*ConnectResponse_Watch
+	//	*ConnectResponse_Policy
 	Msg           isConnectResponse_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -716,6 +766,15 @@ func (x *ConnectResponse) GetWatch() *WatchSet {
 	return nil
 }
 
+func (x *ConnectResponse) GetPolicy() *Policy {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectResponse_Policy); ok {
+			return x.Policy
+		}
+	}
+	return nil
+}
+
 type isConnectResponse_Msg interface {
 	isConnectResponse_Msg()
 }
@@ -736,6 +795,10 @@ type ConnectResponse_Watch struct {
 	Watch *WatchSet `protobuf:"bytes,4,opt,name=watch,proto3,oneof"`
 }
 
+type ConnectResponse_Policy struct {
+	Policy *Policy `protobuf:"bytes,5,opt,name=policy,proto3,oneof"`
+}
+
 func (*ConnectResponse_Welcome) isConnectResponse_Msg() {}
 
 func (*ConnectResponse_Command) isConnectResponse_Msg() {}
@@ -743,6 +806,55 @@ func (*ConnectResponse_Command) isConnectResponse_Msg() {}
 func (*ConnectResponse_Green) isConnectResponse_Msg() {}
 
 func (*ConnectResponse_Watch) isConnectResponse_Msg() {}
+
+func (*ConnectResponse_Policy) isConnectResponse_Msg() {}
+
+// Policy tells the agent the organisation's autonomy level whenever it
+// changes (Welcome carries it at session start). The agent enforces it
+// itself, independently of the server's own checks.
+type Policy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Autonomy      string                 `protobuf:"bytes,1,opt,name=autonomy,proto3" json:"autonomy,omitempty"` // report | suggest | act
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Policy) Reset() {
+	*x = Policy{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy) ProtoMessage() {}
+
+func (x *Policy) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy.ProtoReflect.Descriptor instead.
+func (*Policy) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Policy) GetAutonomy() string {
+	if x != nil {
+		return x.Autonomy
+	}
+	return ""
+}
 
 type Hello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -753,7 +865,7 @@ type Hello struct {
 
 func (x *Hello) Reset() {
 	*x = Hello{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +877,7 @@ func (x *Hello) String() string {
 func (*Hello) ProtoMessage() {}
 
 func (x *Hello) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +890,7 @@ func (x *Hello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hello.ProtoReflect.Descriptor instead.
 func (*Hello) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Hello) GetHost() *HostInfo {
@@ -793,13 +905,15 @@ type Welcome struct {
 	// Interval at which the agent must send heartbeats. The server treats a
 	// host as offline after three missed intervals.
 	HeartbeatSeconds uint32 `protobuf:"varint,1,opt,name=heartbeat_seconds,json=heartbeatSeconds,proto3" json:"heartbeat_seconds,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Organisation autonomy level: report | suggest | act. Empty means report.
+	Autonomy      string `protobuf:"bytes,2,opt,name=autonomy,proto3" json:"autonomy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +925,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +938,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Welcome) GetHeartbeatSeconds() uint32 {
@@ -832,6 +946,13 @@ func (x *Welcome) GetHeartbeatSeconds() uint32 {
 		return x.HeartbeatSeconds
 	}
 	return 0
+}
+
+func (x *Welcome) GetAutonomy() string {
+	if x != nil {
+		return x.Autonomy
+	}
+	return ""
 }
 
 type Heartbeat struct {
@@ -844,7 +965,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -856,7 +977,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -869,7 +990,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Heartbeat) GetSentUnixMs() int64 {
@@ -894,14 +1015,18 @@ type Command struct {
 	//	*Command_ScanContainer
 	//	*Command_ScanImage
 	//	*Command_PullImage
-	Kind          isCommand_Kind `protobuf_oneof:"kind"`
+	//	*Command_RestartContainer
+	Kind isCommand_Kind `protobuf_oneof:"kind"`
+	// How the command was authorised. UNSPECIFIED is a user-initiated command
+	// (deploy API, settings); operator commands are APPROVED or AUTO.
+	Authorization Authorization `protobuf:"varint,9,opt,name=authorization,proto3,enum=haetae.agent.v1.Authorization" json:"authorization,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +1038,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,7 +1051,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Command) GetId() string {
@@ -1006,6 +1131,22 @@ func (x *Command) GetPullImage() *PullImage {
 	return nil
 }
 
+func (x *Command) GetRestartContainer() *RestartContainer {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_RestartContainer); ok {
+			return x.RestartContainer
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetAuthorization() Authorization {
+	if x != nil {
+		return x.Authorization
+	}
+	return Authorization_AUTHORIZATION_UNSPECIFIED
+}
+
 type isCommand_Kind interface {
 	isCommand_Kind()
 }
@@ -1038,6 +1179,10 @@ type Command_PullImage struct {
 	PullImage *PullImage `protobuf:"bytes,8,opt,name=pull_image,json=pullImage,proto3,oneof"`
 }
 
+type Command_RestartContainer struct {
+	RestartContainer *RestartContainer `protobuf:"bytes,10,opt,name=restart_container,json=restartContainer,proto3,oneof"`
+}
+
 func (*Command_Ping) isCommand_Kind() {}
 
 func (*Command_QueryLogs) isCommand_Kind() {}
@@ -1052,6 +1197,54 @@ func (*Command_ScanImage) isCommand_Kind() {}
 
 func (*Command_PullImage) isCommand_Kind() {}
 
+func (*Command_RestartContainer) isCommand_Kind() {}
+
+// RestartContainer restarts one container. It is the only operator action
+// in v1; it never removes a container, an image or a volume.
+type RestartContainer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestartContainer) Reset() {
+	*x = RestartContainer{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestartContainer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestartContainer) ProtoMessage() {}
+
+func (x *RestartContainer) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestartContainer.ProtoReflect.Descriptor instead.
+func (*RestartContainer) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RestartContainer) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1060,7 +1253,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +1265,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +1278,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 // QueryLogs asks for recent log lines of one container from the agent's
@@ -1102,7 +1295,7 @@ type QueryLogs struct {
 
 func (x *QueryLogs) Reset() {
 	*x = QueryLogs{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1114,7 +1307,7 @@ func (x *QueryLogs) String() string {
 func (*QueryLogs) ProtoMessage() {}
 
 func (x *QueryLogs) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1127,7 +1320,7 @@ func (x *QueryLogs) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryLogs.ProtoReflect.Descriptor instead.
 func (*QueryLogs) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *QueryLogs) GetContainerId() string {
@@ -1173,7 +1366,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1185,7 +1378,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1198,7 +1391,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CommandResult) GetCommandId() string {
@@ -1251,7 +1444,7 @@ type LogLines struct {
 
 func (x *LogLines) Reset() {
 	*x = LogLines{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1263,7 +1456,7 @@ func (x *LogLines) String() string {
 func (*LogLines) ProtoMessage() {}
 
 func (x *LogLines) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,7 +1469,7 @@ func (x *LogLines) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLines.ProtoReflect.Descriptor instead.
 func (*LogLines) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LogLines) GetLines() []*LogLine {
@@ -1303,7 +1496,7 @@ type LogLine struct {
 
 func (x *LogLine) Reset() {
 	*x = LogLine{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1315,7 +1508,7 @@ func (x *LogLine) String() string {
 func (*LogLine) ProtoMessage() {}
 
 func (x *LogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1328,7 +1521,7 @@ func (x *LogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLine.ProtoReflect.Descriptor instead.
 func (*LogLine) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LogLine) GetTsUnixMs() int64 {
@@ -1362,7 +1555,7 @@ type StateSnapshot struct {
 
 func (x *StateSnapshot) Reset() {
 	*x = StateSnapshot{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1567,7 @@ func (x *StateSnapshot) String() string {
 func (*StateSnapshot) ProtoMessage() {}
 
 func (x *StateSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1580,7 @@ func (x *StateSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StateSnapshot.ProtoReflect.Descriptor instead.
 func (*StateSnapshot) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StateSnapshot) GetTakenUnixMs() int64 {
@@ -1448,7 +1641,7 @@ type ContainerState struct {
 
 func (x *ContainerState) Reset() {
 	*x = ContainerState{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1653,7 @@ func (x *ContainerState) String() string {
 func (*ContainerState) ProtoMessage() {}
 
 func (x *ContainerState) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1666,7 @@ func (x *ContainerState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerState.ProtoReflect.Descriptor instead.
 func (*ContainerState) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ContainerState) GetId() string {
@@ -1593,7 +1786,7 @@ type PortMapping struct {
 
 func (x *PortMapping) Reset() {
 	*x = PortMapping{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1605,7 +1798,7 @@ func (x *PortMapping) String() string {
 func (*PortMapping) ProtoMessage() {}
 
 func (x *PortMapping) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1618,7 +1811,7 @@ func (x *PortMapping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortMapping.ProtoReflect.Descriptor instead.
 func (*PortMapping) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PortMapping) GetIp() string {
@@ -1661,7 +1854,7 @@ type MetricsBatch struct {
 
 func (x *MetricsBatch) Reset() {
 	*x = MetricsBatch{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1673,7 +1866,7 @@ func (x *MetricsBatch) String() string {
 func (*MetricsBatch) ProtoMessage() {}
 
 func (x *MetricsBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1686,7 +1879,7 @@ func (x *MetricsBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsBatch.ProtoReflect.Descriptor instead.
 func (*MetricsBatch) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *MetricsBatch) GetHost() []*HostMetricSample {
@@ -1720,7 +1913,7 @@ type HostMetricSample struct {
 
 func (x *HostMetricSample) Reset() {
 	*x = HostMetricSample{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1732,7 +1925,7 @@ func (x *HostMetricSample) String() string {
 func (*HostMetricSample) ProtoMessage() {}
 
 func (x *HostMetricSample) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1745,7 +1938,7 @@ func (x *HostMetricSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostMetricSample.ProtoReflect.Descriptor instead.
 func (*HostMetricSample) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *HostMetricSample) GetTsUnixMs() int64 {
@@ -1829,7 +2022,7 @@ type ContainerMetricSample struct {
 
 func (x *ContainerMetricSample) Reset() {
 	*x = ContainerMetricSample{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1841,7 +2034,7 @@ func (x *ContainerMetricSample) String() string {
 func (*ContainerMetricSample) ProtoMessage() {}
 
 func (x *ContainerMetricSample) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1854,7 +2047,7 @@ func (x *ContainerMetricSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerMetricSample.ProtoReflect.Descriptor instead.
 func (*ContainerMetricSample) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ContainerMetricSample) GetContainerId() string {
@@ -1946,7 +2139,7 @@ type LogBatch struct {
 
 func (x *LogBatch) Reset() {
 	*x = LogBatch{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1958,7 +2151,7 @@ func (x *LogBatch) String() string {
 func (*LogBatch) ProtoMessage() {}
 
 func (x *LogBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1971,7 +2164,7 @@ func (x *LogBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogBatch.ProtoReflect.Descriptor instead.
 func (*LogBatch) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *LogBatch) GetEvents() []*LogEvent {
@@ -2011,7 +2204,7 @@ type LogEvent struct {
 
 func (x *LogEvent) Reset() {
 	*x = LogEvent{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2023,7 +2216,7 @@ func (x *LogEvent) String() string {
 func (*LogEvent) ProtoMessage() {}
 
 func (x *LogEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2036,7 +2229,7 @@ func (x *LogEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEvent.ProtoReflect.Descriptor instead.
 func (*LogEvent) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *LogEvent) GetContainerId() string {
@@ -2107,7 +2300,7 @@ type TemplateCandidate struct {
 
 func (x *TemplateCandidate) Reset() {
 	*x = TemplateCandidate{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2119,7 +2312,7 @@ func (x *TemplateCandidate) String() string {
 func (*TemplateCandidate) ProtoMessage() {}
 
 func (x *TemplateCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2132,7 +2325,7 @@ func (x *TemplateCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TemplateCandidate.ProtoReflect.Descriptor instead.
 func (*TemplateCandidate) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *TemplateCandidate) GetTemplateId() string {
@@ -2176,7 +2369,7 @@ type LogStats struct {
 
 func (x *LogStats) Reset() {
 	*x = LogStats{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2188,7 +2381,7 @@ func (x *LogStats) String() string {
 func (*LogStats) ProtoMessage() {}
 
 func (x *LogStats) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2201,7 +2394,7 @@ func (x *LogStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogStats.ProtoReflect.Descriptor instead.
 func (*LogStats) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *LogStats) GetLinesIn() uint64 {
@@ -2251,7 +2444,7 @@ type GreenSet struct {
 
 func (x *GreenSet) Reset() {
 	*x = GreenSet{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2263,7 +2456,7 @@ func (x *GreenSet) String() string {
 func (*GreenSet) ProtoMessage() {}
 
 func (x *GreenSet) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2276,7 +2469,7 @@ func (x *GreenSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GreenSet.ProtoReflect.Descriptor instead.
 func (*GreenSet) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GreenSet) GetTemplateIds() []string {
@@ -2315,7 +2508,7 @@ type Deploy struct {
 
 func (x *Deploy) Reset() {
 	*x = Deploy{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2327,7 +2520,7 @@ func (x *Deploy) String() string {
 func (*Deploy) ProtoMessage() {}
 
 func (x *Deploy) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2340,7 +2533,7 @@ func (x *Deploy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Deploy.ProtoReflect.Descriptor instead.
 func (*Deploy) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Deploy) GetDeployId() string {
@@ -2448,7 +2641,7 @@ type Version struct {
 
 func (x *Version) Reset() {
 	*x = Version{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2460,7 +2653,7 @@ func (x *Version) String() string {
 func (*Version) ProtoMessage() {}
 
 func (x *Version) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2473,7 +2666,7 @@ func (x *Version) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Version.ProtoReflect.Descriptor instead.
 func (*Version) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Version) GetKind() isVersion_Kind {
@@ -2529,7 +2722,7 @@ type GitSource struct {
 
 func (x *GitSource) Reset() {
 	*x = GitSource{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2541,7 +2734,7 @@ func (x *GitSource) String() string {
 func (*GitSource) ProtoMessage() {}
 
 func (x *GitSource) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2554,7 +2747,7 @@ func (x *GitSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitSource.ProtoReflect.Descriptor instead.
 func (*GitSource) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GitSource) GetUrl() string {
@@ -2594,7 +2787,7 @@ type InlineCompose struct {
 
 func (x *InlineCompose) Reset() {
 	*x = InlineCompose{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2606,7 +2799,7 @@ func (x *InlineCompose) String() string {
 func (*InlineCompose) ProtoMessage() {}
 
 func (x *InlineCompose) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2619,7 +2812,7 @@ func (x *InlineCompose) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InlineCompose.ProtoReflect.Descriptor instead.
 func (*InlineCompose) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *InlineCompose) GetContent() string {
@@ -2639,7 +2832,7 @@ type RemoveProject struct {
 
 func (x *RemoveProject) Reset() {
 	*x = RemoveProject{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2651,7 +2844,7 @@ func (x *RemoveProject) String() string {
 func (*RemoveProject) ProtoMessage() {}
 
 func (x *RemoveProject) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2664,7 +2857,7 @@ func (x *RemoveProject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveProject.ProtoReflect.Descriptor instead.
 func (*RemoveProject) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RemoveProject) GetProject() string {
@@ -2690,7 +2883,7 @@ type DeployEvent struct {
 
 func (x *DeployEvent) Reset() {
 	*x = DeployEvent{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2702,7 +2895,7 @@ func (x *DeployEvent) String() string {
 func (*DeployEvent) ProtoMessage() {}
 
 func (x *DeployEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2715,7 +2908,7 @@ func (x *DeployEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployEvent.ProtoReflect.Descriptor instead.
 func (*DeployEvent) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DeployEvent) GetDeployId() string {
@@ -2783,7 +2976,7 @@ type DeployLog struct {
 
 func (x *DeployLog) Reset() {
 	*x = DeployLog{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2795,7 +2988,7 @@ func (x *DeployLog) String() string {
 func (*DeployLog) ProtoMessage() {}
 
 func (x *DeployLog) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2808,7 +3001,7 @@ func (x *DeployLog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployLog.ProtoReflect.Descriptor instead.
 func (*DeployLog) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *DeployLog) GetDeployId() string {
@@ -2857,7 +3050,7 @@ type BranchUpdate struct {
 
 func (x *BranchUpdate) Reset() {
 	*x = BranchUpdate{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2869,7 +3062,7 @@ func (x *BranchUpdate) String() string {
 func (*BranchUpdate) ProtoMessage() {}
 
 func (x *BranchUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2882,7 +3075,7 @@ func (x *BranchUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BranchUpdate.ProtoReflect.Descriptor instead.
 func (*BranchUpdate) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{32}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *BranchUpdate) GetProject() string {
@@ -2909,7 +3102,7 @@ type WatchSet struct {
 
 func (x *WatchSet) Reset() {
 	*x = WatchSet{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2921,7 +3114,7 @@ func (x *WatchSet) String() string {
 func (*WatchSet) ProtoMessage() {}
 
 func (x *WatchSet) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2934,7 +3127,7 @@ func (x *WatchSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSet.ProtoReflect.Descriptor instead.
 func (*WatchSet) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{33}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *WatchSet) GetBranches() []*WatchedBranch {
@@ -2957,7 +3150,7 @@ type WatchedBranch struct {
 
 func (x *WatchedBranch) Reset() {
 	*x = WatchedBranch{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2969,7 +3162,7 @@ func (x *WatchedBranch) String() string {
 func (*WatchedBranch) ProtoMessage() {}
 
 func (x *WatchedBranch) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2982,7 +3175,7 @@ func (x *WatchedBranch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchedBranch.ProtoReflect.Descriptor instead.
 func (*WatchedBranch) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{34}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *WatchedBranch) GetProject() string {
@@ -3032,7 +3225,7 @@ type ScanContainer struct {
 
 func (x *ScanContainer) Reset() {
 	*x = ScanContainer{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3044,7 +3237,7 @@ func (x *ScanContainer) String() string {
 func (*ScanContainer) ProtoMessage() {}
 
 func (x *ScanContainer) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3057,7 +3250,7 @@ func (x *ScanContainer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanContainer.ProtoReflect.Descriptor instead.
 func (*ScanContainer) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{35}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ScanContainer) GetScanId() string {
@@ -3087,7 +3280,7 @@ type ScanImage struct {
 
 func (x *ScanImage) Reset() {
 	*x = ScanImage{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3099,7 +3292,7 @@ func (x *ScanImage) String() string {
 func (*ScanImage) ProtoMessage() {}
 
 func (x *ScanImage) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3112,7 +3305,7 @@ func (x *ScanImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanImage.ProtoReflect.Descriptor instead.
 func (*ScanImage) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{36}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ScanImage) GetScanId() string {
@@ -3152,7 +3345,7 @@ type PullImage struct {
 
 func (x *PullImage) Reset() {
 	*x = PullImage{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3164,7 +3357,7 @@ func (x *PullImage) String() string {
 func (*PullImage) ProtoMessage() {}
 
 func (x *PullImage) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3177,7 +3370,7 @@ func (x *PullImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullImage.ProtoReflect.Descriptor instead.
 func (*PullImage) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{37}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PullImage) GetRef() string {
@@ -3220,7 +3413,7 @@ type SbomPackage struct {
 
 func (x *SbomPackage) Reset() {
 	*x = SbomPackage{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3232,7 +3425,7 @@ func (x *SbomPackage) String() string {
 func (*SbomPackage) ProtoMessage() {}
 
 func (x *SbomPackage) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3245,7 +3438,7 @@ func (x *SbomPackage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SbomPackage.ProtoReflect.Descriptor instead.
 func (*SbomPackage) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{38}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SbomPackage) GetName() string {
@@ -3303,7 +3496,7 @@ type SbomReport struct {
 
 func (x *SbomReport) Reset() {
 	*x = SbomReport{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3315,7 +3508,7 @@ func (x *SbomReport) String() string {
 func (*SbomReport) ProtoMessage() {}
 
 func (x *SbomReport) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3328,7 +3521,7 @@ func (x *SbomReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SbomReport.ProtoReflect.Descriptor instead.
 func (*SbomReport) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{39}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SbomReport) GetScanId() string {
@@ -3457,7 +3650,7 @@ type Misconfig struct {
 
 func (x *Misconfig) Reset() {
 	*x = Misconfig{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3469,7 +3662,7 @@ func (x *Misconfig) String() string {
 func (*Misconfig) ProtoMessage() {}
 
 func (x *Misconfig) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3482,7 +3675,7 @@ func (x *Misconfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Misconfig.ProtoReflect.Descriptor instead.
 func (*Misconfig) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{40}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *Misconfig) GetContainerId() string {
@@ -3524,7 +3717,7 @@ type ConntrackStatus struct {
 
 func (x *ConntrackStatus) Reset() {
 	*x = ConntrackStatus{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3536,7 +3729,7 @@ func (x *ConntrackStatus) String() string {
 func (*ConntrackStatus) ProtoMessage() {}
 
 func (x *ConntrackStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3549,7 +3742,7 @@ func (x *ConntrackStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConntrackStatus.ProtoReflect.Descriptor instead.
 func (*ConntrackStatus) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{41}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ConntrackStatus) GetState() string {
@@ -3586,7 +3779,7 @@ type SecurityReport struct {
 
 func (x *SecurityReport) Reset() {
 	*x = SecurityReport{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3598,7 +3791,7 @@ func (x *SecurityReport) String() string {
 func (*SecurityReport) ProtoMessage() {}
 
 func (x *SecurityReport) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3611,7 +3804,7 @@ func (x *SecurityReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecurityReport.ProtoReflect.Descriptor instead.
 func (*SecurityReport) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{42}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SecurityReport) GetTakenUnixMs() int64 {
@@ -3648,7 +3841,7 @@ type OutboundConn struct {
 
 func (x *OutboundConn) Reset() {
 	*x = OutboundConn{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[43]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3660,7 +3853,7 @@ func (x *OutboundConn) String() string {
 func (*OutboundConn) ProtoMessage() {}
 
 func (x *OutboundConn) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[43]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3673,7 +3866,7 @@ func (x *OutboundConn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutboundConn.ProtoReflect.Descriptor instead.
 func (*OutboundConn) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{43}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *OutboundConn) GetContainerId() string {
@@ -3723,7 +3916,7 @@ type OutboundBatch struct {
 
 func (x *OutboundBatch) Reset() {
 	*x = OutboundBatch{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[44]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3735,7 +3928,7 @@ func (x *OutboundBatch) String() string {
 func (*OutboundBatch) ProtoMessage() {}
 
 func (x *OutboundBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[44]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3748,7 +3941,7 @@ func (x *OutboundBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutboundBatch.ProtoReflect.Descriptor instead.
 func (*OutboundBatch) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{44}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *OutboundBatch) GetWindowStartUnixMs() int64 {
@@ -3794,7 +3987,7 @@ type ImageCandidate struct {
 
 func (x *ImageCandidate) Reset() {
 	*x = ImageCandidate{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[45]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3806,7 +3999,7 @@ func (x *ImageCandidate) String() string {
 func (*ImageCandidate) ProtoMessage() {}
 
 func (x *ImageCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[45]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3819,7 +4012,7 @@ func (x *ImageCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageCandidate.ProtoReflect.Descriptor instead.
 func (*ImageCandidate) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{45}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ImageCandidate) GetContainerId() string {
@@ -3880,7 +4073,7 @@ type ImageCandidates struct {
 
 func (x *ImageCandidates) Reset() {
 	*x = ImageCandidates{}
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[46]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3892,7 +4085,7 @@ func (x *ImageCandidates) String() string {
 func (*ImageCandidates) ProtoMessage() {}
 
 func (x *ImageCandidates) ProtoReflect() protoreflect.Message {
-	mi := &file_haetae_agent_v1_agent_proto_msgTypes[46]
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3905,7 +4098,7 @@ func (x *ImageCandidates) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageCandidates.ProtoReflect.Descriptor instead.
 func (*ImageCandidates) Descriptor() ([]byte, []int) {
-	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{46}
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ImageCandidates) GetCandidates() []*ImageCandidate {
@@ -3952,20 +4145,24 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x0fsecurity_report\x18\v \x01(\v2\x1f.haetae.agent.v1.SecurityReportH\x00R\x0esecurityReport\x12G\n" +
 	"\x0eoutbound_batch\x18\f \x01(\v2\x1e.haetae.agent.v1.OutboundBatchH\x00R\routboundBatch\x12M\n" +
 	"\x10image_candidates\x18\r \x01(\v2 .haetae.agent.v1.ImageCandidatesH\x00R\x0fimageCandidatesB\x05\n" +
-	"\x03msg\"\xea\x01\n" +
+	"\x03msg\"\x9d\x02\n" +
 	"\x0fConnectResponse\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.haetae.agent.v1.WelcomeH\x00R\awelcome\x124\n" +
 	"\acommand\x18\x02 \x01(\v2\x18.haetae.agent.v1.CommandH\x00R\acommand\x121\n" +
 	"\x05green\x18\x03 \x01(\v2\x19.haetae.agent.v1.GreenSetH\x00R\x05green\x121\n" +
-	"\x05watch\x18\x04 \x01(\v2\x19.haetae.agent.v1.WatchSetH\x00R\x05watchB\x05\n" +
-	"\x03msg\"6\n" +
+	"\x05watch\x18\x04 \x01(\v2\x19.haetae.agent.v1.WatchSetH\x00R\x05watch\x121\n" +
+	"\x06policy\x18\x05 \x01(\v2\x17.haetae.agent.v1.PolicyH\x00R\x06policyB\x05\n" +
+	"\x03msg\"$\n" +
+	"\x06Policy\x12\x1a\n" +
+	"\bautonomy\x18\x01 \x01(\tR\bautonomy\"6\n" +
 	"\x05Hello\x12-\n" +
-	"\x04host\x18\x01 \x01(\v2\x19.haetae.agent.v1.HostInfoR\x04host\"6\n" +
+	"\x04host\x18\x01 \x01(\v2\x19.haetae.agent.v1.HostInfoR\x04host\"R\n" +
 	"\aWelcome\x12+\n" +
-	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\"-\n" +
+	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\x12\x1a\n" +
+	"\bautonomy\x18\x02 \x01(\tR\bautonomy\"-\n" +
 	"\tHeartbeat\x12 \n" +
 	"\fsent_unix_ms\x18\x01 \x01(\x03R\n" +
-	"sentUnixMs\"\xca\x03\n" +
+	"sentUnixMs\"\xe2\x04\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
 	"\x04ping\x18\x02 \x01(\v2\x15.haetae.agent.v1.PingH\x00R\x04ping\x12;\n" +
@@ -3977,8 +4174,13 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"scan_image\x18\a \x01(\v2\x1a.haetae.agent.v1.ScanImageH\x00R\tscanImage\x12;\n" +
 	"\n" +
-	"pull_image\x18\b \x01(\v2\x1a.haetae.agent.v1.PullImageH\x00R\tpullImageB\x06\n" +
-	"\x04kind\"\x06\n" +
+	"pull_image\x18\b \x01(\v2\x1a.haetae.agent.v1.PullImageH\x00R\tpullImage\x12P\n" +
+	"\x11restart_container\x18\n" +
+	" \x01(\v2!.haetae.agent.v1.RestartContainerH\x00R\x10restartContainer\x12D\n" +
+	"\rauthorization\x18\t \x01(\x0e2\x1e.haetae.agent.v1.AuthorizationR\rauthorizationB\x06\n" +
+	"\x04kind\"5\n" +
+	"\x10RestartContainer\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\"\x06\n" +
 	"\x04Ping\"\x8b\x01\n" +
 	"\tQueryLogs\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12 \n" +
@@ -4227,7 +4429,11 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x0fImageCandidates\x12?\n" +
 	"\n" +
 	"candidates\x18\x01 \x03(\v2\x1f.haetae.agent.v1.ImageCandidateR\n" +
-	"candidates*\xa1\x01\n" +
+	"candidates*b\n" +
+	"\rAuthorization\x12\x1d\n" +
+	"\x19AUTHORIZATION_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16AUTHORIZATION_APPROVED\x10\x01\x12\x16\n" +
+	"\x12AUTHORIZATION_AUTO\x10\x02*\xa1\x01\n" +
 	"\bLogLevel\x12\x19\n" +
 	"\x15LOG_LEVEL_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fLOG_LEVEL_TRACE\x10\x01\x12\x13\n" +
@@ -4265,118 +4471,124 @@ func file_haetae_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_haetae_agent_v1_agent_proto_rawDescData
 }
 
-var file_haetae_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_haetae_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_haetae_agent_v1_agent_proto_goTypes = []any{
-	(LogLevel)(0),                 // 0: haetae.agent.v1.LogLevel
-	(DeployPhase)(0),              // 1: haetae.agent.v1.DeployPhase
-	(*EnrollRequest)(nil),         // 2: haetae.agent.v1.EnrollRequest
-	(*EnrollResponse)(nil),        // 3: haetae.agent.v1.EnrollResponse
-	(*HostInfo)(nil),              // 4: haetae.agent.v1.HostInfo
-	(*ConnectRequest)(nil),        // 5: haetae.agent.v1.ConnectRequest
-	(*ConnectResponse)(nil),       // 6: haetae.agent.v1.ConnectResponse
-	(*Hello)(nil),                 // 7: haetae.agent.v1.Hello
-	(*Welcome)(nil),               // 8: haetae.agent.v1.Welcome
-	(*Heartbeat)(nil),             // 9: haetae.agent.v1.Heartbeat
-	(*Command)(nil),               // 10: haetae.agent.v1.Command
-	(*Ping)(nil),                  // 11: haetae.agent.v1.Ping
-	(*QueryLogs)(nil),             // 12: haetae.agent.v1.QueryLogs
-	(*CommandResult)(nil),         // 13: haetae.agent.v1.CommandResult
-	(*LogLines)(nil),              // 14: haetae.agent.v1.LogLines
-	(*LogLine)(nil),               // 15: haetae.agent.v1.LogLine
-	(*StateSnapshot)(nil),         // 16: haetae.agent.v1.StateSnapshot
-	(*ContainerState)(nil),        // 17: haetae.agent.v1.ContainerState
-	(*PortMapping)(nil),           // 18: haetae.agent.v1.PortMapping
-	(*MetricsBatch)(nil),          // 19: haetae.agent.v1.MetricsBatch
-	(*HostMetricSample)(nil),      // 20: haetae.agent.v1.HostMetricSample
-	(*ContainerMetricSample)(nil), // 21: haetae.agent.v1.ContainerMetricSample
-	(*LogBatch)(nil),              // 22: haetae.agent.v1.LogBatch
-	(*LogEvent)(nil),              // 23: haetae.agent.v1.LogEvent
-	(*TemplateCandidate)(nil),     // 24: haetae.agent.v1.TemplateCandidate
-	(*LogStats)(nil),              // 25: haetae.agent.v1.LogStats
-	(*GreenSet)(nil),              // 26: haetae.agent.v1.GreenSet
-	(*Deploy)(nil),                // 27: haetae.agent.v1.Deploy
-	(*Version)(nil),               // 28: haetae.agent.v1.Version
-	(*GitSource)(nil),             // 29: haetae.agent.v1.GitSource
-	(*InlineCompose)(nil),         // 30: haetae.agent.v1.InlineCompose
-	(*RemoveProject)(nil),         // 31: haetae.agent.v1.RemoveProject
-	(*DeployEvent)(nil),           // 32: haetae.agent.v1.DeployEvent
-	(*DeployLog)(nil),             // 33: haetae.agent.v1.DeployLog
-	(*BranchUpdate)(nil),          // 34: haetae.agent.v1.BranchUpdate
-	(*WatchSet)(nil),              // 35: haetae.agent.v1.WatchSet
-	(*WatchedBranch)(nil),         // 36: haetae.agent.v1.WatchedBranch
-	(*ScanContainer)(nil),         // 37: haetae.agent.v1.ScanContainer
-	(*ScanImage)(nil),             // 38: haetae.agent.v1.ScanImage
-	(*PullImage)(nil),             // 39: haetae.agent.v1.PullImage
-	(*SbomPackage)(nil),           // 40: haetae.agent.v1.SbomPackage
-	(*SbomReport)(nil),            // 41: haetae.agent.v1.SbomReport
-	(*Misconfig)(nil),             // 42: haetae.agent.v1.Misconfig
-	(*ConntrackStatus)(nil),       // 43: haetae.agent.v1.ConntrackStatus
-	(*SecurityReport)(nil),        // 44: haetae.agent.v1.SecurityReport
-	(*OutboundConn)(nil),          // 45: haetae.agent.v1.OutboundConn
-	(*OutboundBatch)(nil),         // 46: haetae.agent.v1.OutboundBatch
-	(*ImageCandidate)(nil),        // 47: haetae.agent.v1.ImageCandidate
-	(*ImageCandidates)(nil),       // 48: haetae.agent.v1.ImageCandidates
+	(Authorization)(0),            // 0: haetae.agent.v1.Authorization
+	(LogLevel)(0),                 // 1: haetae.agent.v1.LogLevel
+	(DeployPhase)(0),              // 2: haetae.agent.v1.DeployPhase
+	(*EnrollRequest)(nil),         // 3: haetae.agent.v1.EnrollRequest
+	(*EnrollResponse)(nil),        // 4: haetae.agent.v1.EnrollResponse
+	(*HostInfo)(nil),              // 5: haetae.agent.v1.HostInfo
+	(*ConnectRequest)(nil),        // 6: haetae.agent.v1.ConnectRequest
+	(*ConnectResponse)(nil),       // 7: haetae.agent.v1.ConnectResponse
+	(*Policy)(nil),                // 8: haetae.agent.v1.Policy
+	(*Hello)(nil),                 // 9: haetae.agent.v1.Hello
+	(*Welcome)(nil),               // 10: haetae.agent.v1.Welcome
+	(*Heartbeat)(nil),             // 11: haetae.agent.v1.Heartbeat
+	(*Command)(nil),               // 12: haetae.agent.v1.Command
+	(*RestartContainer)(nil),      // 13: haetae.agent.v1.RestartContainer
+	(*Ping)(nil),                  // 14: haetae.agent.v1.Ping
+	(*QueryLogs)(nil),             // 15: haetae.agent.v1.QueryLogs
+	(*CommandResult)(nil),         // 16: haetae.agent.v1.CommandResult
+	(*LogLines)(nil),              // 17: haetae.agent.v1.LogLines
+	(*LogLine)(nil),               // 18: haetae.agent.v1.LogLine
+	(*StateSnapshot)(nil),         // 19: haetae.agent.v1.StateSnapshot
+	(*ContainerState)(nil),        // 20: haetae.agent.v1.ContainerState
+	(*PortMapping)(nil),           // 21: haetae.agent.v1.PortMapping
+	(*MetricsBatch)(nil),          // 22: haetae.agent.v1.MetricsBatch
+	(*HostMetricSample)(nil),      // 23: haetae.agent.v1.HostMetricSample
+	(*ContainerMetricSample)(nil), // 24: haetae.agent.v1.ContainerMetricSample
+	(*LogBatch)(nil),              // 25: haetae.agent.v1.LogBatch
+	(*LogEvent)(nil),              // 26: haetae.agent.v1.LogEvent
+	(*TemplateCandidate)(nil),     // 27: haetae.agent.v1.TemplateCandidate
+	(*LogStats)(nil),              // 28: haetae.agent.v1.LogStats
+	(*GreenSet)(nil),              // 29: haetae.agent.v1.GreenSet
+	(*Deploy)(nil),                // 30: haetae.agent.v1.Deploy
+	(*Version)(nil),               // 31: haetae.agent.v1.Version
+	(*GitSource)(nil),             // 32: haetae.agent.v1.GitSource
+	(*InlineCompose)(nil),         // 33: haetae.agent.v1.InlineCompose
+	(*RemoveProject)(nil),         // 34: haetae.agent.v1.RemoveProject
+	(*DeployEvent)(nil),           // 35: haetae.agent.v1.DeployEvent
+	(*DeployLog)(nil),             // 36: haetae.agent.v1.DeployLog
+	(*BranchUpdate)(nil),          // 37: haetae.agent.v1.BranchUpdate
+	(*WatchSet)(nil),              // 38: haetae.agent.v1.WatchSet
+	(*WatchedBranch)(nil),         // 39: haetae.agent.v1.WatchedBranch
+	(*ScanContainer)(nil),         // 40: haetae.agent.v1.ScanContainer
+	(*ScanImage)(nil),             // 41: haetae.agent.v1.ScanImage
+	(*PullImage)(nil),             // 42: haetae.agent.v1.PullImage
+	(*SbomPackage)(nil),           // 43: haetae.agent.v1.SbomPackage
+	(*SbomReport)(nil),            // 44: haetae.agent.v1.SbomReport
+	(*Misconfig)(nil),             // 45: haetae.agent.v1.Misconfig
+	(*ConntrackStatus)(nil),       // 46: haetae.agent.v1.ConntrackStatus
+	(*SecurityReport)(nil),        // 47: haetae.agent.v1.SecurityReport
+	(*OutboundConn)(nil),          // 48: haetae.agent.v1.OutboundConn
+	(*OutboundBatch)(nil),         // 49: haetae.agent.v1.OutboundBatch
+	(*ImageCandidate)(nil),        // 50: haetae.agent.v1.ImageCandidate
+	(*ImageCandidates)(nil),       // 51: haetae.agent.v1.ImageCandidates
 }
 var file_haetae_agent_v1_agent_proto_depIdxs = []int32{
-	4,  // 0: haetae.agent.v1.EnrollRequest.host:type_name -> haetae.agent.v1.HostInfo
-	7,  // 1: haetae.agent.v1.ConnectRequest.hello:type_name -> haetae.agent.v1.Hello
-	9,  // 2: haetae.agent.v1.ConnectRequest.heartbeat:type_name -> haetae.agent.v1.Heartbeat
-	13, // 3: haetae.agent.v1.ConnectRequest.result:type_name -> haetae.agent.v1.CommandResult
-	16, // 4: haetae.agent.v1.ConnectRequest.state:type_name -> haetae.agent.v1.StateSnapshot
-	19, // 5: haetae.agent.v1.ConnectRequest.metrics:type_name -> haetae.agent.v1.MetricsBatch
-	22, // 6: haetae.agent.v1.ConnectRequest.logs:type_name -> haetae.agent.v1.LogBatch
-	32, // 7: haetae.agent.v1.ConnectRequest.deploy_event:type_name -> haetae.agent.v1.DeployEvent
-	33, // 8: haetae.agent.v1.ConnectRequest.deploy_log:type_name -> haetae.agent.v1.DeployLog
-	34, // 9: haetae.agent.v1.ConnectRequest.branch_update:type_name -> haetae.agent.v1.BranchUpdate
-	41, // 10: haetae.agent.v1.ConnectRequest.sbom_report:type_name -> haetae.agent.v1.SbomReport
-	44, // 11: haetae.agent.v1.ConnectRequest.security_report:type_name -> haetae.agent.v1.SecurityReport
-	46, // 12: haetae.agent.v1.ConnectRequest.outbound_batch:type_name -> haetae.agent.v1.OutboundBatch
-	48, // 13: haetae.agent.v1.ConnectRequest.image_candidates:type_name -> haetae.agent.v1.ImageCandidates
-	8,  // 14: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
-	10, // 15: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
-	26, // 16: haetae.agent.v1.ConnectResponse.green:type_name -> haetae.agent.v1.GreenSet
-	35, // 17: haetae.agent.v1.ConnectResponse.watch:type_name -> haetae.agent.v1.WatchSet
-	4,  // 18: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
-	11, // 19: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
-	12, // 20: haetae.agent.v1.Command.query_logs:type_name -> haetae.agent.v1.QueryLogs
-	27, // 21: haetae.agent.v1.Command.deploy:type_name -> haetae.agent.v1.Deploy
-	31, // 22: haetae.agent.v1.Command.remove_project:type_name -> haetae.agent.v1.RemoveProject
-	37, // 23: haetae.agent.v1.Command.scan_container:type_name -> haetae.agent.v1.ScanContainer
-	38, // 24: haetae.agent.v1.Command.scan_image:type_name -> haetae.agent.v1.ScanImage
-	39, // 25: haetae.agent.v1.Command.pull_image:type_name -> haetae.agent.v1.PullImage
-	14, // 26: haetae.agent.v1.CommandResult.log_lines:type_name -> haetae.agent.v1.LogLines
-	15, // 27: haetae.agent.v1.LogLines.lines:type_name -> haetae.agent.v1.LogLine
-	17, // 28: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
-	18, // 29: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
-	20, // 30: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
-	21, // 31: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
-	23, // 32: haetae.agent.v1.LogBatch.events:type_name -> haetae.agent.v1.LogEvent
-	24, // 33: haetae.agent.v1.LogBatch.candidates:type_name -> haetae.agent.v1.TemplateCandidate
-	25, // 34: haetae.agent.v1.LogBatch.stats:type_name -> haetae.agent.v1.LogStats
-	0,  // 35: haetae.agent.v1.LogEvent.level:type_name -> haetae.agent.v1.LogLevel
-	0,  // 36: haetae.agent.v1.TemplateCandidate.level:type_name -> haetae.agent.v1.LogLevel
-	29, // 37: haetae.agent.v1.Deploy.git:type_name -> haetae.agent.v1.GitSource
-	30, // 38: haetae.agent.v1.Deploy.inline:type_name -> haetae.agent.v1.InlineCompose
-	28, // 39: haetae.agent.v1.Deploy.last_healthy:type_name -> haetae.agent.v1.Version
-	29, // 40: haetae.agent.v1.Version.git:type_name -> haetae.agent.v1.GitSource
-	30, // 41: haetae.agent.v1.Version.inline:type_name -> haetae.agent.v1.InlineCompose
-	1,  // 42: haetae.agent.v1.DeployEvent.phase:type_name -> haetae.agent.v1.DeployPhase
-	36, // 43: haetae.agent.v1.WatchSet.branches:type_name -> haetae.agent.v1.WatchedBranch
-	40, // 44: haetae.agent.v1.SbomReport.packages:type_name -> haetae.agent.v1.SbomPackage
-	42, // 45: haetae.agent.v1.SecurityReport.misconfigs:type_name -> haetae.agent.v1.Misconfig
-	43, // 46: haetae.agent.v1.SecurityReport.conntrack:type_name -> haetae.agent.v1.ConntrackStatus
-	45, // 47: haetae.agent.v1.OutboundBatch.conns:type_name -> haetae.agent.v1.OutboundConn
-	47, // 48: haetae.agent.v1.ImageCandidates.candidates:type_name -> haetae.agent.v1.ImageCandidate
-	2,  // 49: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
-	5,  // 50: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
-	3,  // 51: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
-	6,  // 52: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
-	51, // [51:53] is the sub-list for method output_type
-	49, // [49:51] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	5,  // 0: haetae.agent.v1.EnrollRequest.host:type_name -> haetae.agent.v1.HostInfo
+	9,  // 1: haetae.agent.v1.ConnectRequest.hello:type_name -> haetae.agent.v1.Hello
+	11, // 2: haetae.agent.v1.ConnectRequest.heartbeat:type_name -> haetae.agent.v1.Heartbeat
+	16, // 3: haetae.agent.v1.ConnectRequest.result:type_name -> haetae.agent.v1.CommandResult
+	19, // 4: haetae.agent.v1.ConnectRequest.state:type_name -> haetae.agent.v1.StateSnapshot
+	22, // 5: haetae.agent.v1.ConnectRequest.metrics:type_name -> haetae.agent.v1.MetricsBatch
+	25, // 6: haetae.agent.v1.ConnectRequest.logs:type_name -> haetae.agent.v1.LogBatch
+	35, // 7: haetae.agent.v1.ConnectRequest.deploy_event:type_name -> haetae.agent.v1.DeployEvent
+	36, // 8: haetae.agent.v1.ConnectRequest.deploy_log:type_name -> haetae.agent.v1.DeployLog
+	37, // 9: haetae.agent.v1.ConnectRequest.branch_update:type_name -> haetae.agent.v1.BranchUpdate
+	44, // 10: haetae.agent.v1.ConnectRequest.sbom_report:type_name -> haetae.agent.v1.SbomReport
+	47, // 11: haetae.agent.v1.ConnectRequest.security_report:type_name -> haetae.agent.v1.SecurityReport
+	49, // 12: haetae.agent.v1.ConnectRequest.outbound_batch:type_name -> haetae.agent.v1.OutboundBatch
+	51, // 13: haetae.agent.v1.ConnectRequest.image_candidates:type_name -> haetae.agent.v1.ImageCandidates
+	10, // 14: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
+	12, // 15: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
+	29, // 16: haetae.agent.v1.ConnectResponse.green:type_name -> haetae.agent.v1.GreenSet
+	38, // 17: haetae.agent.v1.ConnectResponse.watch:type_name -> haetae.agent.v1.WatchSet
+	8,  // 18: haetae.agent.v1.ConnectResponse.policy:type_name -> haetae.agent.v1.Policy
+	5,  // 19: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
+	14, // 20: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
+	15, // 21: haetae.agent.v1.Command.query_logs:type_name -> haetae.agent.v1.QueryLogs
+	30, // 22: haetae.agent.v1.Command.deploy:type_name -> haetae.agent.v1.Deploy
+	34, // 23: haetae.agent.v1.Command.remove_project:type_name -> haetae.agent.v1.RemoveProject
+	40, // 24: haetae.agent.v1.Command.scan_container:type_name -> haetae.agent.v1.ScanContainer
+	41, // 25: haetae.agent.v1.Command.scan_image:type_name -> haetae.agent.v1.ScanImage
+	42, // 26: haetae.agent.v1.Command.pull_image:type_name -> haetae.agent.v1.PullImage
+	13, // 27: haetae.agent.v1.Command.restart_container:type_name -> haetae.agent.v1.RestartContainer
+	0,  // 28: haetae.agent.v1.Command.authorization:type_name -> haetae.agent.v1.Authorization
+	17, // 29: haetae.agent.v1.CommandResult.log_lines:type_name -> haetae.agent.v1.LogLines
+	18, // 30: haetae.agent.v1.LogLines.lines:type_name -> haetae.agent.v1.LogLine
+	20, // 31: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
+	21, // 32: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
+	23, // 33: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
+	24, // 34: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
+	26, // 35: haetae.agent.v1.LogBatch.events:type_name -> haetae.agent.v1.LogEvent
+	27, // 36: haetae.agent.v1.LogBatch.candidates:type_name -> haetae.agent.v1.TemplateCandidate
+	28, // 37: haetae.agent.v1.LogBatch.stats:type_name -> haetae.agent.v1.LogStats
+	1,  // 38: haetae.agent.v1.LogEvent.level:type_name -> haetae.agent.v1.LogLevel
+	1,  // 39: haetae.agent.v1.TemplateCandidate.level:type_name -> haetae.agent.v1.LogLevel
+	32, // 40: haetae.agent.v1.Deploy.git:type_name -> haetae.agent.v1.GitSource
+	33, // 41: haetae.agent.v1.Deploy.inline:type_name -> haetae.agent.v1.InlineCompose
+	31, // 42: haetae.agent.v1.Deploy.last_healthy:type_name -> haetae.agent.v1.Version
+	32, // 43: haetae.agent.v1.Version.git:type_name -> haetae.agent.v1.GitSource
+	33, // 44: haetae.agent.v1.Version.inline:type_name -> haetae.agent.v1.InlineCompose
+	2,  // 45: haetae.agent.v1.DeployEvent.phase:type_name -> haetae.agent.v1.DeployPhase
+	39, // 46: haetae.agent.v1.WatchSet.branches:type_name -> haetae.agent.v1.WatchedBranch
+	43, // 47: haetae.agent.v1.SbomReport.packages:type_name -> haetae.agent.v1.SbomPackage
+	45, // 48: haetae.agent.v1.SecurityReport.misconfigs:type_name -> haetae.agent.v1.Misconfig
+	46, // 49: haetae.agent.v1.SecurityReport.conntrack:type_name -> haetae.agent.v1.ConntrackStatus
+	48, // 50: haetae.agent.v1.OutboundBatch.conns:type_name -> haetae.agent.v1.OutboundConn
+	50, // 51: haetae.agent.v1.ImageCandidates.candidates:type_name -> haetae.agent.v1.ImageCandidate
+	3,  // 52: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
+	6,  // 53: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
+	4,  // 54: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
+	7,  // 55: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
+	54, // [54:56] is the sub-list for method output_type
+	52, // [52:54] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_haetae_agent_v1_agent_proto_init() }
@@ -4404,8 +4616,9 @@ func file_haetae_agent_v1_agent_proto_init() {
 		(*ConnectResponse_Command)(nil),
 		(*ConnectResponse_Green)(nil),
 		(*ConnectResponse_Watch)(nil),
+		(*ConnectResponse_Policy)(nil),
 	}
-	file_haetae_agent_v1_agent_proto_msgTypes[8].OneofWrappers = []any{
+	file_haetae_agent_v1_agent_proto_msgTypes[9].OneofWrappers = []any{
 		(*Command_Ping)(nil),
 		(*Command_QueryLogs)(nil),
 		(*Command_Deploy)(nil),
@@ -4413,15 +4626,16 @@ func file_haetae_agent_v1_agent_proto_init() {
 		(*Command_ScanContainer)(nil),
 		(*Command_ScanImage)(nil),
 		(*Command_PullImage)(nil),
+		(*Command_RestartContainer)(nil),
 	}
-	file_haetae_agent_v1_agent_proto_msgTypes[11].OneofWrappers = []any{
+	file_haetae_agent_v1_agent_proto_msgTypes[13].OneofWrappers = []any{
 		(*CommandResult_LogLines)(nil),
 	}
-	file_haetae_agent_v1_agent_proto_msgTypes[25].OneofWrappers = []any{
+	file_haetae_agent_v1_agent_proto_msgTypes[27].OneofWrappers = []any{
 		(*Deploy_Git)(nil),
 		(*Deploy_Inline)(nil),
 	}
-	file_haetae_agent_v1_agent_proto_msgTypes[26].OneofWrappers = []any{
+	file_haetae_agent_v1_agent_proto_msgTypes[28].OneofWrappers = []any{
 		(*Version_Git)(nil),
 		(*Version_Inline)(nil),
 	}
@@ -4430,8 +4644,8 @@ func file_haetae_agent_v1_agent_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_haetae_agent_v1_agent_proto_rawDesc), len(file_haetae_agent_v1_agent_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   47,
+			NumEnums:      3,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

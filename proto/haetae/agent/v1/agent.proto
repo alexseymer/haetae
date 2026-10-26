@@ -70,7 +70,15 @@ message ConnectResponse {
     Command command = 2;
     GreenSet green = 3;
     WatchSet watch = 4;
+    Policy policy = 5;
   }
+}
+
+// Policy tells the agent the organisation's autonomy level whenever it
+// changes (Welcome carries it at session start). The agent enforces it
+// itself, independently of the server's own checks.
+message Policy {
+  string autonomy = 1; // report | suggest | act
 }
 
 message Hello {
@@ -81,6 +89,8 @@ message Welcome {
   // Interval at which the agent must send heartbeats. The server treats a
   // host as offline after three missed intervals.
   uint32 heartbeat_seconds = 1;
+  // Organisation autonomy level: report | suggest | act. Empty means report.
+  string autonomy = 2;
 }
 
 message Heartbeat {
@@ -101,7 +111,23 @@ message Command {
     ScanContainer scan_container = 6;
     ScanImage scan_image = 7;
     PullImage pull_image = 8;
+    RestartContainer restart_container = 10;
   }
+  // How the command was authorised. UNSPECIFIED is a user-initiated command
+  // (deploy API, settings); operator commands are APPROVED or AUTO.
+  Authorization authorization = 9;
+}
+
+enum Authorization {
+  AUTHORIZATION_UNSPECIFIED = 0;
+  AUTHORIZATION_APPROVED = 1; // after a verified account pressed an approval button
+  AUTHORIZATION_AUTO = 2;     // the operator acted on its own at level act
+}
+
+// RestartContainer restarts one container. It is the only operator action
+// in v1; it never removes a container, an image or a volume.
+message RestartContainer {
+  string container_id = 1;
 }
 
 message Ping {}
