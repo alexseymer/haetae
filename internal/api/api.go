@@ -86,6 +86,11 @@ type Config struct {
 	// Nil disables chat write endpoints; channel list still reports web as enabled.
 	Chat *chat.Service
 
+	// OperatorSettings backs /api/settings/operator. Nil answers 503.
+	OperatorSettings OperatorSettings
+	// PolicyPusher is told when an organisation's autonomy level changes.
+	PolicyPusher PolicyPusher
+
 	// Sender delivers agent commands (forced container scans). When nil, the
 	// Deploys service's Sender is used if set.
 	Sender deploys.Sender
@@ -167,6 +172,7 @@ func (a *API) Handler() http.Handler {
 	a.registerAlerts(mux)
 	a.registerChat(mux)
 	a.registerSecurity(mux)
+	a.registerOperator(mux)
 
 	// Anything else under /api is a 404 in JSON, never the web app.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

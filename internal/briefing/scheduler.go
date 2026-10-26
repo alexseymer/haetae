@@ -46,6 +46,11 @@ type Scheduler struct {
 	Clock Clock
 	Log   *slog.Logger
 	Every time.Duration // tick interval; zero means TickInterval
+
+	// Rewriter optionally rewords the rule text with the AI; nil keeps the
+	// rule text. RewriteTimeout zero means the package default.
+	Rewriter       Rewriter
+	RewriteTimeout time.Duration
 }
 
 // Run ticks until ctx ends. Errors for one org do not stop the others.
@@ -143,7 +148,7 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.BriefingOrg, now time.T
 		_ = s.Store.BriefingDelete(ctx, o.OrgID, localDate)
 		return err
 	}
-	body := Compose(facts, now, loc)
+	body := s.choose(ctx, o.OrgID, facts, Compose(facts, now, loc))
 	day := localDate.UTC().Format("2006-01-02")
 	msg := store.ChatMessage{
 		Channel:   store.ChannelWeb,

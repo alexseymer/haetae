@@ -18,8 +18,20 @@ import (
 // Payload is "a:" + 16-char base64url (≤ 24 bytes total).
 const ActionRefPrefix = "a:"
 
+// Approval button action kinds. The ref's message is linked to an ai_actions
+// row through chat_approvals.
+const (
+	ActionApprove = "approve_action"
+	ActionDecline = "decline_action"
+)
+
 // ErrActionAlreadyUsed means the (message, action) receipt was already consumed.
 var ErrActionAlreadyUsed = errors.New("store: chat action already used")
+
+// ErrApprovalAlreadyHandled means the proposal behind an approval message is no
+// longer awaiting approval (another message's button, expiry or a refusal got
+// there first). The pressed ref is still consumed.
+var ErrApprovalAlreadyHandled = errors.New("store: approval already handled")
 
 // CreateActionRefs stores one opaque ref per action for a message. Returns
 // map[action]plaintextRef (16-char base64url). Actions already used are omitted
@@ -28,7 +40,7 @@ func (s *Store) CreateActionRefs(ctx context.Context, orgID, messageID uuid.UUID
 	out := make(map[string]string, len(actions))
 	for _, action := range actions {
 		switch action {
-		case "later", "mute30d", "ack":
+		case "later", "mute30d", "ack", ActionApprove, ActionDecline:
 		default:
 			return nil, fmt.Errorf("store: CreateActionRefs: bad action %q", action)
 		}
@@ -104,7 +116,7 @@ func (s *Store) ConsumeActionRef(ctx context.Context, messageID uuid.UUID, actio
 
 func consumeActionRefTx(ctx context.Context, tx pgx.Tx, messageID uuid.UUID, action string) error {
 	switch action {
-	case "later", "mute30d", "ack":
+	case "later", "mute30d", "ack", ActionApprove, ActionDecline:
 	default:
 		return ErrActionRejected
 	}
@@ -262,4 +274,95 @@ func jsonMarshalEvidence(e []ChatEvidence) ([]byte, error) {
 		return nil, fmt.Errorf("store: InsertInbound: %w", err)
 	}
 	return b, nil
+}
+
+// LinkMessageApproval records that chat message messageID proposes the
+// ai_actions row approvalID (the approval buttons act on it).
+func (s *Store) LinkMessageApproval(ctx context.Context, orgID, messageID, approvalID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO chat_approvals (message_id, org_id, approval_id) VALUES ($1,$2,$3)
+		ON CONFLICT (message_id) DO NOTHING`, messageID, orgID, approvalID)
+	if err != nil {
+		return fmt.Errorf("store: LinkMessageApproval: %w", err)
+	}
+	return nil
+}
+
+// ApplyApprovalAction consumes the approve or decline ref of messageID (and
+// the sibling ref, so only one of the two can ever be used), records the
+// inbound row and, for a decline, marks the ai_actions row failed with detail
+// 'declined' only while it is still awaiting_approval. It returns the approval
+// id, or ErrApprovalAlreadyHandled when the proposal is no longer awaiting
+// approval (the refs are consumed, nothing else changes). All in one transaction: on any failure the refs stay usable.
+func (s *Store) ApplyApprovalAction(ctx context.Context, messageID uuid.UUID, action string, inbound ChatMessage) (uuid.UUID, error) {
+	var sibling string
+	switch action {
+	case ActionApprove:
+		sibling = ActionDecline
+	case ActionDecline:
+		sibling = ActionApprove
+	default:
+		return uuid.Nil, ErrActionRejected
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var approvalID, orgID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT approval_id, org_id FROM chat_approvals WHERE message_id = $1`, messageID).
+		Scan(&approvalID, &orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrActionRejected
+		}
+		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: %w", err)
+	}
+	// Serialise presses from different messages of the same proposal.
+	var outcome string
+	if err := tx.QueryRow(ctx, `SELECT outcome FROM ai_actions WHERE id = $1 AND org_id = $2 FOR UPDATE`, approvalID, orgID).
+		Scan(&outcome); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrActionRejected
+		}
+		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: lock: %w", err)
+	}
+	if err := consumeActionRefTx(ctx, tx, messageID, action); err != nil {
+		return uuid.Nil, err
+	}
+	_, sum, err := newActionRef()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	// The sibling may have no ref row yet (HMAC tokens create it lazily):
+	// insert it already used so it can never be consumed afterwards.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO chat_action_refs (org_id, message_id, action, ref_hash, expires_at, used_at)
+		VALUES ($1,$2,$3,$4, now() + interval '7 days', now())
+		ON CONFLICT (message_id, action) DO UPDATE SET used_at = COALESCE(chat_action_refs.used_at, now())`,
+		orgID, messageID, sibling, sum[:]); err != nil {
+		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: sibling: %w", err)
+	}
+	if outcome != "awaiting_approval" {
+		// Keep the consumption of both refs of this message, change nothing else.
+		if err := tx.Commit(ctx); err != nil {
+			return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: %w", err)
+		}
+		return approvalID, ErrApprovalAlreadyHandled
+	}
+	if action == ActionDecline {
+		if _, err := tx.Exec(ctx, `
+			UPDATE ai_actions SET outcome = 'failed', detail = 'declined'
+			WHERE id = $1 AND org_id = $2 AND outcome = 'awaiting_approval'`, approvalID, orgID); err != nil {
+			return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: decline: %w", err)
+		}
+	}
+	if err := insertInboundTx(ctx, tx, inbound); err != nil {
+		return uuid.Nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: %w", err)
+	}
+	return approvalID, nil
 }

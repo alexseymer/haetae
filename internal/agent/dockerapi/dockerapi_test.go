@@ -355,3 +355,42 @@ func TestNewUsesSocket(t *testing.T) {
 		_ = err
 	}
 }
+
+func TestRestartContainer(t *testing.T) {
+	var gotMethod, gotPath, gotT string
+	c := startUnixServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotT = r.Method, r.URL.Path, r.URL.Query().Get("t")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	if err := c.RestartContainer(context.Background(), "0123456789ab"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/"+APIVersion+"/containers/0123456789ab/restart" || gotT != "30" {
+		t.Fatalf("got %s %s t=%s", gotMethod, gotPath, gotT)
+	}
+	if err := c.RestartContainer(context.Background(), "web-1.app"); err != nil {
+		t.Fatalf("restart by name: %v", err)
+	}
+}
+
+func TestRestartContainerRejectsBadRef(t *testing.T) {
+	called := false
+	c := startUnixServer(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	for _, id := range []string{"", "../x", "a/b", "web?force=1", "-bad", "a b", "x\n", strings.Repeat("a", 129)} {
+		if err := c.RestartContainer(context.Background(), id); err == nil {
+			t.Errorf("id %q accepted", id)
+		}
+	}
+	if called {
+		t.Fatal("server reached for an invalid reference")
+	}
+}
+
+func TestRestartContainerError(t *testing.T) {
+	c := startUnixServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"No such container"}`, http.StatusNotFound)
+	}))
+	if err := c.RestartContainer(context.Background(), "gone-container"); err == nil {
+		t.Fatal("want error on 404")
+	}
+}

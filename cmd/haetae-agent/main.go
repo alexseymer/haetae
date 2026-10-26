@@ -130,7 +130,12 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	interval := fs.Duration("interval", 10*time.Second, "metrics sampling interval")
 	httpPort := fs.Int("ingress-http-port", 80, "host port published for HTTP ingress")
 	httpsPort := fs.Int("ingress-https-port", 443, "host port published for HTTPS ingress")
+	maxAutonomy := fs.String("max-autonomy", agent.LevelAct, "highest operator autonomy this agent accepts: report, suggest or act")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	autonomyCap, err := agent.ParseMaxAutonomy(*maxAutonomy)
+	if err != nil {
 		return err
 	}
 	id, err := agent.LoadIdentity(*stateDir)
@@ -223,6 +228,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	go logs.Run(ctx)
 	go scanner.Run(ctx)
 
+	hostname, _ := os.Hostname()
+	guard := restartGuard{docker: mon.Docker(), caddyName: caddyContainer, hostname: hostname}
 	handler := commandHandler{logs: logs, scan: scanner, sec: sec}
 	return agent.Run(ctx, id, log, agent.RunOptions{
 		Outbox:        out,
@@ -232,6 +239,9 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		Handler:       handler.Handle,
 		Deploys:       deploys,
 		Watcher:       watcher,
+
+		Policy:           agent.NewPolicy(autonomyCap, log.With("component", "policy")),
+		RestartContainer: guard.restart,
 	})
 }
 

@@ -424,6 +424,31 @@ func (s *Store) ListVerifiedAccounts(ctx context.Context, orgID uuid.UUID, chann
 	return out, rows.Err()
 }
 
+// ListVerifiedAdminAccounts returns verified accounts for one channel in an
+// org whose user is an enabled organisation admin.
+func (s *Store) ListVerifiedAdminAccounts(ctx context.Context, orgID uuid.UUID, channel string) ([]ChatAccount, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.id, a.org_id, a.user_id, a.channel, a.external_id, a.verified_at, a.created_at
+		FROM chat_accounts a
+		JOIN users u ON u.id = a.user_id AND u.org_id = a.org_id
+		WHERE a.org_id = $1 AND a.channel = $2 AND a.verified_at IS NOT NULL
+		  AND u.role = 'admin' AND u.disabled_at IS NULL
+		ORDER BY a.created_at`, orgID, channel)
+	if err != nil {
+		return nil, fmt.Errorf("store: ListVerifiedAdminAccounts: %w", err)
+	}
+	defer rows.Close()
+	var out []ChatAccount
+	for rows.Next() {
+		var a ChatAccount
+		if err := rows.Scan(&a.ID, &a.OrgID, &a.UserID, &a.Channel, &a.ExternalID, &a.VerifiedAt, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("store: ListVerifiedAdminAccounts: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // GetChatAccountByExternal looks up a verified account by channel identity.
 func (s *Store) GetChatAccountByExternal(ctx context.Context, channel, externalID string) (ChatAccount, error) {
 	var a ChatAccount
@@ -830,7 +855,7 @@ func VerifyActionToken(secret []byte, token string, now time.Time) (messageID uu
 		return uuid.Nil, "", ErrActionRejected
 	}
 	switch action {
-	case "later", "mute30d", "ack":
+	case "later", "mute30d", "ack", ActionApprove, ActionDecline:
 	default:
 		return uuid.Nil, "", ErrActionRejected
 	}

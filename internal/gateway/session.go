@@ -27,6 +27,7 @@ type session struct {
 	outbox   chan *agentv1.Command
 	green    chan []string          // latest green set; a newer one replaces an unsent one
 	watch    chan *agentv1.WatchSet // latest watch set; replace-latest
+	policy   chan string            // latest autonomy level; replace-latest
 	lastSeen atomic.Int64           // unix nanoseconds
 
 	eventLim     *tokenBucket
@@ -57,6 +58,7 @@ func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 		outbox:       make(chan *agentv1.Command, 16),
 		green:        make(chan []string, 1),
 		watch:        make(chan *agentv1.WatchSet, 1),
+		policy:       make(chan string, 1),
 		eventLim:     newTokenBucket(deployEventRate, deployEventRate),
 		logLim:       newTokenBucket(deployLogRate, deployLogRate),
 		branchLim:    newTokenBucketRate(float64(deployBranchPerMin)/60.0, float64(deployBranchPerMin)),
@@ -98,6 +100,21 @@ func (s *session) setWatch(ws *agentv1.WatchSet) {
 		}
 		select {
 		case <-s.watch:
+		default:
+		}
+	}
+}
+
+// setPolicy queues an autonomy level, replacing one that has not been sent yet.
+func (s *session) setPolicy(level string) {
+	for {
+		select {
+		case s.policy <- level:
+			return
+		default:
+		}
+		select {
+		case <-s.policy:
 		default:
 		}
 	}

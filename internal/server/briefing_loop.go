@@ -10,7 +10,7 @@ import (
 
 // RunBriefing runs the daily briefing scheduler until ctx ends. enq may be
 // nil (no-op) until the chat package wires a real Enqueuer.
-func RunBriefing(ctx context.Context, st *store.Store, enq briefing.Enqueuer, log *slog.Logger) {
+func RunBriefing(ctx context.Context, st *store.Store, enq briefing.Enqueuer, rw briefing.Rewriter, log *slog.Logger) {
 	if st == nil {
 		return
 	}
@@ -21,6 +21,6 @@ func RunBriefing(ctx context.Context, st *store.Store, enq briefing.Enqueuer, lo
 		log.Info("briefing scheduler idle: no enqueuer")
 		return
 	}
-	s := &briefing.Scheduler{Store: st, Enq: enq, Log: log}
+	s := &briefing.Scheduler{Store: st, Enq: enq, Rewriter: rw, Log: log}
 	s.Run(ctx)
 }

@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -443,4 +445,40 @@ func (c *Client) statusError(op string, resp *http.Response) error {
 		msg = wrapped.Message
 	}
 	return fmt.Errorf("dockerapi: %s: status %d: %s", op, resp.StatusCode, msg)
+}
+
+// restartStopSeconds is how long Docker waits for the container to stop
+// before killing it; restartTimeout covers that plus the start.
+const (
+	restartStopSeconds = 30
+	restartTimeout     = restartStopSeconds*time.Second + 30*time.Second
+)
+
+// containerRef matches a container id (hex, 12 to 64) or a Docker container
+// name. Anything else is rejected before a URL is built.
+var containerRef = regexp.MustCompile(`^(?:[0-9a-f]{12,64}|[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127})$`)
+
+// RestartContainer restarts a container (POST /containers/{id}/restart) with a
+// 30 s stop timeout.
+func (c *Client) RestartContainer(ctx context.Context, id string) error {
+	if !containerRef.MatchString(id) {
+		return fmt.Errorf("dockerapi: invalid container reference")
+	}
+	ctx, cancel := context.WithTimeout(ctx, restartTimeout)
+	defer cancel()
+	path := "/containers/" + id + "/restart?t=" + strconv.Itoa(restartStopSeconds)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, nil)
+	if err != nil {
+		return fmt.Errorf("dockerapi: restart: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("dockerapi: restart: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return c.statusError("restart", resp)
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody))
+	return nil
 }

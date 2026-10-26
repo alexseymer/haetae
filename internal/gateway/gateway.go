@@ -41,6 +41,8 @@ type Store interface {
 	MarkDisconnected(ctx context.Context, id uuid.UUID) error
 	ApplyDeployEvent(ctx context.Context, orgID, hostID, deployID uuid.UUID, ev store.DeployEvent) error
 	AppendDeployLog(ctx context.Context, orgID, hostID, deployID uuid.UUID, log store.DeployLogChunk) error
+	// OrgAutonomy returns the organisation's operator autonomy level.
+	OrgAutonomy(ctx context.Context, orgID uuid.UUID) (string, error)
 	ingestStore
 	logStore
 	securityStore
@@ -103,6 +105,12 @@ type Gateway struct {
 
 	judgeMu sync.Mutex
 	judge   judgeThrottle
+
+	aiMu   sync.Mutex
+	aiBusy map[uuid.UUID]bool
+	aiSem  chan struct{}
+
+	policyMu sync.Mutex
 }
 
 // SetFindingsLookup installs the vuln findings lookup used for image update
@@ -234,6 +242,7 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 
 	welcome := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Welcome{Welcome: &agentv1.Welcome{
 		HeartbeatSeconds: uint32(g.cfg.Heartbeat / time.Second), //nolint:gosec // G115: capped at one hour in withDefaults
+		Autonomy:         g.orgAutonomy(ctx, host.OrgID),
 	}}}
 	if err := stream.Send(welcome); err != nil {
 		return err
@@ -388,6 +397,11 @@ func (g *Gateway) sendLoop(ctx context.Context, stream *connect.BidiStream[agent
 			if err := stream.Send(msg); err != nil {
 				return err
 			}
+		case level := <-s.policy:
+			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Policy{Policy: &agentv1.Policy{Autonomy: level}}}
+			if err := stream.Send(msg); err != nil {
+				return err
+			}
 		case ws := <-s.watch:
 			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Watch{Watch: ws}}
 			if err := stream.Send(msg); err != nil {
@@ -473,4 +487,43 @@ func peerIdentity(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// orgAutonomy reads the organisation's level; an error yields the safe
+// default, report.
+func (g *Gateway) orgAutonomy(ctx context.Context, orgID uuid.UUID) string {
+	level, err := g.store.OrgAutonomy(ctx, orgID)
+	if err != nil {
+		g.log.Warn("load autonomy level, using report", "org_id", orgID, "err", err)
+		return "report"
+	}
+	switch level {
+	case "report", "suggest", "act":
+		return level
+	}
+	g.log.Warn("unknown autonomy level, using report", "org_id", orgID)
+	return "report"
+}
+
+// PushPolicy re-reads the organisation's autonomy level and sends it in a
+// Policy message to every connected session of the organisation. The settings
+// API calls it after changing the level.
+func (g *Gateway) PushPolicy(orgID uuid.UUID) {
+	// Serialised so that a stale read cannot overwrite a newer level.
+	g.policyMu.Lock()
+	defer g.policyMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	level := g.orgAutonomy(ctx, orgID)
+	g.mu.Lock()
+	var targets []*session
+	for _, s := range g.sessions {
+		if s.orgID == orgID {
+			targets = append(targets, s)
+		}
+	}
+	g.mu.Unlock()
+	for _, s := range targets {
+		s.setPolicy(level)
+	}
 }

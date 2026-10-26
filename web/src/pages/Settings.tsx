@@ -24,14 +24,16 @@ import {
   validateAlertSettings,
   type AlertSettingsErrors,
 } from "../lib/alertSettings";
+import { OperatorSettingsSection } from "./OperatorSettings";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 
-type SettingsTab = "account" | "alerts" | "chat";
+type SettingsTab = "account" | "alerts" | "chat" | "operator";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "account", label: "Account" },
   { id: "alerts", label: "Alerts" },
   { id: "chat", label: "Chat channels" },
+  { id: "operator", label: "AI operator" },
 ];
 
 const LINKABLE: Array<{ id: LinkableChannel; label: string }> = [
@@ -665,6 +667,16 @@ export function SettingsPage() {
               </div>
             )}
           </section>
+        </div>
+      ) : null}
+
+      {tab === "operator" ? (
+        <div
+          role="tabpanel"
+          id="panel-settings-operator"
+          aria-labelledby="tab-settings-operator"
+        >
+          <OperatorSettingsSection isAdmin={isAdmin} />
         </div>
       ) : null}
 

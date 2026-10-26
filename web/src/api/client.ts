@@ -1,3 +1,4 @@
+import type { OperatorSettings, PutOperatorSettings } from "./operatorTypes";
 import type {
   AlertSettings,
   ChatAccountsResponse,
@@ -261,6 +262,11 @@ export const api = {
 
   putAlertSettings: (body: AlertSettings) =>
     request<AlertSettings>("/api/settings/alerts", { method: "PUT", body }),
+
+  operatorSettings: () => request<OperatorSettings>("/api/settings/operator"),
+
+  putOperatorSettings: (body: PutOperatorSettings) =>
+    request<OperatorSettings>("/api/settings/operator", { method: "PUT", body }),
 
   mutes: () => request<MutesResponse>("/api/mutes"),
 

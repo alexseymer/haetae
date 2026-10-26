@@ -1,5 +1,6 @@
 // Package briefing builds the daily briefing text and schedules it once per
-// local day. It does not call an AI (S9).
+// local day. Compose is rule-based; the scheduler may hand its text to an
+// optional AI Rewriter and falls back to it on any problem (S9).
 package briefing
 
 import (

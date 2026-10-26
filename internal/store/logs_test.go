@@ -212,3 +212,32 @@ func TestGreenJudgementsArePerHost(t *testing.T) {
 		t.Fatalf("host B's SetVerdicts changed host A: %v", ids)
 	}
 }
+
+func TestDemoteGreenOnlyTouchesGreenOfThatHost(t *testing.T) {
+	s, org, host := logFixture(t)
+	ctx := context.Background()
+	now := time.Now()
+	for range 3 {
+		for _, id := range []string{"a", "b", "w"} {
+			if err := s.InsertLogEvents(ctx, org.ID, host.ID, []store.LogEvent{ev(id, store.LevelInfo, 10, now)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := s.SetVerdicts(ctx, org.ID, host.ID, []string{"a", "b"}, []string{"w"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DemoteGreen(ctx, org.ID, host.ID, []string{"b", "w", "nope"}); err != nil {
+		t.Fatal(err)
+	}
+	if green, _ := s.GreenTemplateIDs(ctx, org.ID, host.ID, 10); !slices.Equal(green, []string{"a"}) {
+		t.Fatalf("green = %v, want [a]", green)
+	}
+	// Demotion is one way: SetVerdicts cannot bring "b" back.
+	if err := s.SetVerdicts(ctx, org.ID, host.ID, []string{"b"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if green, _ := s.GreenTemplateIDs(ctx, org.ID, host.ID, 10); !slices.Equal(green, []string{"a"}) {
+		t.Fatalf("green = %v after re-judge, want [a]", green)
+	}
+}

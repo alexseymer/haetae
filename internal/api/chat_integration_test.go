@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/alexseymer/haetae/internal/auth"
 	"github.com/alexseymer/haetae/internal/chat"
 	"github.com/alexseymer/haetae/internal/chat/web"
+	"github.com/alexseymer/haetae/internal/operator"
 	"github.com/alexseymer/haetae/internal/store"
 )
 
@@ -365,5 +367,113 @@ func assertNoSecrets(t *testing.T, raw []byte) {
 		if bytes.Contains(raw, []byte(secret)) {
 			t.Fatalf("secret %q leaked in response: %s", secret, raw)
 		}
+	}
+}
+
+type execOp struct {
+	mu   sync.Mutex
+	n    int
+	err  error
+	last uuid.UUID
+}
+
+func (o *execOp) Available(context.Context, uuid.UUID) (bool, string) { return true, "" }
+func (o *execOp) Ask(context.Context, uuid.UUID, string) (operator.Answer, error) {
+	return operator.Answer{}, nil
+}
+func (o *execOp) ExplainIncident(context.Context, uuid.UUID, uuid.UUID) (operator.Answer, error) {
+	return operator.Answer{}, nil
+}
+func (o *execOp) ExecuteApproved(_ context.Context, _, id uuid.UUID) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.n++
+	o.last = id
+	return o.err
+}
+func (o *execOp) count() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.n
+}
+
+func (f *chatFixture) proposal(t *testing.T) store.ChatMessage {
+	t.Helper()
+	ctx := context.Background()
+	var approvalID uuid.UUID
+	if err := f.e.st.Pool().QueryRow(ctx, `
+		INSERT INTO ai_actions (org_id, host_id, container_id, kind, level, origin, outcome, reason)
+		VALUES ($1,$2,'c1','restart_container','suggest','proposed','awaiting_approval','crash loop')
+		RETURNING id`, f.org.ID, f.host.ID).Scan(&approvalID); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := f.e.st.EnqueueChatMessage(ctx, store.ChatMessage{
+		OrgID: f.org.ID, Channel: store.ChannelWeb, Direction: "out", Kind: store.KindAnswer,
+		Body: "Haetae proposes: restart api",
+		Actions: []store.ChatAction{
+			{ID: store.ActionApprove, Label: "Approve"}, {ID: store.ActionDecline, Label: "Decline"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.e.st.LinkMessageApproval(ctx, f.org.ID, msg.ID, approvalID); err != nil {
+		t.Fatal(err)
+	}
+	return msg
+}
+
+func (f *chatFixture) press(c *client, msg store.ChatMessage, action string) (int, string) {
+	var out struct {
+		Reply string `json:"reply"`
+	}
+	s := c.post("/api/chat/actions", map[string]any{"messageId": msg.ID.String(), "action": action}, &out)
+	return s, out.Reply
+}
+
+func TestWebApprovalThroughAPI(t *testing.T) {
+	f := newChatFixture(t)
+	op := &execOp{}
+	f.svc.SetOperator(op)
+
+	msg := f.proposal(t)
+	if s, _ := f.press(f.member, msg, store.ActionApprove); s != http.StatusForbidden {
+		t.Fatalf("member approve: %d", s)
+	}
+	if op.count() != 0 {
+		t.Fatal("member press executed")
+	}
+	if s, reply := f.press(f.admin, msg, store.ActionApprove); s != http.StatusOK || reply != "Approved. The action was sent." {
+		t.Fatalf("admin approve: %d %q", s, reply)
+	}
+	if s, reply := f.press(f.admin, msg, store.ActionApprove); s != http.StatusOK || reply != "Already handled." {
+		t.Fatalf("double approve: %d %q", s, reply)
+	}
+	if s, reply := f.press(f.admin, msg, store.ActionDecline); s != http.StatusOK || reply != "Already handled." {
+		t.Fatalf("decline after approve: %d %q", s, reply)
+	}
+	if op.count() != 1 {
+		t.Fatalf("executed %d times, want once", op.count())
+	}
+
+	// Another organisation's admin cannot press it.
+	if s, _ := f.press(f.other, msg, store.ActionApprove); s != http.StatusNotFound {
+		t.Fatalf("cross-org press: %d", s)
+	}
+
+	// Declining executes nothing.
+	m2 := f.proposal(t)
+	if s, reply := f.press(f.admin, m2, store.ActionDecline); s != http.StatusOK || reply != "Declined." {
+		t.Fatalf("decline: %d %q", s, reply)
+	}
+	if op.count() != 1 {
+		t.Fatal("decline executed")
+	}
+
+	// The container recovered meanwhile.
+	op.err = operator.ErrNoLongerNeeded
+	m3 := f.proposal(t)
+	if _, reply := f.press(f.admin, m3, store.ActionApprove); !strings.HasPrefix(reply, "No longer needed") {
+		t.Fatalf("reply %q", reply)
 	}
 }
