@@ -23,7 +23,13 @@ func TestActionTokenForged(t *testing.T) {
 	secret := []byte("0123456789abcdef0123456789abcdef")
 	id := uuid.New()
 	tok := store.SignActionToken(secret, id, "ack", time.Now().Add(time.Hour))
-	tok = tok[:len(tok)-1] + "x"
+	// Flip a character in the payload (not the last one: trailing base64
+	// bits can decode to the same bytes, which made this test flaky).
+	c := byte('A')
+	if tok[2] == c {
+		c = 'B'
+	}
+	tok = tok[:2] + string(c) + tok[3:]
 	if _, _, err := store.VerifyActionToken(secret, tok, time.Now()); err == nil {
 		t.Fatal("expected forged token rejection")
 	}

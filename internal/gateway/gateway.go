@@ -22,6 +22,7 @@ import (
 	"github.com/alexseymer/haetae/internal/gen/haetae/agent/v1/agentv1connect"
 	"github.com/alexseymer/haetae/internal/pki"
 	"github.com/alexseymer/haetae/internal/store"
+	"github.com/alexseymer/haetae/internal/updates"
 )
 
 // MaxMessageBytes is the largest agent message the gateway accepts. The
@@ -42,6 +43,7 @@ type Store interface {
 	AppendDeployLog(ctx context.Context, orgID, hostID, deployID uuid.UUID, log store.DeployLogChunk) error
 	ingestStore
 	logStore
+	securityStore
 }
 
 // Config tunes the gateway. Zero values get defaults.
@@ -95,8 +97,18 @@ type Gateway struct {
 	sessions map[uuid.UUID]*session
 	deploys  DeployService
 
+	sbomStore  SbomStore
+	matchQueue MatchQueue
+	findings   updates.FindingsLookup // optional; critical-fix verification
+
 	judgeMu sync.Mutex
 	judge   judgeThrottle
+}
+
+// SetFindingsLookup installs the vuln findings lookup used for image update
+// critical-fix decisions. Nil is fine until the vuln worker wires it.
+func (g *Gateway) SetFindingsLookup(l updates.FindingsLookup) {
+	g.findings = l
 }
 
 var _ agentv1connect.AgentGatewayServiceHandler = (*Gateway)(nil)
@@ -340,6 +352,14 @@ func (g *Gateway) receiveLoop(ctx context.Context, stream *connect.BidiStream[ag
 			g.handleDeployLog(ctx, s, m.DeployLog)
 		case *agentv1.ConnectRequest_BranchUpdate:
 			g.handleBranchUpdate(ctx, s, m.BranchUpdate)
+		case *agentv1.ConnectRequest_SbomReport:
+			g.handleSbomReport(ctx, s, m.SbomReport)
+		case *agentv1.ConnectRequest_SecurityReport:
+			g.handleSecurityReport(ctx, s, m.SecurityReport)
+		case *agentv1.ConnectRequest_OutboundBatch:
+			g.handleOutboundBatch(ctx, s, m.OutboundBatch)
+		case *agentv1.ConnectRequest_ImageCandidates:
+			g.handleImageCandidates(ctx, s, m.ImageCandidates)
 		case *agentv1.ConnectRequest_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate hello"))
 		default:

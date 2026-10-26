@@ -34,4 +34,7 @@ type Reader interface {
 	LoadAlertEvalState(ctx context.Context, orgID uuid.UUID) ([]store.AlertEvalState, error)
 	UpsertAlertEvalState(ctx context.Context, st store.AlertEvalState) error
 	DeleteAlertEvalState(ctx context.Context, orgID uuid.UUID, kind, key string) error
+
+	// HighCriticalFindingsForRunningContainers feeds the new_cve rule.
+	HighCriticalFindingsForRunningContainers(ctx context.Context, orgID uuid.UUID) ([]store.ContainerFinding, error)
 }

@@ -32,6 +32,7 @@ type memStore struct {
 	diskPct   map[uuid.UUID]float64
 	offline   []store.Host
 	deploys   []store.Deploy
+	cve       []store.ContainerFinding
 
 	evalState map[string]store.AlertEvalState // org|kind|key
 }
@@ -273,6 +274,19 @@ func (m *memStore) DeleteAlertEvalState(_ context.Context, orgID uuid.UUID, kind
 	defer m.mu.Unlock()
 	delete(m.evalState, m.evalKey(orgID, kind, key))
 	return nil
+}
+
+func (m *memStore) HighCriticalFindingsForRunningContainers(_ context.Context, orgID uuid.UUID) ([]store.ContainerFinding, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []store.ContainerFinding
+	for _, f := range m.cve {
+		if f.Finding.OrgID == orgID || f.Finding.OrgID == uuid.Nil {
+			cp := f
+			out = append(out, cp)
+		}
+	}
+	return out, nil
 }
 
 func (m *memStore) openCount() int {

@@ -385,6 +385,10 @@ type ConnectRequest struct {
 	//	*ConnectRequest_DeployEvent
 	//	*ConnectRequest_DeployLog
 	//	*ConnectRequest_BranchUpdate
+	//	*ConnectRequest_SbomReport
+	//	*ConnectRequest_SecurityReport
+	//	*ConnectRequest_OutboundBatch
+	//	*ConnectRequest_ImageCandidates
 	Msg           isConnectRequest_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -508,6 +512,42 @@ func (x *ConnectRequest) GetBranchUpdate() *BranchUpdate {
 	return nil
 }
 
+func (x *ConnectRequest) GetSbomReport() *SbomReport {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_SbomReport); ok {
+			return x.SbomReport
+		}
+	}
+	return nil
+}
+
+func (x *ConnectRequest) GetSecurityReport() *SecurityReport {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_SecurityReport); ok {
+			return x.SecurityReport
+		}
+	}
+	return nil
+}
+
+func (x *ConnectRequest) GetOutboundBatch() *OutboundBatch {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_OutboundBatch); ok {
+			return x.OutboundBatch
+		}
+	}
+	return nil
+}
+
+func (x *ConnectRequest) GetImageCandidates() *ImageCandidates {
+	if x != nil {
+		if x, ok := x.Msg.(*ConnectRequest_ImageCandidates); ok {
+			return x.ImageCandidates
+		}
+	}
+	return nil
+}
+
 type isConnectRequest_Msg interface {
 	isConnectRequest_Msg()
 }
@@ -548,6 +588,22 @@ type ConnectRequest_BranchUpdate struct {
 	BranchUpdate *BranchUpdate `protobuf:"bytes,9,opt,name=branch_update,json=branchUpdate,proto3,oneof"`
 }
 
+type ConnectRequest_SbomReport struct {
+	SbomReport *SbomReport `protobuf:"bytes,10,opt,name=sbom_report,json=sbomReport,proto3,oneof"`
+}
+
+type ConnectRequest_SecurityReport struct {
+	SecurityReport *SecurityReport `protobuf:"bytes,11,opt,name=security_report,json=securityReport,proto3,oneof"`
+}
+
+type ConnectRequest_OutboundBatch struct {
+	OutboundBatch *OutboundBatch `protobuf:"bytes,12,opt,name=outbound_batch,json=outboundBatch,proto3,oneof"`
+}
+
+type ConnectRequest_ImageCandidates struct {
+	ImageCandidates *ImageCandidates `protobuf:"bytes,13,opt,name=image_candidates,json=imageCandidates,proto3,oneof"`
+}
+
 func (*ConnectRequest_Hello) isConnectRequest_Msg() {}
 
 func (*ConnectRequest_Heartbeat) isConnectRequest_Msg() {}
@@ -565,6 +621,14 @@ func (*ConnectRequest_DeployEvent) isConnectRequest_Msg() {}
 func (*ConnectRequest_DeployLog) isConnectRequest_Msg() {}
 
 func (*ConnectRequest_BranchUpdate) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_SbomReport) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_SecurityReport) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_OutboundBatch) isConnectRequest_Msg() {}
+
+func (*ConnectRequest_ImageCandidates) isConnectRequest_Msg() {}
 
 type ConnectResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -827,6 +891,9 @@ type Command struct {
 	//	*Command_QueryLogs
 	//	*Command_Deploy
 	//	*Command_RemoveProject
+	//	*Command_ScanContainer
+	//	*Command_ScanImage
+	//	*Command_PullImage
 	Kind          isCommand_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -912,6 +979,33 @@ func (x *Command) GetRemoveProject() *RemoveProject {
 	return nil
 }
 
+func (x *Command) GetScanContainer() *ScanContainer {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_ScanContainer); ok {
+			return x.ScanContainer
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetScanImage() *ScanImage {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_ScanImage); ok {
+			return x.ScanImage
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetPullImage() *PullImage {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_PullImage); ok {
+			return x.PullImage
+		}
+	}
+	return nil
+}
+
 type isCommand_Kind interface {
 	isCommand_Kind()
 }
@@ -932,6 +1026,18 @@ type Command_RemoveProject struct {
 	RemoveProject *RemoveProject `protobuf:"bytes,5,opt,name=remove_project,json=removeProject,proto3,oneof"`
 }
 
+type Command_ScanContainer struct {
+	ScanContainer *ScanContainer `protobuf:"bytes,6,opt,name=scan_container,json=scanContainer,proto3,oneof"`
+}
+
+type Command_ScanImage struct {
+	ScanImage *ScanImage `protobuf:"bytes,7,opt,name=scan_image,json=scanImage,proto3,oneof"`
+}
+
+type Command_PullImage struct {
+	PullImage *PullImage `protobuf:"bytes,8,opt,name=pull_image,json=pullImage,proto3,oneof"`
+}
+
 func (*Command_Ping) isCommand_Kind() {}
 
 func (*Command_QueryLogs) isCommand_Kind() {}
@@ -939,6 +1045,12 @@ func (*Command_QueryLogs) isCommand_Kind() {}
 func (*Command_Deploy) isCommand_Kind() {}
 
 func (*Command_RemoveProject) isCommand_Kind() {}
+
+func (*Command_ScanContainer) isCommand_Kind() {}
+
+func (*Command_ScanImage) isCommand_Kind() {}
+
+func (*Command_PullImage) isCommand_Kind() {}
 
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2908,6 +3020,901 @@ func (x *WatchedBranch) GetLastCommit() string {
 	return ""
 }
 
+// ScanContainer asks the agent to inventory the image of a running container
+// now (forced scan). The agent answers with an SbomReport carrying scan_id.
+type ScanContainer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ScanId        string                 `protobuf:"bytes,1,opt,name=scan_id,json=scanId,proto3" json:"scan_id,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanContainer) Reset() {
+	*x = ScanContainer{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanContainer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanContainer) ProtoMessage() {}
+
+func (x *ScanContainer) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanContainer.ProtoReflect.Descriptor instead.
+func (*ScanContainer) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ScanContainer) GetScanId() string {
+	if x != nil {
+		return x.ScanId
+	}
+	return ""
+}
+
+func (x *ScanContainer) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+// ScanImage inventories an image straight from its registry without pulling
+// it into the local daemon (used to evaluate a candidate update).
+type ScanImage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ScanId        string                 `protobuf:"bytes,1,opt,name=scan_id,json=scanId,proto3" json:"scan_id,omitempty"`
+	Ref           string                 `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`       // repository:tag
+	Digest        string                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"` // sha256:... pinned by the server; the agent scans ref@digest
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanImage) Reset() {
+	*x = ScanImage{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanImage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanImage) ProtoMessage() {}
+
+func (x *ScanImage) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanImage.ProtoReflect.Descriptor instead.
+func (*ScanImage) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ScanImage) GetScanId() string {
+	if x != nil {
+		return x.ScanId
+	}
+	return ""
+}
+
+func (x *ScanImage) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *ScanImage) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+// PullImage pulls ref@digest into the local daemon. It never restarts or
+// replaces a container. The agent refuses when expected_digest does not match
+// what the registry serves, or when the image is younger than min_age_hours
+// and allow_young is false.
+type PullImage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ref           string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Digest        string                 `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
+	AllowYoung    bool                   `protobuf:"varint,3,opt,name=allow_young,json=allowYoung,proto3" json:"allow_young,omitempty"`
+	MinAgeHours   uint32                 `protobuf:"varint,4,opt,name=min_age_hours,json=minAgeHours,proto3" json:"min_age_hours,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PullImage) Reset() {
+	*x = PullImage{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullImage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullImage) ProtoMessage() {}
+
+func (x *PullImage) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullImage.ProtoReflect.Descriptor instead.
+func (*PullImage) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *PullImage) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *PullImage) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *PullImage) GetAllowYoung() bool {
+	if x != nil {
+		return x.AllowYoung
+	}
+	return false
+}
+
+func (x *PullImage) GetMinAgeHours() uint32 {
+	if x != nil {
+		return x.MinAgeHours
+	}
+	return 0
+}
+
+type SbomPackage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"` // deb, apk, rpm, npm, python, go-module, ...
+	Purl          string                 `protobuf:"bytes,4,opt,name=purl,proto3" json:"purl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SbomPackage) Reset() {
+	*x = SbomPackage{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SbomPackage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SbomPackage) ProtoMessage() {}
+
+func (x *SbomPackage) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SbomPackage.ProtoReflect.Descriptor instead.
+func (*SbomPackage) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SbomPackage) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SbomPackage) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *SbomPackage) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *SbomPackage) GetPurl() string {
+	if x != nil {
+		return x.Purl
+	}
+	return ""
+}
+
+// SbomReport is the result of one inventory run. status is one of
+// ok, failed, timeout, oom, unsupported. Anything but ok must carry an error
+// and no packages: the server shows "scan failed", never "no vulnerabilities".
+type SbomReport struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ScanId          string                 `protobuf:"bytes,1,opt,name=scan_id,json=scanId,proto3" json:"scan_id,omitempty"`
+	ContainerId     string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"` // empty for candidate scans
+	Image           string                 `protobuf:"bytes,3,opt,name=image,proto3" json:"image,omitempty"`
+	ImageId         string                 `protobuf:"bytes,4,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"` // sha256 image id or digest
+	Trigger         string                 `protobuf:"bytes,5,opt,name=trigger,proto3" json:"trigger,omitempty"`                // start, deploy, daily, forced, candidate
+	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	Error           string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	ToolVersion     string                 `protobuf:"bytes,8,opt,name=tool_version,json=toolVersion,proto3" json:"tool_version,omitempty"`
+	StartedUnixMs   int64                  `protobuf:"varint,9,opt,name=started_unix_ms,json=startedUnixMs,proto3" json:"started_unix_ms,omitempty"`
+	FinishedUnixMs  int64                  `protobuf:"varint,10,opt,name=finished_unix_ms,json=finishedUnixMs,proto3" json:"finished_unix_ms,omitempty"`
+	PeakMemoryBytes int64                  `protobuf:"varint,11,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
+	DistroName      string                 `protobuf:"bytes,12,opt,name=distro_name,json=distroName,proto3" json:"distro_name,omitempty"`
+	DistroVersion   string                 `protobuf:"bytes,13,opt,name=distro_version,json=distroVersion,proto3" json:"distro_version,omitempty"`
+	DistroIdLike    string                 `protobuf:"bytes,14,opt,name=distro_id_like,json=distroIdLike,proto3" json:"distro_id_like,omitempty"`
+	Packages        []*SbomPackage         `protobuf:"bytes,15,rep,name=packages,proto3" json:"packages,omitempty"`                    // at most 20000
+	SourceRef       string                 `protobuf:"bytes,16,opt,name=source_ref,json=sourceRef,proto3" json:"source_ref,omitempty"` // registry ref for candidate scans
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SbomReport) Reset() {
+	*x = SbomReport{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SbomReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SbomReport) ProtoMessage() {}
+
+func (x *SbomReport) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SbomReport.ProtoReflect.Descriptor instead.
+func (*SbomReport) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SbomReport) GetScanId() string {
+	if x != nil {
+		return x.ScanId
+	}
+	return ""
+}
+
+func (x *SbomReport) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *SbomReport) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *SbomReport) GetImageId() string {
+	if x != nil {
+		return x.ImageId
+	}
+	return ""
+}
+
+func (x *SbomReport) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
+}
+
+func (x *SbomReport) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SbomReport) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *SbomReport) GetToolVersion() string {
+	if x != nil {
+		return x.ToolVersion
+	}
+	return ""
+}
+
+func (x *SbomReport) GetStartedUnixMs() int64 {
+	if x != nil {
+		return x.StartedUnixMs
+	}
+	return 0
+}
+
+func (x *SbomReport) GetFinishedUnixMs() int64 {
+	if x != nil {
+		return x.FinishedUnixMs
+	}
+	return 0
+}
+
+func (x *SbomReport) GetPeakMemoryBytes() int64 {
+	if x != nil {
+		return x.PeakMemoryBytes
+	}
+	return 0
+}
+
+func (x *SbomReport) GetDistroName() string {
+	if x != nil {
+		return x.DistroName
+	}
+	return ""
+}
+
+func (x *SbomReport) GetDistroVersion() string {
+	if x != nil {
+		return x.DistroVersion
+	}
+	return ""
+}
+
+func (x *SbomReport) GetDistroIdLike() string {
+	if x != nil {
+		return x.DistroIdLike
+	}
+	return ""
+}
+
+func (x *SbomReport) GetPackages() []*SbomPackage {
+	if x != nil {
+		return x.Packages
+	}
+	return nil
+}
+
+func (x *SbomReport) GetSourceRef() string {
+	if x != nil {
+		return x.SourceRef
+	}
+	return ""
+}
+
+type Misconfig struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"` // empty for host-level findings
+	// published_port, docker_socket, root_user, privileged, host_network,
+	// host_pid, dangerous_capability, cert_expiring
+	Kind          string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Severity      string `protobuf:"bytes,3,opt,name=severity,proto3" json:"severity,omitempty"` // low, medium, high, critical
+	Detail        string `protobuf:"bytes,4,opt,name=detail,proto3" json:"detail,omitempty"`     // short, no secrets (e.g. "0.0.0.0:5432/tcp")
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Misconfig) Reset() {
+	*x = Misconfig{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Misconfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Misconfig) ProtoMessage() {}
+
+func (x *Misconfig) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Misconfig.ProtoReflect.Descriptor instead.
+func (*Misconfig) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *Misconfig) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *Misconfig) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Misconfig) GetSeverity() string {
+	if x != nil {
+		return x.Severity
+	}
+	return ""
+}
+
+func (x *Misconfig) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+type ConntrackStatus struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	State                    string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`                                                                           // ok, degraded, unavailable
+	Reason                   string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`                                                                         // why it is not ok
+	NotMonitoredContainerIds []string               `protobuf:"bytes,3,rep,name=not_monitored_container_ids,json=notMonitoredContainerIds,proto3" json:"not_monitored_container_ids,omitempty"` // network_mode: host etc.
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *ConntrackStatus) Reset() {
+	*x = ConntrackStatus{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConntrackStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConntrackStatus) ProtoMessage() {}
+
+func (x *ConntrackStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConntrackStatus.ProtoReflect.Descriptor instead.
+func (*ConntrackStatus) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *ConntrackStatus) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ConntrackStatus) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ConntrackStatus) GetNotMonitoredContainerIds() []string {
+	if x != nil {
+		return x.NotMonitoredContainerIds
+	}
+	return nil
+}
+
+// SecurityReport is a full replacement of the host's current misconfigurations
+// and monitoring state; findings absent from a later report are resolved.
+type SecurityReport struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TakenUnixMs   int64                  `protobuf:"varint,1,opt,name=taken_unix_ms,json=takenUnixMs,proto3" json:"taken_unix_ms,omitempty"`
+	Misconfigs    []*Misconfig           `protobuf:"bytes,2,rep,name=misconfigs,proto3" json:"misconfigs,omitempty"`
+	Conntrack     *ConntrackStatus       `protobuf:"bytes,3,opt,name=conntrack,proto3" json:"conntrack,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SecurityReport) Reset() {
+	*x = SecurityReport{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SecurityReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecurityReport) ProtoMessage() {}
+
+func (x *SecurityReport) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecurityReport.ProtoReflect.Descriptor instead.
+func (*SecurityReport) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *SecurityReport) GetTakenUnixMs() int64 {
+	if x != nil {
+		return x.TakenUnixMs
+	}
+	return 0
+}
+
+func (x *SecurityReport) GetMisconfigs() []*Misconfig {
+	if x != nil {
+		return x.Misconfigs
+	}
+	return nil
+}
+
+func (x *SecurityReport) GetConntrack() *ConntrackStatus {
+	if x != nil {
+		return x.Conntrack
+	}
+	return nil
+}
+
+type OutboundConn struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	DstIp         string                 `protobuf:"bytes,2,opt,name=dst_ip,json=dstIp,proto3" json:"dst_ip,omitempty"`
+	DstPort       uint32                 `protobuf:"varint,3,opt,name=dst_port,json=dstPort,proto3" json:"dst_port,omitempty"`
+	Proto         string                 `protobuf:"bytes,4,opt,name=proto,proto3" json:"proto,omitempty"` // tcp, udp
+	Count         uint32                 `protobuf:"varint,5,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OutboundConn) Reset() {
+	*x = OutboundConn{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OutboundConn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OutboundConn) ProtoMessage() {}
+
+func (x *OutboundConn) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OutboundConn.ProtoReflect.Descriptor instead.
+func (*OutboundConn) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *OutboundConn) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *OutboundConn) GetDstIp() string {
+	if x != nil {
+		return x.DstIp
+	}
+	return ""
+}
+
+func (x *OutboundConn) GetDstPort() uint32 {
+	if x != nil {
+		return x.DstPort
+	}
+	return 0
+}
+
+func (x *OutboundConn) GetProto() string {
+	if x != nil {
+		return x.Proto
+	}
+	return ""
+}
+
+func (x *OutboundConn) GetCount() uint32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type OutboundBatch struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	WindowStartUnixMs int64                  `protobuf:"varint,1,opt,name=window_start_unix_ms,json=windowStartUnixMs,proto3" json:"window_start_unix_ms,omitempty"`
+	WindowEndUnixMs   int64                  `protobuf:"varint,2,opt,name=window_end_unix_ms,json=windowEndUnixMs,proto3" json:"window_end_unix_ms,omitempty"`
+	Conns             []*OutboundConn        `protobuf:"bytes,3,rep,name=conns,proto3" json:"conns,omitempty"` // bounded; dropped counts the rest
+	Dropped           uint32                 `protobuf:"varint,4,opt,name=dropped,proto3" json:"dropped,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *OutboundBatch) Reset() {
+	*x = OutboundBatch{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OutboundBatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OutboundBatch) ProtoMessage() {}
+
+func (x *OutboundBatch) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OutboundBatch.ProtoReflect.Descriptor instead.
+func (*OutboundBatch) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *OutboundBatch) GetWindowStartUnixMs() int64 {
+	if x != nil {
+		return x.WindowStartUnixMs
+	}
+	return 0
+}
+
+func (x *OutboundBatch) GetWindowEndUnixMs() int64 {
+	if x != nil {
+		return x.WindowEndUnixMs
+	}
+	return 0
+}
+
+func (x *OutboundBatch) GetConns() []*OutboundConn {
+	if x != nil {
+		return x.Conns
+	}
+	return nil
+}
+
+func (x *OutboundBatch) GetDropped() uint32 {
+	if x != nil {
+		return x.Dropped
+	}
+	return 0
+}
+
+type ImageCandidate struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId            string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Image                  string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	RunningDigest          string                 `protobuf:"bytes,3,opt,name=running_digest,json=runningDigest,proto3" json:"running_digest,omitempty"`
+	CandidateDigest        string                 `protobuf:"bytes,4,opt,name=candidate_digest,json=candidateDigest,proto3" json:"candidate_digest,omitempty"`
+	CandidateCreatedUnixMs int64                  `protobuf:"varint,5,opt,name=candidate_created_unix_ms,json=candidateCreatedUnixMs,proto3" json:"candidate_created_unix_ms,omitempty"`
+	Status                 string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // ok, unknown (private registry), error
+	Error                  string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ImageCandidate) Reset() {
+	*x = ImageCandidate{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageCandidate) ProtoMessage() {}
+
+func (x *ImageCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageCandidate.ProtoReflect.Descriptor instead.
+func (*ImageCandidate) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ImageCandidate) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ImageCandidate) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *ImageCandidate) GetRunningDigest() string {
+	if x != nil {
+		return x.RunningDigest
+	}
+	return ""
+}
+
+func (x *ImageCandidate) GetCandidateDigest() string {
+	if x != nil {
+		return x.CandidateDigest
+	}
+	return ""
+}
+
+func (x *ImageCandidate) GetCandidateCreatedUnixMs() int64 {
+	if x != nil {
+		return x.CandidateCreatedUnixMs
+	}
+	return 0
+}
+
+func (x *ImageCandidate) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ImageCandidate) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type ImageCandidates struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Candidates    []*ImageCandidate      `protobuf:"bytes,1,rep,name=candidates,proto3" json:"candidates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImageCandidates) Reset() {
+	*x = ImageCandidates{}
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageCandidates) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageCandidates) ProtoMessage() {}
+
+func (x *ImageCandidates) ProtoReflect() protoreflect.Message {
+	mi := &file_haetae_agent_v1_agent_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageCandidates.ProtoReflect.Descriptor instead.
+func (*ImageCandidates) Descriptor() ([]byte, []int) {
+	return file_haetae_agent_v1_agent_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ImageCandidates) GetCandidates() []*ImageCandidate {
+	if x != nil {
+		return x.Candidates
+	}
+	return nil
+}
+
 var File_haetae_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_haetae_agent_v1_agent_proto_rawDesc = "" +
@@ -2927,7 +3934,7 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x06kernel\x18\x03 \x01(\tR\x06kernel\x12\x12\n" +
 	"\x04arch\x18\x04 \x01(\tR\x04arch\x12%\n" +
 	"\x0edocker_version\x18\x05 \x01(\tR\rdockerVersion\x12#\n" +
-	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"\xa7\x04\n" +
+	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"\xcb\x06\n" +
 	"\x0eConnectRequest\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.haetae.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.haetae.agent.v1.HeartbeatH\x00R\theartbeat\x128\n" +
@@ -2938,7 +3945,13 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\fdeploy_event\x18\a \x01(\v2\x1c.haetae.agent.v1.DeployEventH\x00R\vdeployEvent\x12;\n" +
 	"\n" +
 	"deploy_log\x18\b \x01(\v2\x1a.haetae.agent.v1.DeployLogH\x00R\tdeployLog\x12D\n" +
-	"\rbranch_update\x18\t \x01(\v2\x1d.haetae.agent.v1.BranchUpdateH\x00R\fbranchUpdateB\x05\n" +
+	"\rbranch_update\x18\t \x01(\v2\x1d.haetae.agent.v1.BranchUpdateH\x00R\fbranchUpdate\x12>\n" +
+	"\vsbom_report\x18\n" +
+	" \x01(\v2\x1b.haetae.agent.v1.SbomReportH\x00R\n" +
+	"sbomReport\x12J\n" +
+	"\x0fsecurity_report\x18\v \x01(\v2\x1f.haetae.agent.v1.SecurityReportH\x00R\x0esecurityReport\x12G\n" +
+	"\x0eoutbound_batch\x18\f \x01(\v2\x1e.haetae.agent.v1.OutboundBatchH\x00R\routboundBatch\x12M\n" +
+	"\x10image_candidates\x18\r \x01(\v2 .haetae.agent.v1.ImageCandidatesH\x00R\x0fimageCandidatesB\x05\n" +
 	"\x03msg\"\xea\x01\n" +
 	"\x0fConnectResponse\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.haetae.agent.v1.WelcomeH\x00R\awelcome\x124\n" +
@@ -2952,14 +3965,19 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\"-\n" +
 	"\tHeartbeat\x12 \n" +
 	"\fsent_unix_ms\x18\x01 \x01(\x03R\n" +
-	"sentUnixMs\"\x87\x02\n" +
+	"sentUnixMs\"\xca\x03\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
 	"\x04ping\x18\x02 \x01(\v2\x15.haetae.agent.v1.PingH\x00R\x04ping\x12;\n" +
 	"\n" +
 	"query_logs\x18\x03 \x01(\v2\x1a.haetae.agent.v1.QueryLogsH\x00R\tqueryLogs\x121\n" +
 	"\x06deploy\x18\x04 \x01(\v2\x17.haetae.agent.v1.DeployH\x00R\x06deploy\x12G\n" +
-	"\x0eremove_project\x18\x05 \x01(\v2\x1e.haetae.agent.v1.RemoveProjectH\x00R\rremoveProjectB\x06\n" +
+	"\x0eremove_project\x18\x05 \x01(\v2\x1e.haetae.agent.v1.RemoveProjectH\x00R\rremoveProject\x12G\n" +
+	"\x0escan_container\x18\x06 \x01(\v2\x1e.haetae.agent.v1.ScanContainerH\x00R\rscanContainer\x12;\n" +
+	"\n" +
+	"scan_image\x18\a \x01(\v2\x1a.haetae.agent.v1.ScanImageH\x00R\tscanImage\x12;\n" +
+	"\n" +
+	"pull_image\x18\b \x01(\v2\x1a.haetae.agent.v1.PullImageH\x00R\tpullImageB\x06\n" +
 	"\x04kind\"\x06\n" +
 	"\x04Ping\"\x8b\x01\n" +
 	"\tQueryLogs\x12!\n" +
@@ -3132,7 +4150,84 @@ const file_haetae_agent_v1_agent_proto_rawDesc = "" +
 	"\x03ref\x18\x03 \x01(\tR\x03ref\x12\x14\n" +
 	"\x05token\x18\x04 \x01(\tR\x05token\x12\x1f\n" +
 	"\vlast_commit\x18\x05 \x01(\tR\n" +
-	"lastCommit*\xa1\x01\n" +
+	"lastCommit\"K\n" +
+	"\rScanContainer\x12\x17\n" +
+	"\ascan_id\x18\x01 \x01(\tR\x06scanId\x12!\n" +
+	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\"N\n" +
+	"\tScanImage\x12\x17\n" +
+	"\ascan_id\x18\x01 \x01(\tR\x06scanId\x12\x10\n" +
+	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\"z\n" +
+	"\tPullImage\x12\x10\n" +
+	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x1f\n" +
+	"\vallow_young\x18\x03 \x01(\bR\n" +
+	"allowYoung\x12\"\n" +
+	"\rmin_age_hours\x18\x04 \x01(\rR\vminAgeHours\"c\n" +
+	"\vSbomPackage\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x12\n" +
+	"\x04type\x18\x03 \x01(\tR\x04type\x12\x12\n" +
+	"\x04purl\x18\x04 \x01(\tR\x04purl\"\xa9\x04\n" +
+	"\n" +
+	"SbomReport\x12\x17\n" +
+	"\ascan_id\x18\x01 \x01(\tR\x06scanId\x12!\n" +
+	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x14\n" +
+	"\x05image\x18\x03 \x01(\tR\x05image\x12\x19\n" +
+	"\bimage_id\x18\x04 \x01(\tR\aimageId\x12\x18\n" +
+	"\atrigger\x18\x05 \x01(\tR\atrigger\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x12!\n" +
+	"\ftool_version\x18\b \x01(\tR\vtoolVersion\x12&\n" +
+	"\x0fstarted_unix_ms\x18\t \x01(\x03R\rstartedUnixMs\x12(\n" +
+	"\x10finished_unix_ms\x18\n" +
+	" \x01(\x03R\x0efinishedUnixMs\x12*\n" +
+	"\x11peak_memory_bytes\x18\v \x01(\x03R\x0fpeakMemoryBytes\x12\x1f\n" +
+	"\vdistro_name\x18\f \x01(\tR\n" +
+	"distroName\x12%\n" +
+	"\x0edistro_version\x18\r \x01(\tR\rdistroVersion\x12$\n" +
+	"\x0edistro_id_like\x18\x0e \x01(\tR\fdistroIdLike\x128\n" +
+	"\bpackages\x18\x0f \x03(\v2\x1c.haetae.agent.v1.SbomPackageR\bpackages\x12\x1d\n" +
+	"\n" +
+	"source_ref\x18\x10 \x01(\tR\tsourceRef\"v\n" +
+	"\tMisconfig\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1a\n" +
+	"\bseverity\x18\x03 \x01(\tR\bseverity\x12\x16\n" +
+	"\x06detail\x18\x04 \x01(\tR\x06detail\"~\n" +
+	"\x0fConntrackStatus\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12=\n" +
+	"\x1bnot_monitored_container_ids\x18\x03 \x03(\tR\x18notMonitoredContainerIds\"\xb0\x01\n" +
+	"\x0eSecurityReport\x12\"\n" +
+	"\rtaken_unix_ms\x18\x01 \x01(\x03R\vtakenUnixMs\x12:\n" +
+	"\n" +
+	"misconfigs\x18\x02 \x03(\v2\x1a.haetae.agent.v1.MisconfigR\n" +
+	"misconfigs\x12>\n" +
+	"\tconntrack\x18\x03 \x01(\v2 .haetae.agent.v1.ConntrackStatusR\tconntrack\"\x8f\x01\n" +
+	"\fOutboundConn\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x15\n" +
+	"\x06dst_ip\x18\x02 \x01(\tR\x05dstIp\x12\x19\n" +
+	"\bdst_port\x18\x03 \x01(\rR\adstPort\x12\x14\n" +
+	"\x05proto\x18\x04 \x01(\tR\x05proto\x12\x14\n" +
+	"\x05count\x18\x05 \x01(\rR\x05count\"\xbc\x01\n" +
+	"\rOutboundBatch\x12/\n" +
+	"\x14window_start_unix_ms\x18\x01 \x01(\x03R\x11windowStartUnixMs\x12+\n" +
+	"\x12window_end_unix_ms\x18\x02 \x01(\x03R\x0fwindowEndUnixMs\x123\n" +
+	"\x05conns\x18\x03 \x03(\v2\x1d.haetae.agent.v1.OutboundConnR\x05conns\x12\x18\n" +
+	"\adropped\x18\x04 \x01(\rR\adropped\"\x84\x02\n" +
+	"\x0eImageCandidate\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12%\n" +
+	"\x0erunning_digest\x18\x03 \x01(\tR\rrunningDigest\x12)\n" +
+	"\x10candidate_digest\x18\x04 \x01(\tR\x0fcandidateDigest\x129\n" +
+	"\x19candidate_created_unix_ms\x18\x05 \x01(\x03R\x16candidateCreatedUnixMs\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\a \x01(\tR\x05error\"R\n" +
+	"\x0fImageCandidates\x12?\n" +
+	"\n" +
+	"candidates\x18\x01 \x03(\v2\x1f.haetae.agent.v1.ImageCandidateR\n" +
+	"candidates*\xa1\x01\n" +
 	"\bLogLevel\x12\x19\n" +
 	"\x15LOG_LEVEL_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fLOG_LEVEL_TRACE\x10\x01\x12\x13\n" +
@@ -3171,7 +4266,7 @@ func file_haetae_agent_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_haetae_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_haetae_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_haetae_agent_v1_agent_proto_goTypes = []any{
 	(LogLevel)(0),                 // 0: haetae.agent.v1.LogLevel
 	(DeployPhase)(0),              // 1: haetae.agent.v1.DeployPhase
@@ -3210,6 +4305,18 @@ var file_haetae_agent_v1_agent_proto_goTypes = []any{
 	(*BranchUpdate)(nil),          // 34: haetae.agent.v1.BranchUpdate
 	(*WatchSet)(nil),              // 35: haetae.agent.v1.WatchSet
 	(*WatchedBranch)(nil),         // 36: haetae.agent.v1.WatchedBranch
+	(*ScanContainer)(nil),         // 37: haetae.agent.v1.ScanContainer
+	(*ScanImage)(nil),             // 38: haetae.agent.v1.ScanImage
+	(*PullImage)(nil),             // 39: haetae.agent.v1.PullImage
+	(*SbomPackage)(nil),           // 40: haetae.agent.v1.SbomPackage
+	(*SbomReport)(nil),            // 41: haetae.agent.v1.SbomReport
+	(*Misconfig)(nil),             // 42: haetae.agent.v1.Misconfig
+	(*ConntrackStatus)(nil),       // 43: haetae.agent.v1.ConntrackStatus
+	(*SecurityReport)(nil),        // 44: haetae.agent.v1.SecurityReport
+	(*OutboundConn)(nil),          // 45: haetae.agent.v1.OutboundConn
+	(*OutboundBatch)(nil),         // 46: haetae.agent.v1.OutboundBatch
+	(*ImageCandidate)(nil),        // 47: haetae.agent.v1.ImageCandidate
+	(*ImageCandidates)(nil),       // 48: haetae.agent.v1.ImageCandidates
 }
 var file_haetae_agent_v1_agent_proto_depIdxs = []int32{
 	4,  // 0: haetae.agent.v1.EnrollRequest.host:type_name -> haetae.agent.v1.HostInfo
@@ -3222,42 +4329,54 @@ var file_haetae_agent_v1_agent_proto_depIdxs = []int32{
 	32, // 7: haetae.agent.v1.ConnectRequest.deploy_event:type_name -> haetae.agent.v1.DeployEvent
 	33, // 8: haetae.agent.v1.ConnectRequest.deploy_log:type_name -> haetae.agent.v1.DeployLog
 	34, // 9: haetae.agent.v1.ConnectRequest.branch_update:type_name -> haetae.agent.v1.BranchUpdate
-	8,  // 10: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
-	10, // 11: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
-	26, // 12: haetae.agent.v1.ConnectResponse.green:type_name -> haetae.agent.v1.GreenSet
-	35, // 13: haetae.agent.v1.ConnectResponse.watch:type_name -> haetae.agent.v1.WatchSet
-	4,  // 14: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
-	11, // 15: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
-	12, // 16: haetae.agent.v1.Command.query_logs:type_name -> haetae.agent.v1.QueryLogs
-	27, // 17: haetae.agent.v1.Command.deploy:type_name -> haetae.agent.v1.Deploy
-	31, // 18: haetae.agent.v1.Command.remove_project:type_name -> haetae.agent.v1.RemoveProject
-	14, // 19: haetae.agent.v1.CommandResult.log_lines:type_name -> haetae.agent.v1.LogLines
-	15, // 20: haetae.agent.v1.LogLines.lines:type_name -> haetae.agent.v1.LogLine
-	17, // 21: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
-	18, // 22: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
-	20, // 23: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
-	21, // 24: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
-	23, // 25: haetae.agent.v1.LogBatch.events:type_name -> haetae.agent.v1.LogEvent
-	24, // 26: haetae.agent.v1.LogBatch.candidates:type_name -> haetae.agent.v1.TemplateCandidate
-	25, // 27: haetae.agent.v1.LogBatch.stats:type_name -> haetae.agent.v1.LogStats
-	0,  // 28: haetae.agent.v1.LogEvent.level:type_name -> haetae.agent.v1.LogLevel
-	0,  // 29: haetae.agent.v1.TemplateCandidate.level:type_name -> haetae.agent.v1.LogLevel
-	29, // 30: haetae.agent.v1.Deploy.git:type_name -> haetae.agent.v1.GitSource
-	30, // 31: haetae.agent.v1.Deploy.inline:type_name -> haetae.agent.v1.InlineCompose
-	28, // 32: haetae.agent.v1.Deploy.last_healthy:type_name -> haetae.agent.v1.Version
-	29, // 33: haetae.agent.v1.Version.git:type_name -> haetae.agent.v1.GitSource
-	30, // 34: haetae.agent.v1.Version.inline:type_name -> haetae.agent.v1.InlineCompose
-	1,  // 35: haetae.agent.v1.DeployEvent.phase:type_name -> haetae.agent.v1.DeployPhase
-	36, // 36: haetae.agent.v1.WatchSet.branches:type_name -> haetae.agent.v1.WatchedBranch
-	2,  // 37: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
-	5,  // 38: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
-	3,  // 39: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
-	6,  // 40: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
-	39, // [39:41] is the sub-list for method output_type
-	37, // [37:39] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	41, // 10: haetae.agent.v1.ConnectRequest.sbom_report:type_name -> haetae.agent.v1.SbomReport
+	44, // 11: haetae.agent.v1.ConnectRequest.security_report:type_name -> haetae.agent.v1.SecurityReport
+	46, // 12: haetae.agent.v1.ConnectRequest.outbound_batch:type_name -> haetae.agent.v1.OutboundBatch
+	48, // 13: haetae.agent.v1.ConnectRequest.image_candidates:type_name -> haetae.agent.v1.ImageCandidates
+	8,  // 14: haetae.agent.v1.ConnectResponse.welcome:type_name -> haetae.agent.v1.Welcome
+	10, // 15: haetae.agent.v1.ConnectResponse.command:type_name -> haetae.agent.v1.Command
+	26, // 16: haetae.agent.v1.ConnectResponse.green:type_name -> haetae.agent.v1.GreenSet
+	35, // 17: haetae.agent.v1.ConnectResponse.watch:type_name -> haetae.agent.v1.WatchSet
+	4,  // 18: haetae.agent.v1.Hello.host:type_name -> haetae.agent.v1.HostInfo
+	11, // 19: haetae.agent.v1.Command.ping:type_name -> haetae.agent.v1.Ping
+	12, // 20: haetae.agent.v1.Command.query_logs:type_name -> haetae.agent.v1.QueryLogs
+	27, // 21: haetae.agent.v1.Command.deploy:type_name -> haetae.agent.v1.Deploy
+	31, // 22: haetae.agent.v1.Command.remove_project:type_name -> haetae.agent.v1.RemoveProject
+	37, // 23: haetae.agent.v1.Command.scan_container:type_name -> haetae.agent.v1.ScanContainer
+	38, // 24: haetae.agent.v1.Command.scan_image:type_name -> haetae.agent.v1.ScanImage
+	39, // 25: haetae.agent.v1.Command.pull_image:type_name -> haetae.agent.v1.PullImage
+	14, // 26: haetae.agent.v1.CommandResult.log_lines:type_name -> haetae.agent.v1.LogLines
+	15, // 27: haetae.agent.v1.LogLines.lines:type_name -> haetae.agent.v1.LogLine
+	17, // 28: haetae.agent.v1.StateSnapshot.containers:type_name -> haetae.agent.v1.ContainerState
+	18, // 29: haetae.agent.v1.ContainerState.ports:type_name -> haetae.agent.v1.PortMapping
+	20, // 30: haetae.agent.v1.MetricsBatch.host:type_name -> haetae.agent.v1.HostMetricSample
+	21, // 31: haetae.agent.v1.MetricsBatch.containers:type_name -> haetae.agent.v1.ContainerMetricSample
+	23, // 32: haetae.agent.v1.LogBatch.events:type_name -> haetae.agent.v1.LogEvent
+	24, // 33: haetae.agent.v1.LogBatch.candidates:type_name -> haetae.agent.v1.TemplateCandidate
+	25, // 34: haetae.agent.v1.LogBatch.stats:type_name -> haetae.agent.v1.LogStats
+	0,  // 35: haetae.agent.v1.LogEvent.level:type_name -> haetae.agent.v1.LogLevel
+	0,  // 36: haetae.agent.v1.TemplateCandidate.level:type_name -> haetae.agent.v1.LogLevel
+	29, // 37: haetae.agent.v1.Deploy.git:type_name -> haetae.agent.v1.GitSource
+	30, // 38: haetae.agent.v1.Deploy.inline:type_name -> haetae.agent.v1.InlineCompose
+	28, // 39: haetae.agent.v1.Deploy.last_healthy:type_name -> haetae.agent.v1.Version
+	29, // 40: haetae.agent.v1.Version.git:type_name -> haetae.agent.v1.GitSource
+	30, // 41: haetae.agent.v1.Version.inline:type_name -> haetae.agent.v1.InlineCompose
+	1,  // 42: haetae.agent.v1.DeployEvent.phase:type_name -> haetae.agent.v1.DeployPhase
+	36, // 43: haetae.agent.v1.WatchSet.branches:type_name -> haetae.agent.v1.WatchedBranch
+	40, // 44: haetae.agent.v1.SbomReport.packages:type_name -> haetae.agent.v1.SbomPackage
+	42, // 45: haetae.agent.v1.SecurityReport.misconfigs:type_name -> haetae.agent.v1.Misconfig
+	43, // 46: haetae.agent.v1.SecurityReport.conntrack:type_name -> haetae.agent.v1.ConntrackStatus
+	45, // 47: haetae.agent.v1.OutboundBatch.conns:type_name -> haetae.agent.v1.OutboundConn
+	47, // 48: haetae.agent.v1.ImageCandidates.candidates:type_name -> haetae.agent.v1.ImageCandidate
+	2,  // 49: haetae.agent.v1.AgentGatewayService.Enroll:input_type -> haetae.agent.v1.EnrollRequest
+	5,  // 50: haetae.agent.v1.AgentGatewayService.Connect:input_type -> haetae.agent.v1.ConnectRequest
+	3,  // 51: haetae.agent.v1.AgentGatewayService.Enroll:output_type -> haetae.agent.v1.EnrollResponse
+	6,  // 52: haetae.agent.v1.AgentGatewayService.Connect:output_type -> haetae.agent.v1.ConnectResponse
+	51, // [51:53] is the sub-list for method output_type
+	49, // [49:51] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_haetae_agent_v1_agent_proto_init() }
@@ -3275,6 +4394,10 @@ func file_haetae_agent_v1_agent_proto_init() {
 		(*ConnectRequest_DeployEvent)(nil),
 		(*ConnectRequest_DeployLog)(nil),
 		(*ConnectRequest_BranchUpdate)(nil),
+		(*ConnectRequest_SbomReport)(nil),
+		(*ConnectRequest_SecurityReport)(nil),
+		(*ConnectRequest_OutboundBatch)(nil),
+		(*ConnectRequest_ImageCandidates)(nil),
 	}
 	file_haetae_agent_v1_agent_proto_msgTypes[4].OneofWrappers = []any{
 		(*ConnectResponse_Welcome)(nil),
@@ -3287,6 +4410,9 @@ func file_haetae_agent_v1_agent_proto_init() {
 		(*Command_QueryLogs)(nil),
 		(*Command_Deploy)(nil),
 		(*Command_RemoveProject)(nil),
+		(*Command_ScanContainer)(nil),
+		(*Command_ScanImage)(nil),
+		(*Command_PullImage)(nil),
 	}
 	file_haetae_agent_v1_agent_proto_msgTypes[11].OneofWrappers = []any{
 		(*CommandResult_LogLines)(nil),
@@ -3305,7 +4431,7 @@ func file_haetae_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_haetae_agent_v1_agent_proto_rawDesc), len(file_haetae_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   35,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

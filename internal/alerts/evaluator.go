@@ -35,8 +35,14 @@ type Evaluator struct {
 	unhealthySince map[uuid.UUID]map[string]time.Time
 	// restartSamples[orgID][host|cid] holds recent restart_count observations.
 	restartSamples map[uuid.UUID]map[string][]restartSample
+	// cveMark[orgID] is the previous new_cve evaluation time (persisted via
+	// cveWatermarkStore when the Reader supports it).
+	cveMark map[uuid.UUID]time.Time
 	// seededOrgs remembers orgs whose DB trackers have been loaded into memory.
 	seededOrgs map[uuid.UUID]bool
+
+	// wake nudges an immediate evaluation (e.g. after vuln rematch).
+	wake chan struct{}
 }
 
 type restartSample struct {
@@ -65,6 +71,19 @@ func NewEvaluator(r Reader, n Notifier, cfg Config, log *slog.Logger) *Evaluator
 		unhealthySince:   make(map[uuid.UUID]map[string]time.Time),
 		restartSamples:   make(map[uuid.UUID]map[string][]restartSample),
 		seededOrgs:       make(map[uuid.UUID]bool),
+		cveMark:          make(map[uuid.UUID]time.Time),
+		wake:             make(chan struct{}, 1),
+	}
+}
+
+// Nudge requests an evaluation as soon as possible (non-blocking).
+func (e *Evaluator) Nudge() {
+	if e == nil || e.wake == nil {
+		return
+	}
+	select {
+	case e.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -78,6 +97,8 @@ func (e *Evaluator) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-e.wake:
+			e.round(ctx)
 		case <-t.C:
 			e.round(ctx)
 		}
@@ -120,12 +141,6 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	firing := EvaluateRules(snap)
-	firingKeys := make(map[string]Candidate, len(firing))
-	for _, c := range firing {
-		firingKeys[c.DedupeKey] = c
-	}
-
 	existing, err := e.r.ListFiringAlerts(ctx, orgID)
 	if err != nil {
 		return err
@@ -133,6 +148,19 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 	existingByKey := make(map[string]store.Alert, len(existing))
 	for _, a := range existing {
 		existingByKey[a.DedupeKey] = a
+	}
+	// Keep new_cve alerts open while their finding persists.
+	for i := range snap.CVEFindings {
+		f := &snap.CVEFindings[i]
+		if _, ok := existingByKey[NewCVEKey(f.ContainerID, f.VulnID)]; ok {
+			f.Active = true
+		}
+	}
+
+	firing := EvaluateRules(snap)
+	firingKeys := make(map[string]Candidate, len(firing))
+	for _, c := range firing {
+		firingKeys[c.DedupeKey] = c
 	}
 
 	mutes, err := e.r.ActiveMutes(ctx, orgID, now)
@@ -190,7 +218,66 @@ func (e *Evaluator) evalOrg(ctx context.Context, orgID uuid.UUID) error {
 			e.log.Error("apply host alerts", "org_id", orgID, "host_id", hostID, "err", err)
 		}
 	}
+	e.commitCVEWatermark(ctx, orgID, now)
 	return nil
+}
+
+// cveWatermarkStore is implemented by stores that persist the new_cve
+// watermark; other readers keep it in memory only.
+type cveWatermarkStore interface {
+	GetCVEWatermark(ctx context.Context, orgID uuid.UUID) (time.Time, bool, error)
+	SetCVEWatermark(ctx context.Context, orgID uuid.UUID, at time.Time) error
+}
+
+// cveWatermark returns the previous evaluation time for new_cve. On the very
+// first evaluation for an org there is no previous time: it returns now, so
+// the existing backlog is shown in the UI but never alerted.
+func (e *Evaluator) cveWatermark(ctx context.Context, orgID uuid.UUID, now time.Time) time.Time {
+	e.mu.Lock()
+	t, ok := e.cveMark[orgID]
+	e.mu.Unlock()
+	if ok {
+		return t
+	}
+	if ws, isWS := e.r.(cveWatermarkStore); isWS {
+		if got, found, err := ws.GetCVEWatermark(ctx, orgID); err == nil && found {
+			t, ok = got, true
+		} else if err != nil {
+			e.log.Error("cve watermark load", "org_id", orgID, "err", err)
+		}
+	}
+	if !ok {
+		t = now
+	}
+	e.mu.Lock()
+	e.cveMark[orgID] = t
+	e.mu.Unlock()
+	return t
+}
+
+// cveWatermarkLag keeps the watermark behind the evaluation time. A finding's
+// first_seen is the database time when its match transaction started; that
+// transaction can commit after an evaluation already read the findings, and
+// the database clock can differ from ours. Findings in the overlap are seen
+// twice, which is harmless: the alert key is per container and CVE, and a
+// still-firing alert is not notified again.
+const cveWatermarkLag = 2 * time.Minute
+
+// commitCVEWatermark advances the watermark after a completed evaluation.
+func (e *Evaluator) commitCVEWatermark(ctx context.Context, orgID uuid.UUID, now time.Time) {
+	now = now.Add(-cveWatermarkLag)
+	e.mu.Lock()
+	if prev, ok := e.cveMark[orgID]; ok && !now.After(prev) {
+		e.mu.Unlock()
+		return
+	}
+	e.cveMark[orgID] = now
+	e.mu.Unlock()
+	if ws, ok := e.r.(cveWatermarkStore); ok {
+		if err := ws.SetCVEWatermark(ctx, orgID, now); err != nil {
+			e.log.Error("cve watermark save", "org_id", orgID, "err", err)
+		}
+	}
 }
 
 func (e *Evaluator) applyHost(
@@ -221,6 +308,10 @@ func (e *Evaluator) applyHost(
 	var notifyUnmuted bool
 	for _, c := range cands {
 		_, wasFiring := existingByKey[c.DedupeKey]
+		ev := c.Evidence
+		if len(ev) == 0 {
+			ev = json.RawMessage(`{}`)
+		}
 		a := store.Alert{
 			OrgID:      orgID,
 			HostID:     hostID,
@@ -230,7 +321,7 @@ func (e *Evaluator) applyHost(
 			Severity:   c.Severity,
 			DedupeKey:  c.DedupeKey,
 			Summary:    c.Summary,
-			Evidence:   json.RawMessage(`{}`),
+			Evidence:   ev,
 		}
 		_, created, err := e.r.UpsertFiringAlert(ctx, a)
 		if err != nil {
@@ -537,12 +628,32 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 		})
 	}
 
+	cveRows, err := e.r.HighCriticalFindingsForRunningContainers(ctx, orgID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	cveFacts := make([]CVEFindingFact, 0, len(cveRows))
+	for _, row := range cveRows {
+		cveFacts = append(cveFacts, CVEFindingFact{
+			HostID: row.HostID, HostName: row.HostName, ContainerID: row.ContainerID,
+			Name: row.Name, Image: row.Image, ImageID: row.ImageID, StartedAt: row.StartedAt,
+			VulnID: row.Finding.VulnID, Package: row.Finding.Package, Version: row.Finding.Version,
+			FixedVersion: row.Finding.FixedVersion, Severity: row.Finding.Severity,
+			FirstSeen: row.Finding.FirstSeen,
+		})
+	}
+	// Watermark: the previous evaluation (persisted); only findings first seen
+	// after it, and after the container started, alert as new.
+	cveSince := e.cveWatermark(ctx, orgID, now)
+
 	return Snapshot{
-		Now:        now,
-		Settings:   settings,
-		Hosts:      hostFacts,
-		Containers: containers,
-		Deploys:    deployFacts,
+		Now:         now,
+		Settings:    settings,
+		Hosts:       hostFacts,
+		Containers:  containers,
+		Deploys:     deployFacts,
+		CVEFindings: cveFacts,
+		CVESince:    cveSince,
 	}, nil
 }
 

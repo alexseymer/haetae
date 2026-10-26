@@ -497,7 +497,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       assert.match(text, /Online/);
       assert.match(text, /\d+\/\d+/); // running/total
       assert.match(text, /linux/i);
-      const href = await row.locator("a").getAttribute("href");
+      const href = await row.getByRole("link", { name: "e2e-host", exact: true }).getAttribute("href");
       assert.ok(href && href.startsWith("/hosts/"));
       hostId = href.replace("/hosts/", "");
     });

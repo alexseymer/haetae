@@ -17,6 +17,13 @@ import type {
   PostChatMessageResponse,
 } from "./m6Types";
 import type {
+  HostImageUpdatesResponse,
+  HostOutboundResponse,
+  HostSecurityResponse,
+  HostVulnerabilitiesResponse,
+  UpdateSettings,
+} from "./securityTypes";
+import type {
   ContainersResponse,
   CreateProjectRequest,
   CreateUserRequest,
@@ -289,6 +296,37 @@ export const api = {
 
   chatLink: (body: ChatLinkRequest) =>
     request<ChatLinkResponse>("/api/chat/link", { method: "POST", body }),
+
+  hostSecurity: (id: string) =>
+    request<HostSecurityResponse>(`/api/hosts/${encodeURIComponent(id)}/security`),
+
+  hostVulnerabilities: (id: string) =>
+    request<HostVulnerabilitiesResponse>(
+      `/api/hosts/${encodeURIComponent(id)}/vulnerabilities`,
+    ),
+
+  forceContainerScan: (hostId: string, cid: string) =>
+    request<{ accepted: boolean; scanId: string }>(
+      `/api/hosts/${encodeURIComponent(hostId)}/containers/${encodeURIComponent(cid)}/scan`,
+      { method: "POST", body: {} },
+    ),
+
+  hostOutbound: (id: string, limit?: number) => {
+    const qs = limit != null ? `?limit=${limit}` : "";
+    return request<HostOutboundResponse>(
+      `/api/hosts/${encodeURIComponent(id)}/outbound${qs}`,
+    );
+  },
+
+  hostImageUpdates: (id: string) =>
+    request<HostImageUpdatesResponse>(
+      `/api/hosts/${encodeURIComponent(id)}/image-updates`,
+    ),
+
+  updateSettings: () => request<UpdateSettings>("/api/settings/updates"),
+
+  putUpdateSettings: (body: UpdateSettings) =>
+    request<UpdateSettings>("/api/settings/updates", { method: "PUT", body }),
 };
 
 interface MuteLike {

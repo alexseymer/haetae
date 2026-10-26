@@ -96,9 +96,11 @@ while [ "$WEB" != "${WEB%/}" ]; do
 done
 
 AGENT_NAME=haetae-agent-linux-$ARCH
+INVENTORY_NAME=haetae-inventory-linux-$ARCH
 BIN_DIR=$PREFIX/usr/local/bin
 STATE_DIR=$PREFIX/var/lib/haetae-agent
 BIN=$BIN_DIR/haetae-agent
+INVENTORY_BIN=$BIN_DIR/haetae-inventory
 
 step=0
 progress() {
@@ -136,46 +138,53 @@ unit_quote() {
 	printf "'"
 }
 
-progress "Downloading $AGENT_NAME"
+progress "Downloading $AGENT_NAME and $INVENTORY_NAME"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 download "download/$AGENT_NAME" "$TMP/$AGENT_NAME"
+download "download/$INVENTORY_NAME" "$TMP/$INVENTORY_NAME"
 download download/SHA256SUMS "$TMP/SHA256SUMS"
 
-progress "Verifying checksum"
-SUM_LINE=
-# Match the filename as the second field (GNU "hash  name" or "hash *name").
-while IFS= read -r line || [ -n "$line" ]; do
-	[ -n "$line" ] || continue
-	hash=${line%% *}
-	if [ -z "$hash" ] || [ "$hash" = "$line" ]; then
-		continue
+# verify_sum NAME — sets SUM_LINE for the named file and checks it.
+verify_sum() {
+	_name=$1
+	SUM_LINE=
+	# Match the filename as the second field (GNU "hash  name" or "hash *name").
+	while IFS= read -r line || [ -n "$line" ]; do
+		[ -n "$line" ] || continue
+		hash=${line%% *}
+		if [ -z "$hash" ] || [ "$hash" = "$line" ]; then
+			continue
+		fi
+		rest=${line#"$hash"}
+		# Trim leading IFS whitespace without relying on xargs/sed.
+		while [ "${rest# }" != "$rest" ] || [ "${rest#	}" != "$rest" ]; do
+			rest=${rest# }
+			rest=${rest#	}
+		done
+		file=${rest#\*}
+		if [ "$file" = "$_name" ]; then
+			SUM_LINE=$line
+			break
+		fi
+	done <"$TMP/SHA256SUMS"
+	[ -n "$SUM_LINE" ] || die "no SHA256SUMS entry for $_name (aborting; nothing installed)"
+	# Verify in the temp dir so sha256sum finds the file by the name in the line.
+	if ! (cd "$TMP" && echo "$SUM_LINE" | sha256sum -c - >/dev/null); then
+		die "checksum mismatch for $_name (aborting; nothing installed)"
 	fi
-	rest=${line#"$hash"}
-	# Trim leading IFS whitespace without relying on xargs/sed.
-	while [ "${rest# }" != "$rest" ] || [ "${rest#	}" != "$rest" ]; do
-		rest=${rest# }
-		rest=${rest#	}
-	done
-	file=${rest#\*}
-	if [ "$file" = "$AGENT_NAME" ]; then
-		SUM_LINE=$line
-		break
-	fi
-done <"$TMP/SHA256SUMS"
-[ -n "$SUM_LINE" ] || die "no SHA256SUMS entry for $AGENT_NAME (aborting; nothing installed)"
+}
 
-# Verify in the temp dir so sha256sum finds the file by the name in the line.
-# Subshell so we do not change this script's working directory.
-if ! (cd "$TMP" && echo "$SUM_LINE" | sha256sum -c - >/dev/null); then
-	die "checksum mismatch for $AGENT_NAME (aborting; nothing installed)"
-fi
+progress "Verifying checksums"
+verify_sum "$AGENT_NAME"
+verify_sum "$INVENTORY_NAME"
 
-progress "Installing binary to $BIN"
+progress "Installing binaries to $BIN_DIR"
 mkdir -p "$BIN_DIR" "$STATE_DIR"
 cp "$TMP/$AGENT_NAME" "$BIN"
-chmod 0755 "$BIN"
+cp "$TMP/$INVENTORY_NAME" "$INVENTORY_BIN"
+chmod 0755 "$BIN" "$INVENTORY_BIN"
 chmod 0700 "$STATE_DIR"
 
 if [ -f "$STATE_DIR/identity.json" ]; then
@@ -231,11 +240,17 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=$STATE_Q
-MemoryHigh=60M
-MemoryMax=100M
+# The agent delegates its cgroup: it moves itself into an "agent" leaf
+# (60M high / 100M max, set by the agent) and runs the inventory helper in
+# sibling leaves capped at 256M. MemoryMax covers agent plus helper.
+Delegate=memory pids cpu
+MemoryMax=400M
 ProtectKernelModules=yes
-ProtectControlGroups=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# CAP_NET_ADMIN and AF_NETLINK for the conntrack listener. The agent clears
+# its ambient set at start so child processes do not inherit the capability.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=yes
 
 [Install]

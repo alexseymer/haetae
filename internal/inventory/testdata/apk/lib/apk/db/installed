@@ -1,0 +1,26 @@
+P:musl
+V:1.2.5-r0
+A:x86_64
+S:400000
+I:600000
+T:the musl c library
+U:https://musl.libc.org/
+L:MIT
+o:musl
+m:test <t@t>
+t:1700000000
+c:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+P:busybox
+V:1.36.1-r0
+A:x86_64
+S:500000
+I:900000
+T:BusyBox
+U:https://busybox.net/
+L:GPL-2.0-only
+o:busybox
+m:test <t@t>
+t:1700000000
+c:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+

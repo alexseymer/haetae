@@ -183,18 +183,23 @@ func requireDocker(t *testing.T) {
 	}
 }
 
-// buildDist builds linux/amd64 and linux/arm64 agent binaries into a temp
-// directory and writes a matching SHA256SUMS. The arm64 binary is built only
-// (never executed).
+// buildDist builds linux/amd64 and linux/arm64 agent + inventory binaries into
+// a temp directory and writes a matching SHA256SUMS. The arm64 binaries are
+// built only (never executed).
 func buildDist(t *testing.T) string {
 	t.Helper()
 	dist := t.TempDir()
 	for _, arch := range []string{"amd64", "arm64"} {
-		out := filepath.Join(dist, "haetae-agent-linux-"+arch)
-		cmd := exec.Command("go", "build", "-o", out, "../../cmd/haetae-agent")
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
-		if o, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build agent %s: %v\n%s", arch, err, o)
+		for _, pair := range []struct{ out, pkg string }{
+			{"haetae-agent-linux-" + arch, "../../cmd/haetae-agent"},
+			{"haetae-inventory-linux-" + arch, "../../cmd/haetae-inventory"},
+		} {
+			out := filepath.Join(dist, pair.out)
+			cmd := exec.Command("go", "build", "-o", out, pair.pkg)
+			cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
+			if o, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("build %s: %v\n%s", pair.out, err, o)
+			}
 		}
 	}
 	writeSums(t, dist, false)
@@ -204,7 +209,11 @@ func buildDist(t *testing.T) string {
 func writeSums(t *testing.T, dist string, tamper bool) {
 	t.Helper()
 	var b strings.Builder
-	for _, name := range []string{"haetae-agent-linux-amd64", "haetae-agent-linux-arm64"} {
+	names := []string{
+		"haetae-agent-linux-amd64", "haetae-agent-linux-arm64",
+		"haetae-inventory-linux-amd64", "haetae-inventory-linux-arm64",
+	}
+	for _, name := range names {
 		raw, err := os.ReadFile(filepath.Join(dist, name))
 		if err != nil {
 			t.Fatal(err)
@@ -271,6 +280,7 @@ func TestInstallScriptEnrollsAnAgent(t *testing.T) {
 	script := command +
 		` && test -f /root-fs/var/lib/haetae-agent/identity.json` +
 		` && test "$(stat -c %a /root-fs/usr/local/bin/haetae-agent)" = 755` +
+		` && test "$(stat -c %a /root-fs/usr/local/bin/haetae-inventory)" = 755` +
 		` && test "$(stat -c %a /root-fs/var/lib/haetae-agent)" = 700` +
 		` && cat /root-fs/var/lib/haetae-agent/identity.json`
 	out, err := dockerInstall(t, script)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/alexseymer/haetae/internal/deployphase"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 )
@@ -26,7 +28,57 @@ type Outbox struct {
 	batches  []*agentv1.MetricsBatch
 	logs     []*agentv1.LogBatch
 	deploy   []deployMsg
+	security []securityMsg
+	sboms    []sbomEntry
+	sbomSize int // total proto bytes of non-stub queued SBOM reports
 	dropped  uint64
+}
+
+type securityMsg struct {
+	report     *agentv1.SecurityReport
+	outbound   *agentv1.OutboundBatch
+	candidates *agentv1.ImageCandidates
+}
+
+// maxSecurityMsgs bounds queued security messages while disconnected.
+const maxSecurityMsgs = 32
+
+// maxSbomReports bounds queued inventory reports (including stubs) while disconnected.
+const maxSbomReports = 32
+
+// maxSbomBytes bounds the total encoded size of queued full SBOM reports.
+const maxSbomBytes = 4 << 20
+
+// sbomEntry is one queued report. A stub is a tiny failed report standing in
+// for a full report that was superseded or dropped, so the server's scan row
+// still resolves (as failed, never as clean).
+type sbomEntry struct {
+	r    *agentv1.SbomReport
+	size int
+	key  string
+	stub bool
+}
+
+func sbomKey(r *agentv1.SbomReport) string {
+	if r.GetImageId() != "" {
+		return r.GetImageId()
+	}
+	return r.GetImage()
+}
+
+func sbomStub(r *agentv1.SbomReport) *agentv1.SbomReport {
+	return &agentv1.SbomReport{
+		ScanId:         r.GetScanId(),
+		ContainerId:    r.GetContainerId(),
+		Image:          r.GetImage(),
+		ImageId:        r.GetImageId(),
+		Trigger:        r.GetTrigger(),
+		Status:         "failed",
+		Error:          "report dropped while the agent was disconnected",
+		StartedUnixMs:  r.GetStartedUnixMs(),
+		FinishedUnixMs: r.GetFinishedUnixMs(),
+		SourceRef:      r.GetSourceRef(),
+	}
 }
 
 type deployMsg struct {
@@ -106,6 +158,95 @@ func (o *Outbox) PutBranchUpdate(u *agentv1.BranchUpdate) {
 	o.enqueueDeployLocked(deployMsg{branch: u})
 	o.mu.Unlock()
 	o.wake()
+}
+
+// PutSbom queues an inventory report. Only the latest full report per image
+// is kept, and the total encoded size is bounded by maxSbomBytes (oldest
+// dropped first, newest always kept). A superseded or dropped report with a
+// different scan_id is replaced by a tiny failed stub so no scan waits forever.
+func (o *Outbox) PutSbom(r *agentv1.SbomReport) {
+	o.mu.Lock()
+	key := sbomKey(r)
+	for i := range o.sboms {
+		e := &o.sboms[i]
+		if e.stub || e.key != key {
+			continue
+		}
+		o.sbomSize -= e.size
+		o.dropped++
+		if e.r.GetScanId() != r.GetScanId() {
+			e.r, e.size, e.stub = sbomStub(e.r), 0, true
+		} else {
+			o.sboms = append(o.sboms[:i], o.sboms[i+1:]...)
+		}
+		break
+	}
+	size := proto.Size(r)
+	o.sboms = append(o.sboms, sbomEntry{r: r, size: size, key: key})
+	o.sbomSize += size
+	// Over budget: stub out the oldest full reports (never the newest).
+	for i := 0; i < len(o.sboms)-1 && o.sbomSize > maxSbomBytes; i++ {
+		e := &o.sboms[i]
+		if e.stub {
+			continue
+		}
+		o.sbomSize -= e.size
+		o.dropped++
+		e.r, e.size, e.stub = sbomStub(e.r), 0, true
+	}
+	// Bound the entry count (stubs are oldest-first victims).
+	for len(o.sboms) > maxSbomReports {
+		if !o.sboms[0].stub {
+			o.sbomSize -= o.sboms[0].size
+		}
+		o.sboms[0] = sbomEntry{}
+		o.sboms = o.sboms[1:]
+		o.dropped++
+	}
+	o.mu.Unlock()
+	o.wake()
+}
+
+// PutSecurityReport queues a full-replacement security report (replace-latest).
+func (o *Outbox) PutSecurityReport(r *agentv1.SecurityReport) {
+	o.mu.Lock()
+	o.enqueueSecurityLocked(securityMsg{report: r})
+	o.mu.Unlock()
+	o.wake()
+}
+
+// PutOutboundBatch queues an outbound connection window.
+func (o *Outbox) PutOutboundBatch(b *agentv1.OutboundBatch) {
+	o.mu.Lock()
+	o.enqueueSecurityLocked(securityMsg{outbound: b})
+	o.mu.Unlock()
+	o.wake()
+}
+
+// PutImageCandidates queues image update candidates.
+func (o *Outbox) PutImageCandidates(c *agentv1.ImageCandidates) {
+	o.mu.Lock()
+	o.enqueueSecurityLocked(securityMsg{candidates: c})
+	o.mu.Unlock()
+	o.wake()
+}
+
+func (o *Outbox) enqueueSecurityLocked(m securityMsg) {
+	// A newer SecurityReport replaces an unsent one (full replacement).
+	if m.report != nil {
+		for i, old := range o.security {
+			if old.report != nil {
+				o.security[i] = m
+				return
+			}
+		}
+	}
+	for len(o.security) >= maxSecurityMsgs {
+		o.security[0] = securityMsg{}
+		o.security = o.security[1:]
+		o.dropped++
+	}
+	o.security = append(o.security, m)
 }
 
 func (o *Outbox) enqueueDeployLocked(m deployMsg) {
@@ -287,7 +428,7 @@ func (o *Outbox) Dropped() uint64 {
 func (o *Outbox) Len() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	n := len(o.batches) + len(o.logs) + len(o.deploy)
+	n := len(o.batches) + len(o.logs) + len(o.deploy) + len(o.security) + len(o.sboms)
 	if o.snapshot != nil {
 		n++
 	}
@@ -343,6 +484,29 @@ func (o *Outbox) take() *agentv1.ConnectRequest {
 		case m.branch != nil:
 			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_BranchUpdate{BranchUpdate: m.branch}}
 		}
+	}
+	if len(o.security) > 0 {
+		m := o.security[0]
+		o.security[0] = securityMsg{}
+		o.security = o.security[1:]
+		switch {
+		case m.report != nil:
+			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_SecurityReport{SecurityReport: m.report}}
+		case m.outbound != nil:
+			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_OutboundBatch{OutboundBatch: m.outbound}}
+		case m.candidates != nil:
+			return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_ImageCandidates{ImageCandidates: m.candidates}}
+		}
+	}
+	if len(o.sboms) > 0 {
+		e := o.sboms[0]
+		o.sboms[0] = sbomEntry{}
+		o.sboms = o.sboms[1:]
+		if !e.stub {
+			o.sbomSize -= e.size
+		}
+		r := e.r
+		return &agentv1.ConnectRequest{Msg: &agentv1.ConnectRequest_SbomReport{SbomReport: r}}
 	}
 	if len(o.logs) > 0 { // problems first: log events can carry errors
 		b := o.logs[0]

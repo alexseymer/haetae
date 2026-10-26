@@ -57,6 +57,10 @@ message ConnectRequest {
     DeployEvent deploy_event = 7;
     DeployLog deploy_log = 8;
     BranchUpdate branch_update = 9;
+    SbomReport sbom_report = 10;
+    SecurityReport security_report = 11;
+    OutboundBatch outbound_batch = 12;
+    ImageCandidates image_candidates = 13;
   }
 }
 
@@ -94,6 +98,9 @@ message Command {
     QueryLogs query_logs = 3;
     Deploy deploy = 4;
     RemoveProject remove_project = 5;
+    ScanContainer scan_container = 6;
+    ScanImage scan_image = 7;
+    PullImage pull_image = 8;
   }
 }
 
@@ -356,4 +363,113 @@ message WatchedBranch {
   string ref = 3;
   string token = 4;
   string last_commit = 5; // the commit last deployed; report only newer
+}
+
+// ---- M7: inventory, misconfigurations, outbound connections, image updates ----
+
+// ScanContainer asks the agent to inventory the image of a running container
+// now (forced scan). The agent answers with an SbomReport carrying scan_id.
+message ScanContainer {
+  string scan_id = 1;
+  string container_id = 2;
+}
+
+// ScanImage inventories an image straight from its registry without pulling
+// it into the local daemon (used to evaluate a candidate update).
+message ScanImage {
+  string scan_id = 1;
+  string ref = 2;    // repository:tag
+  string digest = 3; // sha256:... pinned by the server; the agent scans ref@digest
+}
+
+// PullImage pulls ref@digest into the local daemon. It never restarts or
+// replaces a container. The agent refuses when expected_digest does not match
+// what the registry serves, or when the image is younger than min_age_hours
+// and allow_young is false.
+message PullImage {
+  string ref = 1;
+  string digest = 2;
+  bool allow_young = 3;
+  uint32 min_age_hours = 4;
+}
+
+message SbomPackage {
+  string name = 1;
+  string version = 2;
+  string type = 3;  // deb, apk, rpm, npm, python, go-module, ...
+  string purl = 4;
+}
+
+// SbomReport is the result of one inventory run. status is one of
+// ok, failed, timeout, oom, unsupported. Anything but ok must carry an error
+// and no packages: the server shows "scan failed", never "no vulnerabilities".
+message SbomReport {
+  string scan_id = 1;
+  string container_id = 2; // empty for candidate scans
+  string image = 3;
+  string image_id = 4; // sha256 image id or digest
+  string trigger = 5;  // start, deploy, daily, forced, candidate
+  string status = 6;
+  string error = 7;
+  string tool_version = 8;
+  int64 started_unix_ms = 9;
+  int64 finished_unix_ms = 10;
+  int64 peak_memory_bytes = 11;
+  string distro_name = 12;
+  string distro_version = 13;
+  string distro_id_like = 14;
+  repeated SbomPackage packages = 15; // at most 20000
+  string source_ref = 16;             // registry ref for candidate scans
+}
+
+message Misconfig {
+  string container_id = 1; // empty for host-level findings
+  // published_port, docker_socket, root_user, privileged, host_network,
+  // host_pid, dangerous_capability, cert_expiring
+  string kind = 2;
+  string severity = 3; // low, medium, high, critical
+  string detail = 4;   // short, no secrets (e.g. "0.0.0.0:5432/tcp")
+}
+
+message ConntrackStatus {
+  string state = 1;  // ok, degraded, unavailable
+  string reason = 2; // why it is not ok
+  repeated string not_monitored_container_ids = 3; // network_mode: host etc.
+}
+
+// SecurityReport is a full replacement of the host's current misconfigurations
+// and monitoring state; findings absent from a later report are resolved.
+message SecurityReport {
+  int64 taken_unix_ms = 1;
+  repeated Misconfig misconfigs = 2;
+  ConntrackStatus conntrack = 3;
+}
+
+message OutboundConn {
+  string container_id = 1;
+  string dst_ip = 2;
+  uint32 dst_port = 3;
+  string proto = 4; // tcp, udp
+  uint32 count = 5;
+}
+
+message OutboundBatch {
+  int64 window_start_unix_ms = 1;
+  int64 window_end_unix_ms = 2;
+  repeated OutboundConn conns = 3; // bounded; dropped counts the rest
+  uint32 dropped = 4;
+}
+
+message ImageCandidate {
+  string container_id = 1;
+  string image = 2;
+  string running_digest = 3;
+  string candidate_digest = 4;
+  int64 candidate_created_unix_ms = 5;
+  string status = 6; // ok, unknown (private registry), error
+  string error = 7;
+}
+
+message ImageCandidates {
+  repeated ImageCandidate candidates = 1;
 }

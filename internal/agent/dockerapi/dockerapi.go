@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,13 @@ import (
 const APIVersion = "v1.41"
 
 const maxBody = 8 << 20 // 8 MiB
+
+// requestTimeout bounds every non-streaming call (a hung daemon must not pin
+// goroutines); pullTimeout bounds image pulls. Events/logs streams are exempt.
+const (
+	requestTimeout = 30 * time.Second
+	pullTimeout    = 15 * time.Minute
+)
 
 // Client talks to the Docker Engine API over a Unix socket.
 type Client struct {
@@ -96,12 +104,29 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]ContainerSumma
 	return list, nil
 }
 
+// PortBinding is one host-side published port from inspect.
+type PortBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
+// MountPoint is a mount from container inspect (paths only; never content).
+type MountPoint struct {
+	Type        string `json:"Type"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
+}
+
+// EndpointIP is one network attachment's addresses.
+type EndpointIP struct {
+	IPAddress         string `json:"IPAddress"`
+	GlobalIPv6Address string `json:"GlobalIPv6Address"`
+}
+
 // ContainerDetail is the inspect response for a container. It decodes only
 // what the agent uses. Config.Env, Config.Cmd/Entrypoint/Args and labels are
 // deliberately absent: environment values, command lines and arbitrary
-// labels must never be decoded, so they cannot leak later. Add fields here
-// only when a feature needs them (misconfiguration checks will add user,
-// privileged mode and mount targets).
+// labels must never be decoded, so they cannot leak later.
 type ContainerDetail struct {
 	ID           string `json:"Id"`
 	Name         string `json:"Name"`
@@ -122,18 +147,160 @@ type ContainerDetail struct {
 	} `json:"State"`
 	Config struct {
 		// Tty decides whether the log stream is multiplexed.
-		Tty bool `json:"Tty"`
+		Tty   bool   `json:"Tty"`
+		User  string `json:"User"` // for misconfig root_user; never env
+		Image string `json:"Image"`
 	} `json:"Config"`
+	HostConfig struct {
+		Privileged   bool                     `json:"Privileged"`
+		CapAdd       []string                 `json:"CapAdd"`
+		NetworkMode  string                   `json:"NetworkMode"`
+		PidMode      string                   `json:"PidMode"`
+		Binds        []string                 `json:"Binds"`
+		PortBindings map[string][]PortBinding `json:"PortBindings"`
+	} `json:"HostConfig"`
+	Mounts          []MountPoint `json:"Mounts"`
+	NetworkSettings struct {
+		Networks map[string]EndpointIP    `json:"Networks"`
+		Ports    map[string][]PortBinding `json:"Ports"`
+	} `json:"NetworkSettings"`
+}
+
+// ImageDetail is the inspect response for an image (RepoDigests, Created).
+type ImageDetail struct {
+	ID          string   `json:"Id"`
+	RepoTags    []string `json:"RepoTags"`
+	RepoDigests []string `json:"RepoDigests"`
+	Created     string   `json:"Created"`
+}
+
+// NetworkSummary is one entry from GET /networks.
+type NetworkSummary struct {
+	ID     string `json:"Id"`
+	Name   string `json:"Name"`
+	Driver string `json:"Driver"`
+	IPAM   struct {
+		Config []struct {
+			Subnet  string `json:"Subnet"`
+			Gateway string `json:"Gateway"`
+		} `json:"Config"`
+	} `json:"IPAM"`
 }
 
 // InspectContainer returns container details (GET /containers/{id}/json).
 func (c *Client) InspectContainer(ctx context.Context, id string) (ContainerDetail, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ContainerDetail{}, fmt.Errorf("dockerapi: empty container id")
+	}
 	var d ContainerDetail
 	path := "/containers/" + url.PathEscape(id) + "/json"
 	if err := c.getJSON(ctx, path, &d); err != nil {
 		return ContainerDetail{}, err
 	}
 	return d, nil
+}
+
+// InspectImage returns image details (GET /images/{name}/json).
+// The response type omits Config.Env and other secret-bearing fields.
+func (c *Client) InspectImage(ctx context.Context, ref string) (ImageDetail, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ImageDetail{}, fmt.Errorf("dockerapi: empty image ref")
+	}
+	var d ImageDetail
+	path := "/images/" + url.PathEscape(ref) + "/json"
+	if err := c.getJSON(ctx, path, &d); err != nil {
+		return ImageDetail{}, err
+	}
+	return d, nil
+}
+
+// ListNetworks returns networks (GET /networks).
+func (c *Client) ListNetworks(ctx context.Context) ([]NetworkSummary, error) {
+	var list []NetworkSummary
+	if err := c.getJSON(ctx, "/networks", &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// InspectNetwork returns one network (GET /networks/{id}).
+func (c *Client) InspectNetwork(ctx context.Context, id string) (NetworkSummary, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return NetworkSummary{}, fmt.Errorf("dockerapi: empty network id")
+	}
+	var n NetworkSummary
+	path := "/networks/" + url.PathEscape(id)
+	if err := c.getJSON(ctx, path, &n); err != nil {
+		return NetworkSummary{}, err
+	}
+	return n, nil
+}
+
+// PullImage pulls ref (repository:tag or repository@digest) into the local
+// daemon. It drains the progress stream and returns when the pull finishes.
+// It never creates or restarts containers.
+func (c *Client) PullImage(ctx context.Context, ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return fmt.Errorf("dockerapi: empty image ref")
+	}
+	// Docker accepts the full ref in fromImage; tag may be empty for digests.
+	from, tag := splitPullRef(ref)
+	q := url.Values{}
+	q.Set("fromImage", from)
+	if tag != "" {
+		q.Set("tag", tag)
+	}
+	path := "/images/create?" + q.Encode()
+	ctx, cancel := context.WithTimeout(ctx, pullTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, nil)
+	if err != nil {
+		return fmt.Errorf("dockerapi: pull: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("dockerapi: pull: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return c.statusError("pull", resp)
+	}
+	// Drain progress JSON lines; bound total read so a stuck daemon cannot
+	// grow the agent without limit.
+	limited := io.LimitReader(resp.Body, 32<<20)
+	dec := json.NewDecoder(limited)
+	for {
+		var line struct {
+			Error string `json:"error"`
+		}
+		if err := dec.Decode(&line); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("dockerapi: pull: %w", err)
+		}
+		if line.Error != "" {
+			return fmt.Errorf("dockerapi: pull: %s", line.Error)
+		}
+	}
+}
+
+// splitPullRef splits "repo:tag" or "repo@digest" for the images/create API.
+func splitPullRef(ref string) (from, tag string) {
+	if i := strings.LastIndex(ref, "@"); i >= 0 {
+		return ref[:i], ref[i+1:]
+	}
+	// registry:port/name:tag — split on the last colon after the last slash.
+	slash := strings.LastIndex(ref, "/")
+	colon := strings.LastIndex(ref, ":")
+	if colon > slash && colon >= 0 {
+		return ref[:colon], ref[colon+1:]
+	}
+	return ref, ""
 }
 
 // Stats is one container stats sample.
@@ -168,6 +335,10 @@ type Stats struct {
 
 // Stats returns one sample: GET /containers/{id}/stats?stream=false&one-shot=true.
 func (c *Client) Stats(ctx context.Context, id string) (Stats, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Stats{}, fmt.Errorf("dockerapi: empty container id")
+	}
 	var s Stats
 	path := "/containers/" + url.PathEscape(id) + "/stats?stream=false&one-shot=true"
 	if err := c.getJSON(ctx, path, &s); err != nil {
@@ -191,7 +362,14 @@ type Event struct {
 // until ctx ends or the stream fails. It calls fn for each event; it returns
 // the stream error (nil when ctx is cancelled).
 func (c *Client) Events(ctx context.Context, fn func(Event)) error {
-	filters := `{"type":["container"]}`
+	return c.EventsFor(ctx, []string{"container"}, fn)
+}
+
+// EventsFor is Events for the given event types (e.g. "container", "network").
+// Like Events it is a long-lived stream with no timeout.
+func (c *Client) EventsFor(ctx context.Context, types []string, fn func(Event)) error {
+	tj, _ := json.Marshal(types)
+	filters := `{"type":` + string(tj) + `}`
 	path := "/events?filters=" + url.QueryEscape(filters)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
@@ -227,6 +405,8 @@ func (c *Client) Events(ctx context.Context, fn func(Event)) error {
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, dst any) error {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
 		return fmt.Errorf("dockerapi: %w", err)

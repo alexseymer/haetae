@@ -146,6 +146,80 @@ func TestOutboxHardCapMixedFlood(t *testing.T) {
 	}
 }
 
+func TestOutboxSbomBounded(t *testing.T) {
+	o := NewOutbox(3)
+	for i := 0; i < maxSbomReports+10; i++ {
+		o.PutSbom(&agentv1.SbomReport{ImageId: "img-" + strconv.Itoa(i), Status: "ok"})
+	}
+	if n := o.Len(); n > maxSbomReports {
+		t.Fatalf("Len = %d, want at most %d SbomReports", n, maxSbomReports)
+	}
+	if o.Dropped() == 0 {
+		t.Fatal("expected drops when flooding SbomReports past the cap")
+	}
+	// Oldest were shed; newest should still be present.
+	ctx := context.Background()
+	var ids []string
+	for o.Len() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, msg.GetSbomReport().GetImageId())
+	}
+	if len(ids) != maxSbomReports {
+		t.Fatalf("drained %d reports, want %d", len(ids), maxSbomReports)
+	}
+	if ids[0] != "img-10" || ids[len(ids)-1] != "img-"+strconv.Itoa(maxSbomReports+9) {
+		t.Fatalf("kept range %q..%q, want img-10..img-%d", ids[0], ids[len(ids)-1], maxSbomReports+9)
+	}
+}
+
+func TestOutboxSbomDoesNotDropDeployOrTerminal(t *testing.T) {
+	o := NewOutbox(3)
+	terminal := &agentv1.DeployEvent{
+		DeployId: "keep-healthy",
+		Phase:    agentv1.DeployPhase_DEPLOY_PHASE_HEALTHY,
+		TsUnixMs: 1,
+	}
+	progress := &agentv1.DeployEvent{
+		DeployId: "keep-building",
+		Phase:    agentv1.DeployPhase_DEPLOY_PHASE_BUILDING,
+		TsUnixMs: 2,
+	}
+	o.Event(terminal)
+	o.Event(progress)
+	for i := 0; i < maxSbomReports+20; i++ {
+		o.PutSbom(&agentv1.SbomReport{ImageId: "flood-" + strconv.Itoa(i), Status: "ok"})
+	}
+	if o.DeployQueueLen() != 2 {
+		t.Fatalf("deploy queue = %d, want 2 (Sbom drops must not touch deploy)", o.DeployQueueLen())
+	}
+	if n := o.Len(); n != 2+maxSbomReports {
+		t.Fatalf("Len = %d, want %d (2 deploy + capped sboms)", n, 2+maxSbomReports)
+	}
+
+	ctx := context.Background()
+	var sawTerminal, sawBuilding bool
+	for o.Len() > 0 {
+		msg, err := o.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ev := msg.GetDeployEvent(); ev != nil {
+			if ev.GetDeployId() == "keep-healthy" {
+				sawTerminal = true
+			}
+			if ev.GetDeployId() == "keep-building" {
+				sawBuilding = true
+			}
+		}
+	}
+	if !sawTerminal || !sawBuilding {
+		t.Fatalf("deploy events lost to Sbom flood: terminal=%v building=%v", sawTerminal, sawBuilding)
+	}
+}
+
 func TestOutboxLastResortKeepsTerminalWhileNonTerminalExists(t *testing.T) {
 	o := NewOutbox(3)
 	terminal := &agentv1.DeployEvent{
@@ -231,5 +305,71 @@ func TestOutboxLastResortDropsOldestWhenOnlyTerminals(t *testing.T) {
 	}
 	if maxTS != int64(maxDeployMsgs+9) {
 		t.Fatalf("newest ts = %d, want %d", maxTS, maxDeployMsgs+9)
+	}
+}
+
+func bigSbom(scan, img string, pkgs int) *agentv1.SbomReport {
+	r := &agentv1.SbomReport{ScanId: scan, ImageId: img, Status: "ok"}
+	for i := 0; i < pkgs; i++ {
+		r.Packages = append(r.Packages, &agentv1.SbomPackage{Name: "pkg-" + strconv.Itoa(i), Version: "1.0.0", Purl: "pkg:deb/debian/pkg-" + strconv.Itoa(i) + "@1.0.0"})
+	}
+	return r
+}
+
+func drainSboms(t *testing.T, o *Outbox) []*agentv1.SbomReport {
+	t.Helper()
+	var out []*agentv1.SbomReport
+	for o.Len() > 0 {
+		msg, err := o.Next(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, msg.GetSbomReport())
+	}
+	return out
+}
+
+func TestOutboxSbomByteBudget(t *testing.T) {
+	o := NewOutbox(3)
+	for i := 0; i < 20; i++ {
+		o.PutSbom(bigSbom("s"+strconv.Itoa(i), "img-"+strconv.Itoa(i), 20000))
+	}
+	o.mu.Lock()
+	size := o.sbomSize
+	o.mu.Unlock()
+	if size > maxSbomBytes+2*1024*1024 { // budget plus at most the newest oversized report
+		t.Fatalf("queued sbom bytes %d exceed budget", size)
+	}
+	got := drainSboms(t, o)
+	last := got[len(got)-1]
+	if last.GetScanId() != "s19" || len(last.GetPackages()) != 20000 {
+		t.Fatalf("newest report not kept intact: %s %d", last.GetScanId(), len(last.GetPackages()))
+	}
+	for _, r := range got[:len(got)-1] {
+		if r.GetStatus() == "ok" && len(r.GetPackages()) == 0 {
+			t.Fatalf("dropped report %s must not look like a clean ok", r.GetScanId())
+		}
+	}
+}
+
+func TestOutboxSbomLatestPerImage(t *testing.T) {
+	o := NewOutbox(3)
+	o.PutSbom(bigSbom("old", "img", 100))
+	o.PutSbom(bigSbom("new", "img", 100))
+	got := drainSboms(t, o)
+	if len(got) != 2 {
+		t.Fatalf("got %d reports", len(got))
+	}
+	if got[0].GetScanId() != "old" || got[0].GetStatus() != "failed" || len(got[0].GetPackages()) != 0 {
+		t.Fatalf("superseded report must become a failed stub: %v", got[0])
+	}
+	if got[1].GetScanId() != "new" || got[1].GetStatus() != "ok" {
+		t.Fatalf("latest lost: %v", got[1])
+	}
+	// Same scan id replaces outright.
+	o.PutSbom(bigSbom("x", "img2", 1))
+	o.PutSbom(bigSbom("x", "img2", 2))
+	if n := o.Len(); n != 1 {
+		t.Fatalf("same scan_id should replace, Len=%d", n)
 	}
 }

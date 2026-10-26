@@ -62,11 +62,13 @@ func TestDownloadAllowlistAndTraversal(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "haetae-agent-linux-amd64"), []byte("amd64-bin"))
 	mustWrite(t, filepath.Join(dir, "haetae-agent-linux-arm64"), []byte("arm64-bin"))
+	mustWrite(t, filepath.Join(dir, "haetae-inventory-linux-amd64"), []byte("inv-amd64"))
+	mustWrite(t, filepath.Join(dir, "haetae-inventory-linux-arm64"), []byte("inv-arm64"))
 	mustWrite(t, filepath.Join(dir, "SHA256SUMS"), []byte("sums\n"))
 	mustWrite(t, filepath.Join(dir, "evil"), []byte("nope"))
 	h := New(dir)
 
-	for _, name := range []string{"haetae-agent-linux-amd64", "haetae-agent-linux-arm64", "SHA256SUMS"} {
+	for _, name := range []string{"haetae-agent-linux-amd64", "haetae-agent-linux-arm64", "haetae-inventory-linux-amd64", "haetae-inventory-linux-arm64", "SHA256SUMS"} {
 		r := serve(h, "GET", "/download/"+name)
 		if r.Code != 200 {
 			t.Fatalf("%s: %d", name, r.Code)

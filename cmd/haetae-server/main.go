@@ -27,6 +27,7 @@ import (
 	"github.com/alexseymer/haetae/internal/secrets"
 	"github.com/alexseymer/haetae/internal/server"
 	"github.com/alexseymer/haetae/internal/store"
+	"github.com/alexseymer/haetae/internal/updates"
 	"github.com/alexseymer/haetae/internal/version"
 	"github.com/alexseymer/haetae/internal/webui"
 )
@@ -49,6 +50,8 @@ Configuration (environment):
   HAETAE_WEB_TLS_CERT    certificate file for the web interface (with HAETAE_WEB_TLS_KEY);
                          default: one issued by the server's own CA
   HAETAE_TRUSTED_PROXIES comma-separated addresses/CIDRs of reverse proxies whose X-Forwarded-For is trusted
+  HAETAE_VULN_DB_URL     Grype DB listing base URL (empty or "off" = disabled; no outbound by default)
+  HAETAE_VULN_DB_DIR     Grype DB directory (default $HAETAE_DATA_DIR/vuln-db)
 `
 
 type config struct {
@@ -249,10 +252,16 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	go server.RunBriefing(ctx, st, chatSvc, log.With("component", "briefing"))
-	go server.RunAlertsEvaluator(ctx, st, chatSvc, log.With("component", "alerts"))
+	alertsEval := server.RunAlertsEvaluator(ctx, st, chatSvc, log.With("component", "alerts"))
+	vulnCfg := server.VulnConfigFromEnv(cfg.dataDir)
+	vulnMgr := server.RunVulnManager(ctx, st, vulnCfg, alertsEval, log.With("component", "vuln"))
 	gw := gateway.New(st, ca, gateway.Config{}, log)
+	matchWorker := gateway.NewMatchWorker(ctx, vulnMgr, log.With("component", "sbom-match"), 2)
+	gw.SetSbomHandlers(st, matchWorker)
+	gw.SetFindingsLookup(updates.StoreFindings{Store: st})
 	deploySvc := &deploys.Service{Store: st, Sender: gw, Box: box}
 	gw.SetDeploys(deploySvc)
+	go server.RunUpdatesLoop(ctx, st, gw, log.With("component", "updates"))
 	gs, err := server.ListenGateway(cfg.gatewayAddr, gw, ca, cfg.gatewayNames)
 	if err != nil {
 		return err
@@ -332,6 +341,7 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		WebPin:         webPin,
 		TrustedProxies: cfg.trustedProxies,
 		Deploys:        deploySvc,
+		Sender:         gw,
 		Secrets:        box,
 		RefreshWatch:   gw.RefreshWatch,
 		Chat:           chatSvc,

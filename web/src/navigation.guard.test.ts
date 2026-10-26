@@ -14,6 +14,7 @@ describe("navigation targets", () => {
     const allowed = [
       /^"\/[a-z-]*"$/, // "/login", "/", "/setup", "/settings", "/incidents", "/chat"
       /^`\/hosts\/\$\{[a-z]+\.id\}`$/, // `/hosts/${h.id}`
+      /^`\/hosts\/\$\{[a-z]+\.id\}\?tab=security`$/, // `/hosts/${h.id}?tab=security`
       /^`\/hosts\/\$\{[a-z]+\.hostId\}`$/, // `/hosts/${project.hostId}` / incident.hostId
       /^`\/incidents\/\$\{[a-z]+\.id\}`$/, // `/incidents/${inc.id}`
       /^`\/projects\/\$\{[a-z]+\.id\}`$/, // `/projects/${p.id}`
