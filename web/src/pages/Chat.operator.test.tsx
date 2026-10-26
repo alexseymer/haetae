@@ -40,12 +40,12 @@ const proposal = {
   createdAt: new Date().toISOString(),
 };
 
-function setup(fetchImpl: typeof fetch) {
+function setup(fetchImpl: typeof fetch, who: User = admin) {
   vi.stubGlobal("fetch", fetchImpl);
   return render(
     <MemoryRouter initialEntries={["/chat"]}>
       <AuthProvider>
-        <Seed user={admin}>
+        <Seed user={who}>
           <Routes>
             <Route path="/chat" element={<ChatPage />} />
           </Routes>
@@ -97,5 +97,21 @@ describe("operator messages in chat", () => {
     expect(await screen.findByText("Approved. The action was sent.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Decline" })).toBeDisabled();
+  });
+
+  it("members see the proposal without buttons and are told to ask an admin", async () => {
+    setup(
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ messages: [proposal], next: "p1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ) as unknown as typeof fetch,
+      { id: "2", email: "m@b.c", role: "member" },
+    );
+    expect(await screen.findByText(/Haetae proposes/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Decline" })).not.toBeInTheDocument();
+    expect(screen.getByText("Ask an administrator to approve.")).toBeInTheDocument();
   });
 });

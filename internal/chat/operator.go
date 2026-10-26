@@ -376,11 +376,15 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 		}
 		return m
 	}
-	// Buttons go only to verified accounts of organisation admins. The web
-	// chat is visible to every member, so it gets the text without buttons.
-	web := build(store.ChannelWeb, false, askAdmin)
+	// The web chat carries the buttons: pressing one goes through the
+	// admin-only POST /api/chat/actions, which applies the same checks as the
+	// token path (admin role, org, single use, expiry). Chat channels get
+	// buttons only for verified admin accounts, Signal never.
+	web := build(store.ChannelWeb, true, askAdmin)
 	web.OrgID, web.Channel, web.AccountID = orgID, store.ChannelWeb, nil
-	if _, err := s.enqueueOut(ctx, web); err != nil {
+	if _, err := s.enqueueOutPre(ctx, web, func(m store.ChatMessage) error {
+		return s.st.LinkMessageApproval(ctx, orgID, m.ID, d.ApprovalID)
+	}); err != nil {
 		s.log.Warn("post approval", "err", err)
 		return
 	}

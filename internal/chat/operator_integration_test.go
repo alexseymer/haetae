@@ -496,12 +496,22 @@ func TestApprovalButtonsOnlyForAdminAccounts(t *testing.T) {
 		if !hasButtons && !strings.Contains(r.Body, "Ask an administrator to approve") {
 			t.Fatalf("button-less proposal lacks the note: %q", r.Body)
 		}
-		if r.Channel == store.ChannelWeb && hasButtons {
-			t.Fatal("web chat (visible to all members) got buttons")
+		if r.Channel == store.ChannelWeb {
+			// The web chat has buttons; pressing is admin-only at the API.
+			if !hasButtons {
+				t.Fatal("web chat proposal has no buttons")
+			}
+			var n int
+			if err := e.s.Pool().QueryRow(ctx, `SELECT count(*) FROM chat_approvals WHERE message_id=$1`, r.ID).Scan(&n); err != nil || n != 1 {
+				t.Fatalf("web proposal not linked to approval: n=%d err=%v", n, err)
+			}
+		}
+		if r.Channel == store.ChannelTelegram && hasButtons && !strings.Contains(r.Body, "Haetae proposes") {
+			t.Fatal("unexpected")
 		}
 	}
-	if buttons != 1 {
-		t.Fatalf("%d proposals with buttons, want exactly the admin's", buttons)
+	if buttons != 2 {
+		t.Fatalf("%d proposals with buttons, want web plus the telegram admin", buttons)
 	}
 }
 

@@ -202,6 +202,9 @@ export function ChatPage() {
                   })}
                 </div>
               ) : null}
+              {!isAdmin && m.actions?.some((a) => a.id === "approve_action") ? (
+                <p className="muted">Ask an administrator to approve.</p>
+              ) : null}
               {m.actions?.map((act) => {
                 const key = `${m.id}:${act.id}`;
                 const reply = actionReplies[key];
