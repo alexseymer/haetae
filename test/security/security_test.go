@@ -5,7 +5,6 @@ package security_test
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexseymer/haetae/internal/agent/conntrack"
 	"github.com/alexseymer/haetae/internal/agent/imagecheck"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
 	"github.com/alexseymer/haetae/internal/server"
@@ -557,8 +557,16 @@ func scenarioOutbound(t *testing.T, h *harness) {
 	shortHost := shortCID(hostCID)
 	h.waitContainerInAPI(shortHost, 45*time.Second)
 
+	// The agent runs as this test's user: real netlink needs root and a
+	// loaded nf_conntrack, otherwise the state must say why it is missing.
+	ctOK, _ := conntrack.Available()
+	realCT := ctOK && os.Geteuid() == 0
+	want := "conntrack unavailable/degraded"
+	if realCT {
+		want = "conntrack ok"
+	}
 	start := time.Now()
-	waitFor(t, 2*time.Minute, "conntrack unavailable/degraded", func() bool {
+	waitFor(t, 2*time.Minute, want, func() bool {
 		var out struct {
 			Conntrack map[string]any `json:"conntrack"`
 		}
@@ -568,10 +576,13 @@ func scenarioOutbound(t *testing.T, h *harness) {
 		}
 		state, _ := out.Conntrack["state"].(string)
 		reason, _ := out.Conntrack["reason"].(string)
-		if state != "unavailable" && state != "degraded" {
+		if realCT {
+			if state != "ok" {
+				return false
+			}
+		} else if state != "unavailable" && state != "degraded" {
 			return false
-		}
-		if reason == "" {
+		} else if reason == "" {
 			t.Fatalf("empty conntrack reason: %v", out.Conntrack)
 		}
 		notMon, _ := out.Conntrack["notMonitored"].([]any)
@@ -606,38 +617,48 @@ func scenarioOutbound(t *testing.T, h *harness) {
 		if !found {
 			return false
 		}
-		measure(t, "conntrack_unavailable", time.Since(start))
+		if realCT {
+			measure(t, "conntrack_ok", time.Since(start))
+		} else {
+			measure(t, "conntrack_unavailable", time.Since(start))
+		}
 		t.Logf("conntrack state=%s reason=%q notMonitored=%v", state, reason, notMon)
 		return true
 	})
 
 	t.Run("real_attribution", func(t *testing.T) {
-		if _, err := os.Stat("/proc/net/nf_conntrack"); err != nil {
-			t.Skip("no /proc/net/nf_conntrack on this VM; CI skips real attribution")
+		if ok, reason := conntrack.Available(); !ok {
+			t.Skip("conntrack unavailable on this host (" + reason + "); real attribution skipped")
 		}
 		if os.Geteuid() != 0 {
 			t.Skip("not root; real conntrack attribution requires CAP_NET_ADMIN")
 		}
-		ensureImage(t, "curlimages/curl:8.11.1")
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer ln.Close()
-		port := ln.Addr().(*net.TCPAddr).Port
-		go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(200)
-			_, _ = w.Write([]byte("ok"))
-		}))
-		_, curlCID := h.runContainer("curl-out", "curlimages/curl:8.11.1",
-			"curl", "-sS", fmt.Sprintf("http://172.17.0.1:%d/", port))
-		_ = curlCID
+		// 192.0.2.0/24 (TEST-NET-1) is outside every Docker network, so the
+		// SYN is outbound traffic; conntrack records it even without a reply.
+		const dst = "192.0.2.10"
+		_, cid := h.runContainer("nc-out", "busybox:1.37",
+			"sh", "-c", "while true; do nc -w 2 "+dst+" 443 </dev/null; sleep 5; done")
+		start := time.Now()
 		waitFor(t, 2*time.Minute, "outbound attributed", func() bool {
 			var out struct {
-				Conns []map[string]any `json:"conns"`
+				Conns []struct {
+					ContainerID string `json:"containerId"`
+					DstIP       string `json:"dstIp"`
+					DstPort     int    `json:"dstPort"`
+					Proto       string `json:"proto"`
+				} `json:"conns"`
 			}
 			status, _ := h.api(h.admin, "GET", "/api/hosts/"+h.hostID+"/outbound", nil, &out)
-			return status == 200 && len(out.Conns) > 0
+			if status != 200 {
+				return false
+			}
+			for _, c := range out.Conns {
+				if c.DstIP == dst && c.DstPort == 443 && c.Proto == "tcp" && c.ContainerID != "" && strings.HasPrefix(cid, c.ContainerID) {
+					measure(t, "outbound_attributed", time.Since(start))
+					return true
+				}
+			}
+			return false
 		})
 	})
 }

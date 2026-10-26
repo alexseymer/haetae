@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,14 +38,28 @@ type EventSource interface {
 type KernelSource struct{}
 
 // Available reports whether nf_conntrack appears present on this host.
+// /proc/net/nf_conntrack exists only with the deprecated
+// CONFIG_NF_CONNTRACK_PROCFS, which many current kernels leave out, so the
+// module's sysctl directory is checked too; the netlink dial in Run decides.
 func Available() (bool, string) {
-	if _, err := os.Stat("/proc/net/nf_conntrack"); err != nil {
-		if os.IsNotExist(err) {
-			return false, "no nf_conntrack"
+	return available("/proc")
+}
+
+func available(procRoot string) (bool, string) {
+	var firstErr error
+	for _, p := range []string{"sys/net/netfilter/nf_conntrack_max", "net/nf_conntrack"} {
+		_, err := os.Stat(filepath.Join(procRoot, p))
+		if err == nil {
+			return true, ""
 		}
-		return false, err.Error()
+		if !os.IsNotExist(err) && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return true, ""
+	if firstErr != nil {
+		return false, firstErr.Error()
+	}
+	return false, "no nf_conntrack"
 }
 
 // Run opens a netlink conntrack listener. Permission denied and missing
