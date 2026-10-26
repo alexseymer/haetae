@@ -860,3 +860,7 @@ table.data tbody tr.clickable:focus-within {
     overflow-x: auto;
   }
 }
+
+.chat-msg-answer {
+  border-color: var(--color-chart-2);
+}

@@ -132,6 +132,9 @@ func (securityStoreAdapter) HostForAgent(context.Context, uuid.UUID) (store.Host
 func (securityStoreAdapter) MarkConnected(context.Context, uuid.UUID, store.HostInfo, time.Time) error {
 	panic("unused")
 }
+func (securityStoreAdapter) OrgAutonomy(context.Context, uuid.UUID) (string, error) {
+	panic("unused")
+}
 func (securityStoreAdapter) MarkSeen(context.Context, uuid.UUID, time.Time) error { panic("unused") }
 func (securityStoreAdapter) MarkDisconnected(context.Context, uuid.UUID) error    { panic("unused") }
 func (securityStoreAdapter) ApplyDeployEvent(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, store.DeployEvent) error {

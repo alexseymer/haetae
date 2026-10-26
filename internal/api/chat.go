@@ -148,9 +148,9 @@ func (a *API) handleChatAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch in.Action {
-	case "later", "mute30d", "ack":
+	case "later", "mute30d", "ack", store.ActionApprove, store.ActionDecline:
 	default:
-		writeError(w, http.StatusBadRequest, `action must be "later", "mute30d" or "ack"`)
+		writeError(w, http.StatusBadRequest, `action must be "later", "mute30d", "ack", "approve_action" or "decline_action"`)
 		return
 	}
 	// Confirm the message belongs to this org before applying (cross-org → 404).

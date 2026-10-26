@@ -114,7 +114,13 @@ export function ChatPage() {
     setActionBusy(key);
     try {
       const res = await api.chatAction({ messageId, action });
-      setUsedActions((prev) => ({ ...prev, [key]: true }));
+      setUsedActions((prev) => {
+        const next = { ...prev, [key]: true as const };
+        // Approve and decline are one decision: pressing one retires both.
+        if (action === "approve_action") next[`${messageId}:decline_action`] = true;
+        if (action === "decline_action") next[`${messageId}:approve_action`] = true;
+        return next;
+      });
       setActionReplies((prev) => ({ ...prev, [key]: res.reply }));
     } catch (err) {
       setActionReplies((prev) => ({
@@ -146,7 +152,9 @@ export function ChatPage() {
               ? "chat-msg chat-msg-incident"
               : m.kind === "briefing"
                 ? "chat-msg chat-msg-briefing"
-                : "chat-msg";
+                : m.kind === "answer"
+                  ? "chat-msg chat-msg-answer"
+                  : "chat-msg";
           return (
             <article key={m.id} className={kindClass} data-direction={m.direction}>
               <header className="chat-msg-meta muted">

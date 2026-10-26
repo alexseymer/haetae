@@ -130,6 +130,12 @@ type RunOptions struct {
 	Deploys *deploy.Manager
 	// Watcher receives WatchSet updates when set.
 	Watcher *deploy.Watcher
+	// Policy enforces the autonomy level. Nil means a default policy: level
+	// report from the server, no local cap.
+	Policy *Policy
+	// RestartContainer runs restart_container commands (class operator).
+	// Without it the command is refused as unsupported.
+	RestartContainer func(ctx context.Context, containerID string) error
 }
 
 // Run keeps a session to the control plane until ctx is cancelled,
@@ -198,7 +204,11 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
-	log.Info("connected", "heartbeat", interval)
+	if opts.Policy == nil {
+		opts.Policy = NewPolicy("", log)
+	}
+	opts.Policy.SetServerLevel(welcome.GetAutonomy())
+	log.Info("connected", "heartbeat", interval, "autonomy", opts.Policy.Effective())
 
 	hbErr := make(chan error, 1)
 	go func() { hbErr <- heartbeat(ctx, interval, send) }()
@@ -275,6 +285,12 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 		if err != nil {
 			return fmt.Errorf("receive: %w", err)
 		}
+		if p := msg.GetPolicy(); p != nil {
+			if opts.Policy != nil {
+				opts.Policy.SetServerLevel(p.GetAutonomy())
+			}
+			continue
+		}
 		if g := msg.GetGreen(); g != nil {
 			if opts.OnGreen != nil {
 				opts.OnGreen(g.GetTemplateIds())
@@ -311,6 +327,25 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 // rest through the handler. Kinds none of them know are refused, so this
 // stays the agent's command allowlist.
 func dispatch(ctx context.Context, cmd *agentv1.Command, opts RunOptions) *agentv1.CommandResult {
+	policy := opts.Policy
+	if policy == nil {
+		policy = NewPolicy("", nil)
+	}
+	// The autonomy check runs before any handler, on every command.
+	if msg := policy.Check(cmd); msg != "" {
+		return &agentv1.CommandResult{CommandId: cmd.GetId(), Error: msg}
+	}
+	if rc := cmd.GetRestartContainer(); rc != nil {
+		res := &agentv1.CommandResult{CommandId: cmd.GetId()}
+		if opts.RestartContainer == nil {
+			res.Error = "unsupported command"
+			return res
+		}
+		if err := opts.RestartContainer(ctx, rc.GetContainerId()); err != nil {
+			res.Error = err.Error()
+		}
+		return res
+	}
 	if d := cmd.GetDeploy(); d != nil {
 		res := &agentv1.CommandResult{CommandId: cmd.GetId()}
 		if opts.Deploys == nil {

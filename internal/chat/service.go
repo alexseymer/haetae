@@ -36,6 +36,7 @@ type Config struct {
 	PollEvery  time.Duration // delivery poll fallback; default 1s
 	ClaimLimit int
 	Now        func() time.Time
+	Operator   OperatorClient // optional AI operator (see SetOperator)
 }
 
 // Service delivers chat messages and handles inbound actions.
@@ -60,6 +61,7 @@ type Service struct {
 	delivered   map[uuid.UUID]deliveredEntry
 
 	unlinkedReplies *tokenBucketMap
+	ops             *operatorState
 }
 
 // New builds a Service. Channels without configuration should be omitted by the caller.
@@ -82,7 +84,10 @@ func New(cfg Config) *Service {
 			m[c.Name()] = c
 		}
 	}
+	ops := newOperatorState()
+	ops.op = cfg.Operator
 	return &Service{
+		ops:             ops,
 		st:              cfg.Store,
 		channels:        m,
 		secret:          append([]byte(nil), cfg.Secret...),
@@ -170,6 +175,8 @@ func (s *Service) IncidentChanged(ctx context.Context, orgID uuid.UUID, inc stor
 		}
 	}
 	s.nudge()
+	// The rule notification is out; the AI report is separate and never blocks.
+	s.reportIncident(orgID, inc)
 	return nil
 }
 

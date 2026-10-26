@@ -130,6 +130,8 @@ func (s *Service) applyAction(ctx context.Context, channel, externalID string, m
 		return replyActionLater, nil
 	case "mute30d":
 		return s.muteIncident(ctx, acc, msg)
+	case store.ActionApprove, store.ActionDecline:
+		return s.applyApproval(ctx, acc, msg, action)
 	case "ack":
 		err := s.st.ApplyActionInbound(ctx, messageID, action, store.ChatMessage{
 			OrgID:      msg.OrgID,
@@ -216,7 +218,7 @@ func uniqueRules(alerts []store.Alert) []string {
 }
 
 // HandleInboundText stores free text from a linked account and returns the
-// fixed operator-disabled reply. Unlinked senders are ignored except /link and
+// operator's immediate reply ("" when the answer follows as a message). Unlinked senders are ignored except /link and
 // /start (rate-limited replies).
 func (s *Service) HandleInboundText(ctx context.Context, channel, externalID, text string) (string, error) {
 	text = strings.TrimSpace(text)
@@ -252,7 +254,7 @@ func (s *Service) HandleInboundText(ctx context.Context, channel, externalID, te
 	}); err != nil {
 		return "", err
 	}
-	return OperatorDisabledReply, nil
+	return s.askOperator(ctx, acc, channel, text), nil
 }
 
 func (s *Service) allowUnlinkedReply(channel, externalID string) bool {

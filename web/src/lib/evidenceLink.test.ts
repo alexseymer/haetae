@@ -6,6 +6,7 @@ const uuid = "550e8400-e29b-41d4-a716-446655440000";
 describe("isSafeEvidencePath", () => {
   it("allows exact allowlisted paths", () => {
     expect(isSafeEvidencePath("/incidents")).toBe(true);
+    expect(isSafeEvidencePath("/")).toBe(true);
     expect(isSafeEvidencePath("/hosts")).toBe(true);
     expect(isSafeEvidencePath(`/hosts/${uuid}?tab=logs`)).toBe(true);
     expect(isSafeEvidencePath(`/incidents/${uuid}`)).toBe(true);

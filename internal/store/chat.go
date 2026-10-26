@@ -830,7 +830,7 @@ func VerifyActionToken(secret []byte, token string, now time.Time) (messageID uu
 		return uuid.Nil, "", ErrActionRejected
 	}
 	switch action {
-	case "later", "mute30d", "ack":
+	case "later", "mute30d", "ack", ActionApprove, ActionDecline:
 	default:
 		return uuid.Nil, "", ErrActionRejected
 	}

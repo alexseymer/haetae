@@ -251,11 +251,16 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	go server.RunBriefing(ctx, st, chatSvc, log.With("component", "briefing"))
 	alertsEval := server.RunAlertsEvaluator(ctx, st, chatSvc, log.With("component", "alerts"))
 	vulnCfg := server.VulnConfigFromEnv(cfg.dataDir)
 	vulnMgr := server.RunVulnManager(ctx, st, vulnCfg, alertsEval, log.With("component", "vuln"))
 	gw := gateway.New(st, ca, gateway.Config{}, log)
+	op, opSettings, err := startOperator(st, gw, log)
+	if err != nil {
+		return err
+	}
+	chatSvc.SetOperator(op)
+	go server.RunBriefing(ctx, st, chatSvc, op, log.With("component", "briefing"))
 	matchWorker := gateway.NewMatchWorker(ctx, vulnMgr, log.With("component", "sbom-match"), 2)
 	gw.SetSbomHandlers(st, matchWorker)
 	gw.SetFindingsLookup(updates.StoreFindings{Store: st})
@@ -268,7 +273,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 	log.Info("agent gateway listening", "addr", gs.Addr(), "url", cfg.gatewayURL, "ca_pin", pki.Fingerprint(ca.DER))
 
-	ws, err := startWeb(ctx, cfg, st, ca, log, box, deploySvc, gw, chatSvc)
+	ws, err := startWeb(ctx, cfg, st, ca, log, box, deploySvc, gw, chatSvc, opSettings)
 	if err != nil {
 		_ = gs.Close()
 		return err
@@ -291,7 +296,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 // creates a one-time setup code, logs it and keeps it in DATA_DIR/setup-code
 // (readable only by the server's user), so only someone with access to the
 // server can create the first administrator.
-func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger, box *secrets.Box, deploySvc *deploys.Service, gw *gateway.Gateway, chatSvc *chat.Service) (*server.WebServer, error) {
+func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log *slog.Logger, box *secrets.Box, deploySvc *deploys.Service, gw *gateway.Gateway, chatSvc *chat.Service, opSettings operatorSettings) (*server.WebServer, error) {
 	var (
 		cert   tls.Certificate
 		webPin string
@@ -331,20 +336,22 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 	}
 
 	a := api.New(api.Config{
-		Store:          st,
-		Log:            log.With("component", "api"),
-		Version:        version.Version,
-		SetupCode:      setupCode,
-		WebURL:         cfg.webURL,
-		GatewayURL:     cfg.gatewayURL,
-		CAPin:          pki.Fingerprint(ca.DER),
-		WebPin:         webPin,
-		TrustedProxies: cfg.trustedProxies,
-		Deploys:        deploySvc,
-		Sender:         gw,
-		Secrets:        box,
-		RefreshWatch:   gw.RefreshWatch,
-		Chat:           chatSvc,
+		Store:            st,
+		Log:              log.With("component", "api"),
+		Version:          version.Version,
+		SetupCode:        setupCode,
+		WebURL:           cfg.webURL,
+		GatewayURL:       cfg.gatewayURL,
+		CAPin:            pki.Fingerprint(ca.DER),
+		WebPin:           webPin,
+		TrustedProxies:   cfg.trustedProxies,
+		Deploys:          deploySvc,
+		Sender:           gw,
+		Secrets:          box,
+		RefreshWatch:     gw.RefreshWatch,
+		Chat:             chatSvc,
+		OperatorSettings: opSettings,
+		PolicyPusher:     gw,
 		OnSetupDone: func() {
 			_ = os.Remove(codeFile)
 		},

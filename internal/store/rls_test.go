@@ -75,7 +75,28 @@ func seedTwoOrgs(t *testing.T) twoOrgs {
 	seedM6TenantRows(t, s, o.orgB, o.hostB, "b")
 	seedM7TenantRows(t, s, o.orgA, o.hostA, "a")
 	seedM7TenantRows(t, s, o.orgB, o.hostB, "b")
+	seedM8TenantRows(t, s, o.orgA, o.hostA, "a")
+	seedM8TenantRows(t, s, o.orgB, o.hostB, "b")
 	return o
+}
+
+func seedM8TenantRows(t *testing.T, s *store.Store, org store.Org, host store.Host, tag string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := s.InsertEvidence(ctx, store.AIEvidence{
+		OrgID: org.ID, ConversationID: uuid.New(), Seq: 1, Kind: "hosts", Trusted: true, Title: "seed " + tag,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddUsage(ctx, org.ID, time.Now(), 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertAction(ctx, store.AIAction{
+		OrgID: org.ID, HostID: &host.ID, ContainerID: tag + "-c", Level: "suggest",
+		Origin: "proposed", Outcome: "refused",
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func seedM7TenantRows(t *testing.T, s *store.Store, org store.Org, host store.Host, tag string) {
@@ -167,6 +188,8 @@ var tenantTables = []string{
 	"briefings", "chat_action_refs", "alert_eval_state",
 	// M7 matching tables (vuln_db is server-wide; misconfigs/outbound/updates seeded by host-security owner).
 	"scans", "sboms", "sbom_packages", "image_match_state", "image_findings",
+	// M8 operator tables.
+	"ai_evidence", "ai_usage", "ai_actions",
 }
 
 // A query with no WHERE clause at all, run as the scoped role, returns only
