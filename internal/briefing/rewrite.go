@@ -138,7 +138,62 @@ func briefingPreserves(ruleText, aiText string) bool {
 			return false
 		}
 	}
+	return stateWordsKept(ruleText, aiText) && noNewFacts(ruleText, aiText)
+}
+
+// stateWords are the words that carry a status. A rewrite that drops one
+// ("2 hosts offline" becoming "2 hosts online") could invert a fact.
+var stateWords = map[string]bool{
+	"offline": true, "down": true, "not": true, "failed": true, "unhealthy": true,
+	"restarting": true, "stopped": true, "exited": true, "critical": true, "high": true,
+}
+
+func words(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) }) {
+		out[w] = true
+	}
+	return out
+}
+
+// stateWordsKept reports whether every state word of the rule text is also in
+// the AI text.
+func stateWordsKept(ruleText, aiText string) bool {
+	ai := words(aiText)
+	for w := range words(ruleText) {
+		if stateWords[w] && !ai[w] {
+			return false
+		}
+	}
 	return true
+}
+
+// noNewFacts reports whether the AI text introduces no number (maximal digit
+// run) and no identifier-like token (one with a digit or one of . _ : / -)
+// that the rule text does not contain.
+func noNewFacts(ruleText, aiText string) bool {
+	ruleNums := map[string]bool{}
+	for _, n := range digitRuns(ruleText) {
+		ruleNums[n] = true
+	}
+	for _, n := range digitRuns(aiText) {
+		if !ruleNums[n] {
+			return false
+		}
+	}
+	for _, t := range tokens(aiText) {
+		if isNumber(t) || !strings.ContainsAny(t, "._:/-0123456789") {
+			continue
+		}
+		if !strings.Contains(ruleText, t) {
+			return false
+		}
+	}
+	return true
+}
+
+func digitRuns(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsDigit(r) })
 }
 
 func tokens(s string) []string {

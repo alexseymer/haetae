@@ -67,101 +67,65 @@ func IsRoutine(level int16, template string) bool {
 type JudgeStore interface {
 	JudgeableTemplates(ctx context.Context, orgID, hostID uuid.UUID, minOccurrences int64, minWindows, limit int) ([]store.LogTemplate, error)
 	SetVerdicts(ctx context.Context, orgID, hostID uuid.UUID, green, watch []string) error
+	DemoteGreen(ctx context.Context, orgID, hostID uuid.UUID, ids []string) error
 	GreenTemplateIDs(ctx context.Context, orgID, hostID uuid.UUID, limit int) ([]string, error)
 }
 
-// judgeHost judges the ready templates of one host. Judgements are per host:
-// evidence from one host never makes another host's lines skippable. It
-// reports whether any template became green, in which case that host's agent
-// needs a new green set.
-func judgeHost(ctx context.Context, st JudgeStore, orgID, hostID uuid.UUID) (changed bool, err error) {
+// judgeHost applies the rule judge to the ready templates of one host. It
+// never calls the AI. Judgements are per host: evidence from one host never
+// makes another host's lines skippable. It returns the templates that became
+// green (the AI candidates); when there are any, that host's agent needs a new
+// green set.
+func judgeHost(ctx context.Context, st JudgeStore, orgID, hostID uuid.UUID) (green []store.LogTemplate, err error) {
 	ts, err := st.JudgeableTemplates(ctx, orgID, hostID, judgeMinOccurrences, judgeMinWindows, judgeBatch)
 	if err != nil || len(ts) == 0 {
-		return false, err
+		return nil, err
 	}
-	var cand []store.LogTemplate
-	var watch []string
+	var watch, ids []string
 	for _, t := range ts {
 		if IsRoutine(t.Level, t.Template) {
-			cand = append(cand, t)
+			green = append(green, t)
+			ids = append(ids, t.TemplateID)
 		} else {
 			watch = append(watch, t.TemplateID)
 		}
 	}
-	var green []string
-	if box := aiJudge.Load(); box != nil {
-		green, watch = refineWithAI(ctx, box.j, orgID, cand, watch)
-	} else {
-		for _, t := range cand {
-			green = append(green, t.TemplateID)
-		}
+	if err := st.SetVerdicts(ctx, orgID, hostID, ids, watch); err != nil {
+		return nil, err
 	}
-	if err := st.SetVerdicts(ctx, orgID, hostID, green, watch); err != nil {
-		return false, err
-	}
-	return len(green) > 0, nil
+	return green, nil
 }
 
-// refineWithAI lets the AI demote rule-routine templates to watch. The AI
-// only ever receives the candidates (info and below, no suspicious word,
-// already redacted). Any failure, an unavailable AI or a verdict for an
-// unknown template leaves the rule result: green stays green.
-func refineWithAI(ctx context.Context, ai AIJudge, orgID uuid.UUID, cand []store.LogTemplate, watch []string) (green, outWatch []string) {
-	outWatch = watch
-	for _, t := range cand {
-		green = append(green, t.TemplateID)
-	}
+// aiDemotions asks the AI which rule-green templates look anomalous. It only
+// ever receives the candidates (info and below, no suspicious word, already
+// redacted) and returns ids among them; a failure, an unavailable AI or a
+// verdict for an unknown template yields nothing.
+func aiDemotions(ctx context.Context, ai AIJudge, orgID uuid.UUID, cand []store.LogTemplate) []string {
 	if len(cand) == 0 {
-		return green, outWatch
+		return nil
 	}
-	cctx, cancel := context.WithTimeout(ctx, aiJudgeTimeout)
-	defer cancel()
-	type result struct {
-		vs  []operator.Verdict
-		err error
+	if ok, _ := ai.Available(ctx, orgID); !ok {
+		return nil
 	}
-	ch := make(chan result, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				ch <- result{err: context.Canceled}
-			}
-		}()
-		if ok, _ := ai.Available(cctx, orgID); !ok {
-			ch <- result{err: context.Canceled}
-			return
-		}
-		qs := make([]operator.TemplateQuery, len(cand))
-		for i, t := range cand {
-			qs[i] = operator.TemplateQuery{TemplateID: t.TemplateID, Level: t.Level, Template: t.Template, Count: t.Occurrences}
-		}
-		vs, err := ai.JudgeTemplates(cctx, orgID, qs)
-		ch <- result{vs, err}
-	}()
-	var res result
-	select {
-	case res = <-ch:
-	case <-cctx.Done():
-		return green, outWatch
+	qs := make([]operator.TemplateQuery, len(cand))
+	known := make(map[string]bool, len(cand))
+	for i, t := range cand {
+		qs[i] = operator.TemplateQuery{TemplateID: t.TemplateID, Level: t.Level, Template: t.Template, Count: t.Occurrences}
+		known[t.TemplateID] = true
 	}
-	if res.err != nil {
-		return green, outWatch
+	vs, err := ai.JudgeTemplates(ctx, orgID, qs)
+	if err != nil {
+		return nil
 	}
-	demote := make(map[string]bool)
-	for _, v := range res.vs {
-		if !v.Green {
-			demote[v.TemplateID] = true
+	var out []string
+	seen := make(map[string]bool)
+	for _, v := range vs {
+		if !v.Green && known[v.TemplateID] && !seen[v.TemplateID] {
+			seen[v.TemplateID] = true
+			out = append(out, v.TemplateID)
 		}
 	}
-	green = green[:0]
-	for _, t := range cand {
-		if demote[t.TemplateID] {
-			outWatch = append(outWatch, t.TemplateID)
-		} else {
-			green = append(green, t.TemplateID)
-		}
-	}
-	return green, outWatch
+	return out
 }
 
 // judgeThrottle limits how often a host is judged.

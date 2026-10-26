@@ -27,6 +27,7 @@ const (
 	availableTimeout = 5 * time.Second
 	executeTimeout   = 30 * time.Second
 	reportTimeout    = 90 * time.Second
+	postTimeout      = 15 * time.Second
 	reportDebounce   = 10 * time.Minute
 	maxAskInFlight   = 8
 	maxReportWorkers = 2
@@ -46,6 +47,8 @@ type operatorState struct {
 	reportMu   sync.Mutex
 	reportSeen map[uuid.UUID]time.Time
 
+	reportTimeout time.Duration
+
 	lastDebug atomic.Int64 // unix nanos of the last debug log
 }
 
@@ -54,6 +57,8 @@ func newOperatorState() *operatorState {
 		askSem:     make(chan struct{}, maxAskInFlight),
 		reportSem:  make(chan struct{}, maxReportWorkers),
 		reportSeen: make(map[uuid.UUID]time.Time),
+
+		reportTimeout: reportTimeout,
 	}
 }
 
@@ -331,7 +336,14 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 		}
 	}
 	ev := evidenceLinks(evs)
-	build := func(channel string, buttons bool) store.ChatMessage {
+	const askAdmin = "Ask an administrator to approve."
+	otherApprovalChannel := false
+	for name := range s.channels {
+		if name != store.ChannelSignal {
+			otherApprovalChannel = true
+		}
+	}
+	build := func(channel string, buttons bool, note string) store.ChatMessage {
 		kind := d.Action.Kind
 		if kind == "restart_container" || kind == "" {
 			kind = "restart"
@@ -360,13 +372,13 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 				{ID: store.ActionDecline, Label: "Decline"},
 			}
 		} else {
-			m.Body += "\nAsk an administrator to approve."
+			m.Body += "\n" + note
 		}
 		return m
 	}
 	// Buttons go only to verified accounts of organisation admins. The web
 	// chat is visible to every member, so it gets the text without buttons.
-	web := build(store.ChannelWeb, false)
+	web := build(store.ChannelWeb, false, askAdmin)
 	web.OrgID, web.Channel, web.AccountID = orgID, store.ChannelWeb, nil
 	if _, err := s.enqueueOut(ctx, web); err != nil {
 		s.log.Warn("post approval", "err", err)
@@ -391,8 +403,14 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 			isAdmin[a.ID] = true
 		}
 		for _, acc := range accounts {
-			buttons := isAdmin[acc.ID]
-			cp := build(name, buttons)
+			// Signal replies are keyword-only (later/mute/ack), so an
+			// approval cannot be pressed there: point admins elsewhere.
+			buttons := isAdmin[acc.ID] && name != store.ChannelSignal
+			note := askAdmin
+			if isAdmin[acc.ID] && name == store.ChannelSignal && otherApprovalChannel {
+				note = "Approve it in the web interface or another chat channel."
+			}
+			cp := build(name, buttons, note)
 			cp.OrgID, cp.Channel = orgID, name
 			id := acc.ID
 			cp.AccountID = &id
@@ -444,7 +462,7 @@ func (s *Service) reportIncident(orgID uuid.UUID, inc store.Incident) {
 				s.log.Error("incident report panic", "panic", r)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), s.ops.reportTimeout)
 		defer cancel()
 		select {
 		case s.ops.reportSem <- struct{}{}:
@@ -463,9 +481,13 @@ func (s *Service) reportIncident(orgID uuid.UUID, inc store.Incident) {
 			s.debugLimited("incident report failed", "err", err)
 			return
 		}
+		// A slow but successful explanation must still be delivered: posting
+		// gets its own budget instead of what is left of the explain deadline.
+		pctx, pcancel := context.WithTimeout(context.WithoutCancel(ctx), postTimeout)
+		defer pcancel()
 		title := LimitRunes(stripControls(inc.Title), maxTitleRunes)
 		incID := inc.ID
-		_, err = s.broadcast(ctx, orgID, func(channel string) store.ChatMessage {
+		_, err = s.broadcast(pctx, orgID, func(channel string) store.ChatMessage {
 			if ans.CauseNotFound || len(ans.Statements) == 0 {
 				return store.ChatMessage{
 					Kind:       store.KindAnswer,

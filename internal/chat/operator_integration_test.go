@@ -38,6 +38,7 @@ type fakeOp struct {
 	executed    []uuid.UUID
 	executeErr  error
 	executeWait time.Duration
+	explainWait time.Duration
 }
 
 func (f *fakeOp) Available(context.Context, uuid.UUID) (bool, string) { return f.avail, f.reason }
@@ -49,6 +50,7 @@ func (f *fakeOp) Ask(ctx context.Context, _ uuid.UUID, _ string) (operator.Answe
 }
 func (f *fakeOp) ExplainIncident(ctx context.Context, _, _ uuid.UUID) (operator.Answer, error) {
 	f.explained.Add(1)
+	time.Sleep(f.explainWait)
 	if f.block != nil {
 		<-f.block
 	}
@@ -584,5 +586,72 @@ func TestApprovalNoLongerNeededReply(t *testing.T) {
 	reply, _ := e.svc.HandleAction(context.Background(), store.ChannelTelegram, "111", e.token(msg.ID, store.ActionApprove, time.Now().Add(time.Hour)))
 	if !strings.HasPrefix(reply, "No longer needed") {
 		t.Fatalf("reply %q", reply)
+	}
+}
+
+func TestSlowSuccessfulIncidentReportIsStillPosted(t *testing.T) {
+	e := newOpEnv(t, nil)
+	e.svc = chat.New(chat.Config{
+		Store: e.s, Secret: testSecret, PublicURL: "https://haetae.test",
+		Channels:      []chat.Channel{web.Channel{}, stubChannel{store.ChannelTelegram}},
+		ReportTimeout: 400 * time.Millisecond,
+	})
+	e.svc.SetOperator(&fakeOp{avail: true, answer: sampleAnswer(e.host.ID), explainWait: 390 * time.Millisecond})
+	inc, alerts := incidentFor(t, e)
+	if err := e.svc.IncidentChanged(context.Background(), e.org.ID, inc, alerts); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor(t, "slow report", func(r []outRow) bool { return hasBody(r, store.ChannelWeb, "Haetae: ") })
+}
+
+func TestSignalAdminGetsProposalWithoutButtons(t *testing.T) {
+	s := storetest.New(t)
+	org, host, admin := seedOrg(t, s, "sig-org", "admin@sig.test")
+	svc := chat.New(chat.Config{
+		Store: s, Secret: testSecret, PublicURL: "https://haetae.test",
+		Channels: []chat.Channel{web.Channel{}, stubChannel{store.ChannelTelegram}, stubChannel{store.ChannelSignal}},
+	})
+	linkAndAccount(t, s, svc, org.ID, admin.ID, store.ChannelTelegram, "111")
+	linkAndAccount(t, s, svc, org.ID, admin.ID, store.ChannelSignal, "+15550001")
+	var approvalID uuid.UUID
+	if err := s.Pool().QueryRow(context.Background(), `
+		INSERT INTO ai_actions (org_id, host_id, container_id, kind, level, origin, outcome, reason)
+		VALUES ($1,$2,'c1','restart_container','suggest','proposed','awaiting_approval','crash loop')
+		RETURNING id`, org.ID, host.ID).Scan(&approvalID); err != nil {
+		t.Fatal(err)
+	}
+	ans := sampleAnswer(host.ID)
+	ans.Actions = []operator.ActionDecision{{
+		Action:     operator.ProposedAction{Kind: "restart_container", ContainerID: "api", Reason: "crash loop", Evidence: []string{"ev_1"}},
+		Outcome:    "awaiting_approval",
+		ApprovalID: approvalID,
+	}}
+	svc.SetOperator(&fakeOp{avail: true, answer: ans})
+	e := &opEnv{s: s, svc: svc, org: org, host: host, user: admin}
+	if _, err := svc.HandleInboundText(context.Background(), store.ChannelTelegram, "111", "fix api"); err != nil {
+		t.Fatal(err)
+	}
+	rows := e.waitFor(t, "signal proposal", func(r []outRow) bool {
+		for _, x := range r {
+			if x.Channel == store.ChannelSignal && strings.Contains(x.Body, "Haetae proposes") {
+				return true
+			}
+		}
+		return false
+	})
+	for _, r := range rows {
+		if r.Channel != store.ChannelSignal || !strings.Contains(r.Body, "Haetae proposes") {
+			continue
+		}
+		if strings.Contains(r.Actions, store.ActionApprove) {
+			t.Fatalf("signal got approval buttons: %s", r.Actions)
+		}
+		if !strings.Contains(r.Body, "Approve it in the web interface or another chat channel.") {
+			t.Fatalf("body=%q", r.Body)
+		}
+		var n int
+		if err := s.Pool().QueryRow(context.Background(), `SELECT count(*) FROM chat_approvals WHERE message_id=$1`, r.ID).Scan(&n); err != nil || n != 0 {
+			t.Fatal("signal message linked to approval")
+		}
 	}
 }

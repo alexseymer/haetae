@@ -167,6 +167,9 @@ func (securityStoreAdapter) JudgeableTemplates(context.Context, uuid.UUID, uuid.
 func (securityStoreAdapter) SetVerdicts(context.Context, uuid.UUID, uuid.UUID, []string, []string) error {
 	panic("unused")
 }
+func (securityStoreAdapter) DemoteGreen(context.Context, uuid.UUID, uuid.UUID, []string) error {
+	panic("unused")
+}
 func (securityStoreAdapter) GreenTemplateIDs(context.Context, uuid.UUID, uuid.UUID, int) ([]string, error) {
 	panic("unused")
 }

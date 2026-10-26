@@ -95,7 +95,7 @@ func TestRewriteFallbacks(t *testing.T) {
 
 func TestBriefingPreserves(t *testing.T) {
 	rule := "08:00 briefing, 2 hosts, 12 containers, 1 not running.\n  db-1_x disk full on eu.host/1"
-	ok := "08:00 2 hosts 12 containers 1 down: db-1_x disk full on eu.host/1"
+	ok := "08:00 2 hosts 12 containers 1 not running: db-1_x disk full on eu.host/1"
 	if !briefingPreserves(rule, ok) {
 		t.Fatal("should preserve")
 	}
@@ -104,6 +104,25 @@ func TestBriefingPreserves(t *testing.T) {
 	}
 	if briefingPreserves(rule, strings.Replace(ok, "eu.host/1", "eu", 1)) {
 		t.Fatal("missing host")
+	}
+}
+
+func TestBriefingPreservesStateAndNoNewFacts(t *testing.T) {
+	for _, tc := range []struct {
+		name, rule, ai string
+		want           bool
+	}{
+		{"inverted offline", "2 hosts offline", "2 hosts online", false},
+		{"inverted not running", "3 not running", "all running", false},
+		{"extra number", "2 hosts, 5 containers", "2 hosts, 5 containers, 7 alerts", false},
+		{"new identifier", "api crash-looping", "api crash-looping on web-9", false},
+		{"dropped critical", "critical: disk full", "disk full", false},
+		{"faithful reword", "2 hosts offline, 3 not running", "Heads up: 2 hosts offline and 3 not running", true},
+		{"same time and ids", "08:00 briefing, 2 hosts, db-1 disk full", "08:00: 2 hosts. db-1 disk full", true},
+	} {
+		if got := briefingPreserves(tc.rule, tc.ai); got != tc.want {
+			t.Errorf("%s: briefingPreserves(%q, %q) = %v, want %v", tc.name, tc.rule, tc.ai, got, tc.want)
+		}
 	}
 }
 

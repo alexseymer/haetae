@@ -37,6 +37,9 @@ type Config struct {
 	ClaimLimit int
 	Now        func() time.Time
 	Operator   OperatorClient // optional AI operator (see SetOperator)
+	// ReportTimeout bounds the AI incident explanation; default 90s. Posting
+	// the result has its own fresh budget.
+	ReportTimeout time.Duration
 }
 
 // Service delivers chat messages and handles inbound actions.
@@ -85,6 +88,9 @@ func New(cfg Config) *Service {
 		}
 	}
 	ops := newOperatorState()
+	if cfg.ReportTimeout > 0 {
+		ops.reportTimeout = cfg.ReportTimeout
+	}
 	ops.op = cfg.Operator
 	return &Service{
 		ops:             ops,

@@ -178,6 +178,22 @@ func (s *Store) SetVerdicts(ctx context.Context, orgID, hostID uuid.UUID, green,
 	return nil
 }
 
+// DemoteGreen turns green templates of the host into watch (the AI second
+// look found them anomalous). It never makes anything green and only touches
+// templates currently green.
+func (s *Store) DemoteGreen(ctx context.Context, orgID, hostID uuid.UUID, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE log_templates SET verdict = 'watch', judged_at = now()
+		WHERE org_id = $1 AND host_id = $2 AND template_id = ANY($3) AND verdict = 'green'`,
+		orgID, hostID, ids); err != nil {
+		return fmt.Errorf("store: DemoteGreen: %w", err)
+	}
+	return nil
+}
+
 // GreenTemplateIDs returns the host's green template ids (at most limit, most
 // frequent first).
 func (s *Store) GreenTemplateIDs(ctx context.Context, orgID, hostID uuid.UUID, limit int) ([]string, error) {

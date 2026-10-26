@@ -105,6 +105,12 @@ type Gateway struct {
 
 	judgeMu sync.Mutex
 	judge   judgeThrottle
+
+	aiMu   sync.Mutex
+	aiBusy map[uuid.UUID]bool
+	aiSem  chan struct{}
+
+	policyMu sync.Mutex
 }
 
 // SetFindingsLookup installs the vuln findings lookup used for image update
@@ -503,6 +509,9 @@ func (g *Gateway) orgAutonomy(ctx context.Context, orgID uuid.UUID) string {
 // Policy message to every connected session of the organisation. The settings
 // API calls it after changing the level.
 func (g *Gateway) PushPolicy(orgID uuid.UUID) {
+	// Serialised so that a stale read cannot overwrite a newer level.
+	g.policyMu.Lock()
+	defer g.policyMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	level := g.orgAutonomy(ctx, orgID)

@@ -131,12 +131,69 @@ func (g *Gateway) judgeAndPush(ctx context.Context, s *session) {
 	if !ok {
 		return
 	}
-	changed, err := judgeHost(ctx, g.store, s.orgID, s.hostID)
+	green, err := judgeHost(ctx, g.store, s.orgID, s.hostID)
 	if err != nil {
 		g.log.Error("judge templates", "host_id", s.hostID, "err", err)
 		return
 	}
-	if changed {
-		g.pushGreen(ctx, s)
+	if len(green) == 0 {
+		return
 	}
+	g.pushGreen(ctx, s)
+	g.startAIPass(s, green)
+}
+
+// maxAIPasses bounds the AI log judgements running at once.
+const maxAIPasses = 2
+
+// startAIPass runs the AI second look in the background. It never blocks the
+// caller (the agent receive loop): a host has at most one pass in flight, a
+// global semaphore bounds the total, and the pass has its own timeout. Rule
+// verdicts are already stored and pushed; the pass can only demote.
+func (g *Gateway) startAIPass(s *session, cand []store.LogTemplate) {
+	box := aiJudge.Load()
+	if box == nil {
+		return
+	}
+	g.aiMu.Lock()
+	if g.aiBusy == nil {
+		g.aiBusy = make(map[uuid.UUID]bool)
+		g.aiSem = make(chan struct{}, maxAIPasses)
+	}
+	if g.aiBusy[s.hostID] {
+		g.aiMu.Unlock()
+		return
+	}
+	select {
+	case g.aiSem <- struct{}{}:
+	default:
+		g.aiMu.Unlock()
+		return
+	}
+	g.aiBusy[s.hostID] = true
+	sem := g.aiSem
+	g.aiMu.Unlock()
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				g.log.Error("ai judge panic", "host_id", s.hostID, "panic", r)
+			}
+			g.aiMu.Lock()
+			delete(g.aiBusy, s.hostID)
+			g.aiMu.Unlock()
+			<-sem
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), aiJudgeTimeout)
+		defer cancel()
+		demote := aiDemotions(ctx, box.j, s.orgID, cand)
+		if len(demote) == 0 {
+			return
+		}
+		if err := g.store.DemoteGreen(ctx, s.orgID, s.hostID, demote); err != nil {
+			g.log.Error("demote templates", "host_id", s.hostID, "err", err)
+			return
+		}
+		g.pushGreen(ctx, s)
+	}()
 }
