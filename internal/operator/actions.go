@@ -23,6 +23,10 @@ const (
 	approvalTTL = 24 * time.Hour
 )
 
+// ErrNoLongerNeeded is returned by ExecuteApproved when the container is no
+// longer exited, restarting or unhealthy at approval time.
+var ErrNoLongerNeeded = errors.New("operator: container is no longer exited, restarting or unhealthy")
+
 // Outcomes of an ActionDecision (in addition to the three in api.go).
 const (
 	OutcomeRefused          = "refused"
@@ -37,6 +41,10 @@ func (s *Service) levelNow(ctx context.Context, org uuid.UUID) Level {
 	set, err := s.cfg.Store.GetOperatorSettings(ctx, org)
 	if err != nil {
 		s.cfg.Log.Warn("operator: read autonomy failed", "err", err)
+		return LevelReport
+	}
+	if !set.AIEnabled {
+		// AI off means effective level report, whatever level is stored.
 		return LevelReport
 	}
 	if l := Level(set.Autonomy); l.Valid() {
@@ -231,6 +239,12 @@ func (s *Service) ExecuteApproved(ctx context.Context, orgID, approvalID uuid.UU
 		}
 		return err
 	}
+	// An approval can come up to approvalTTL after the proposal: the evidence
+	// it was based on may be stale, so check the container's state now.
+	if !stateShowsUnhealthy(ct.State, ct.Health) {
+		_ = s.cfg.Store.RefuseAwaitingAction(ctx, orgID, approvalID, "container is no longer exited, restarting or unhealthy")
+		return ErrNoLongerNeeded
+	}
 
 	s.actMu.Lock()
 	n, err := s.cfg.Store.CountRecentRestarts(ctx, orgID, act.ContainerID, s.cfg.Now().Add(-restartWindow))
@@ -256,6 +270,11 @@ func (s *Service) ExecuteApproved(ctx context.Context, orgID, approvalID uuid.UU
 		return errors.New("operator: restart failed: " + detail)
 	}
 	return nil
+}
+
+// stateShowsUnhealthy is the closed set shared with evidenceShowsUnhealthy.
+func stateShowsUnhealthy(state, health string) bool {
+	return state == "exited" || state == "restarting" || health == "unhealthy"
 }
 
 // Evidence data shape (stored in ai_evidence.data and returned to the model):
@@ -303,7 +322,7 @@ func evidenceShowsUnhealthy(ev Evidence, containerID string) bool {
 		if c.ContainerID != containerID {
 			continue
 		}
-		if c.State == "exited" || c.State == "restarting" || c.Health == "unhealthy" {
+		if stateShowsUnhealthy(c.State, c.Health) {
 			return true
 		}
 	}

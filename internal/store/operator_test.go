@@ -150,3 +150,28 @@ func TestOperatorTablesIsolatedByRLS(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestOrgAutonomyIsReportWhileAIIsOff(t *testing.T) {
+	o := seedTwoOrgs(t)
+	ctx := context.Background()
+	org, err := o.s.CreateOrg(ctx, "autonomy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(enabled bool, level string) {
+		t.Helper()
+		if err := o.s.SetOperatorSettings(ctx, org.ID, store.OperatorSettings{AIEnabled: enabled, Autonomy: level, DailyTokenCap: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, level := range []string{"suggest", "act"} {
+		set(true, level)
+		if got, err := o.s.OrgAutonomy(ctx, org.ID); err != nil || got != level {
+			t.Fatalf("enabled %s: %q %v", level, got, err)
+		}
+		set(false, level)
+		if got, err := o.s.OrgAutonomy(ctx, org.ID); err != nil || got != "report" {
+			t.Fatalf("disabled with stored %s: %q %v, want report", level, got, err)
+		}
+	}
+}

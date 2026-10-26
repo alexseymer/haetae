@@ -28,6 +28,11 @@ const (
 // ErrActionAlreadyUsed means the (message, action) receipt was already consumed.
 var ErrActionAlreadyUsed = errors.New("store: chat action already used")
 
+// ErrApprovalAlreadyHandled means the proposal behind an approval message is no
+// longer awaiting approval (another message's button, expiry or a refusal got
+// there first). The pressed ref is still consumed.
+var ErrApprovalAlreadyHandled = errors.New("store: approval already handled")
+
 // CreateActionRefs stores one opaque ref per action for a message. Returns
 // map[action]plaintextRef (16-char base64url). Actions already used are omitted
 // so redelivery does not attach dead button refs. Server role.
@@ -287,7 +292,8 @@ func (s *Store) LinkMessageApproval(ctx context.Context, orgID, messageID, appro
 // the sibling ref, so only one of the two can ever be used), records the
 // inbound row and, for a decline, marks the ai_actions row failed with detail
 // 'declined' only while it is still awaiting_approval. It returns the approval
-// id. All in one transaction: on any failure the refs stay usable.
+// id, or ErrApprovalAlreadyHandled when the proposal is no longer awaiting
+// approval (the refs are consumed, nothing else changes). All in one transaction: on any failure the refs stay usable.
 func (s *Store) ApplyApprovalAction(ctx context.Context, messageID uuid.UUID, action string, inbound ChatMessage) (uuid.UUID, error) {
 	var sibling string
 	switch action {
@@ -313,6 +319,15 @@ func (s *Store) ApplyApprovalAction(ctx context.Context, messageID uuid.UUID, ac
 		}
 		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: %w", err)
 	}
+	// Serialise presses from different messages of the same proposal.
+	var outcome string
+	if err := tx.QueryRow(ctx, `SELECT outcome FROM ai_actions WHERE id = $1 AND org_id = $2 FOR UPDATE`, approvalID, orgID).
+		Scan(&outcome); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrActionRejected
+		}
+		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: lock: %w", err)
+	}
 	if err := consumeActionRefTx(ctx, tx, messageID, action); err != nil {
 		return uuid.Nil, err
 	}
@@ -328,6 +343,13 @@ func (s *Store) ApplyApprovalAction(ctx context.Context, messageID uuid.UUID, ac
 		ON CONFLICT (message_id, action) DO UPDATE SET used_at = COALESCE(chat_action_refs.used_at, now())`,
 		orgID, messageID, sibling, sum[:]); err != nil {
 		return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: sibling: %w", err)
+	}
+	if outcome != "awaiting_approval" {
+		// Keep the consumption of both refs of this message, change nothing else.
+		if err := tx.Commit(ctx); err != nil {
+			return uuid.Nil, fmt.Errorf("store: ApplyApprovalAction: %w", err)
+		}
+		return approvalID, ErrApprovalAlreadyHandled
 	}
 	if action == ActionDecline {
 		if _, err := tx.Exec(ctx, `

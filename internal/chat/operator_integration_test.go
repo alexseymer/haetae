@@ -446,3 +446,143 @@ func TestIncidentReportCauseNotFoundAndFailure(t *testing.T) {
 		t.Fatal("failure must post nothing")
 	}
 }
+
+func TestApprovalButtonsOnlyForAdminAccounts(t *testing.T) {
+	e := newOpEnv(t, nil)
+	ctx := context.Background()
+	member, err := e.s.CreateUser(ctx, e.org.ID, "member@op.test", "hash", "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkAndAccount(t, e.s, e.svc, e.org.ID, member.ID, store.ChannelTelegram, "222")
+	var approvalID uuid.UUID
+	if err := e.s.Pool().QueryRow(ctx, `
+		INSERT INTO ai_actions (org_id, host_id, container_id, kind, level, origin, outcome, reason)
+		VALUES ($1,$2,'c1','restart_container','suggest','proposed','awaiting_approval','crash loop')
+		RETURNING id`, e.org.ID, e.host.ID).Scan(&approvalID); err != nil {
+		t.Fatal(err)
+	}
+	ans := sampleAnswer(e.host.ID)
+	ans.Actions = []operator.ActionDecision{{
+		Action:     operator.ProposedAction{Kind: "restart_container", ContainerID: "api", Reason: "down", Evidence: []string{"ev_1"}},
+		Outcome:    "awaiting_approval",
+		ApprovalID: approvalID,
+	}}
+	e.op = &fakeOp{avail: true, answer: ans}
+	e.svc.SetOperator(e.op)
+	if _, err := e.svc.HandleInboundText(ctx, store.ChannelTelegram, "111", "fix api"); err != nil {
+		t.Fatal(err)
+	}
+	rows := e.waitFor(t, "proposals", func(r []outRow) bool {
+		n := 0
+		for _, x := range r {
+			if strings.Contains(x.Body, "Haetae proposes") {
+				n++
+			}
+		}
+		return n >= 3 // web, admin, member
+	})
+	buttons := 0
+	for _, r := range rows {
+		if !strings.Contains(r.Body, "Haetae proposes") {
+			continue
+		}
+		hasButtons := strings.Contains(r.Actions, store.ActionApprove)
+		if hasButtons {
+			buttons++
+		}
+		if !hasButtons && !strings.Contains(r.Body, "Ask an administrator to approve") {
+			t.Fatalf("button-less proposal lacks the note: %q", r.Body)
+		}
+		if r.Channel == store.ChannelWeb && hasButtons {
+			t.Fatal("web chat (visible to all members) got buttons")
+		}
+	}
+	if buttons != 1 {
+		t.Fatalf("%d proposals with buttons, want exactly the admin's", buttons)
+	}
+}
+
+func TestApprovalAcrossTwoMessagesIsConsistent(t *testing.T) {
+	e, approvalID, msg1 := approvalEnv(t)
+	ctx := context.Background()
+	var accID uuid.UUID
+	if err := e.s.Pool().QueryRow(ctx, `SELECT id FROM chat_accounts WHERE channel = 'telegram' AND external_id = '111'`).Scan(&accID); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := e.s.EnqueueChatMessage(ctx, store.ChatMessage{
+		OrgID: e.org.ID, Channel: store.ChannelTelegram, AccountID: &accID, Direction: "out", Kind: store.KindAnswer, Body: "again",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.LinkMessageApproval(ctx, e.org.ID, m2.ID, approvalID); err != nil {
+		t.Fatal(err)
+	}
+	// Two declines from two messages at once: exactly one says "Declined.".
+	var wg sync.WaitGroup
+	var declined atomic.Int32
+	for _, id := range []uuid.UUID{msg1.ID, m2.ID} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			reply, _ := e.svc.HandleAction(ctx, store.ChannelTelegram, "111", e.token(id, store.ActionDecline, time.Now().Add(time.Hour)))
+			if reply == "Declined." {
+				declined.Add(1)
+			} else if reply != "Already handled." {
+				t.Errorf("reply %q", reply)
+			}
+		}()
+	}
+	wg.Wait()
+	if declined.Load() != 1 {
+		t.Fatalf("declined replies = %d, want 1", declined.Load())
+	}
+}
+
+func TestDeclineAfterApprovedExecutionNeverReportsDeclined(t *testing.T) {
+	e, approvalID, msg1 := approvalEnv(t)
+	ctx := context.Background()
+	var accID uuid.UUID
+	if err := e.s.Pool().QueryRow(ctx, `SELECT id FROM chat_accounts WHERE channel = 'telegram' AND external_id = '111'`).Scan(&accID); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := e.s.EnqueueChatMessage(ctx, store.ChatMessage{
+		OrgID: e.org.ID, Channel: store.ChannelTelegram, AccountID: &accID, Direction: "out", Kind: store.KindAnswer, Body: "again",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.LinkMessageApproval(ctx, e.org.ID, m2.ID, approvalID); err != nil {
+		t.Fatal(err)
+	}
+	if reply, _ := e.svc.HandleAction(ctx, store.ChannelTelegram, "111", e.token(msg1.ID, store.ActionApprove, time.Now().Add(time.Hour))); !strings.HasPrefix(reply, "Approved") {
+		t.Fatalf("approve: %q", reply)
+	}
+	// The real operator has claimed and sent it by now.
+	if _, err := e.s.Pool().Exec(ctx, `UPDATE ai_actions SET outcome = 'succeeded', detail = '' WHERE id = $1`, approvalID); err != nil {
+		t.Fatal(err)
+	}
+	reply, _ := e.svc.HandleAction(ctx, store.ChannelTelegram, "111", e.token(m2.ID, store.ActionDecline, time.Now().Add(time.Hour)))
+	if reply != "Already handled." {
+		t.Fatalf("decline after approve: %q", reply)
+	}
+	var outcome, detail string
+	if err := e.s.Pool().QueryRow(ctx, `SELECT outcome, detail FROM ai_actions WHERE id = $1`, approvalID).Scan(&outcome, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if outcome != "succeeded" || detail != "" {
+		t.Fatalf("row changed: %s %q", outcome, detail)
+	}
+}
+
+func TestApprovalNoLongerNeededReply(t *testing.T) {
+	e, _, msg := approvalEnv(t)
+	e.op.mu.Lock()
+	e.op.executeErr = operator.ErrNoLongerNeeded
+	e.op.mu.Unlock()
+	reply, _ := e.svc.HandleAction(context.Background(), store.ChannelTelegram, "111", e.token(msg.ID, store.ActionApprove, time.Now().Add(time.Hour)))
+	if !strings.HasPrefix(reply, "No longer needed") {
+		t.Fatalf("reply %q", reply)
+	}
+}

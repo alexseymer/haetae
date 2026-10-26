@@ -350,7 +350,7 @@ func TestProposalForForeignOrMalformedContainerIsRefused(t *testing.T) {
 func TestUnknownActionKindIsRefused(t *testing.T) {
 	e := newEnv(t)
 	e.settings(true, "act", 200000)
-	f := fakeOf(e.listContainers(), final(`{"statements":[],"actions":[{"kind":"remove_volume","container_id":"c-dead","reason":"x","evidence":["ev_1"]}]}`))
+	f := fakeOf(e.listContainers(), final(`{"statements":[{"text":"db is down","evidence":["ev_1"]}],"actions":[{"kind":"remove_volume","container_id":"c-dead","reason":"x","evidence":["ev_1"]}]}`))
 	ans, err := e.svc(f).Ask(context.Background(), e.org.ID, "q")
 	if err != nil || ans.Actions[0].Outcome != "refused" || e.cmd.count() != 0 {
 		t.Fatalf("ans=%+v err=%v cmds=%d", ans, err, e.cmd.count())
@@ -894,5 +894,81 @@ func TestEvidenceOfEventsResolvesContainerForActions(t *testing.T) {
 	}
 	if ans.Actions[0].Outcome != "sent" || len(e.cmd.restarts()) != 1 {
 		t.Fatalf("actions = %+v", ans.Actions)
+	}
+}
+
+func TestApprovalRechecksCurrentContainerState(t *testing.T) {
+	e := newEnv(t)
+	e.settings(true, "suggest", 200000)
+	svc := e.svc(fakeOf(e.listContainers(), final(restartAnswer(e.deadC, "ev_1"))))
+	ans, err := svc.Ask(context.Background(), e.org.ID, "q")
+	if err != nil || ans.Actions[0].Outcome != "awaiting_approval" {
+		t.Fatalf("ans=%+v err=%v", ans, err)
+	}
+	// The container recovered before the button was pressed.
+	if err := e.s.ReplaceContainers(context.Background(), e.org.ID, e.host.ID, []store.Container{
+		{ContainerID: e.deadC, Name: "db", Image: "postgres", State: "running", Health: "healthy"},
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ExecuteApproved(context.Background(), e.org.ID, ans.Actions[0].ApprovalID)
+	if !errors.Is(err, operator.ErrNoLongerNeeded) || e.cmd.count() != 0 {
+		t.Fatalf("err=%v cmds=%d", err, e.cmd.count())
+	}
+	if rows := e.actions(); len(rows) != 1 || rows[0].outcome != "refused" || rows[0].detail != "container is no longer exited, restarting or unhealthy" {
+		t.Fatalf("rows = %+v", rows)
+	}
+}
+
+func TestApprovalAfterAIDisabledIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.settings(true, "suggest", 200000)
+	svc := e.svc(fakeOf(e.listContainers(), final(restartAnswer(e.deadC, "ev_1"))))
+	ans, _ := svc.Ask(context.Background(), e.org.ID, "q")
+	e.settings(false, "suggest", 200000) // stored level stays suggest
+	if err := svc.ExecuteApproved(context.Background(), e.org.ID, ans.Actions[0].ApprovalID); err == nil || e.cmd.count() != 0 {
+		t.Fatalf("err=%v cmds=%d", err, e.cmd.count())
+	}
+	if rows := e.actions(); rows[0].outcome != "refused" {
+		t.Fatalf("rows = %+v", rows)
+	}
+}
+
+func TestActionsIgnoredWithoutSupportedStatement(t *testing.T) {
+	e := newEnv(t)
+	e.settings(true, "act", 200000)
+	f := fakeOf(e.listContainers(), final(`{"statements":[{"text":"x","evidence":[]}],"actions":[{"kind":"restart_container","container_id":"c-dead","reason":"down","evidence":["ev_1"]}]}`))
+	ans, err := e.svc(f).Ask(context.Background(), e.org.ID, "q")
+	if err != nil || !ans.CauseNotFound || len(ans.Actions) != 0 || len(e.cmd.restarts()) != 0 || len(e.actions()) != 0 {
+		t.Fatalf("ans=%+v err=%v rows=%+v", ans, err, e.actions())
+	}
+}
+
+func TestToolCallsPerTurnBoundedToBudget(t *testing.T) {
+	e := newEnv(t)
+	var calls []provider.ToolCall
+	for i := 0; i < 50; i++ {
+		calls = append(calls, provider.ToolCall{ID: fmt.Sprintf("t%d", i), Name: "list_hosts", Args: json.RawMessage(`{}`)})
+	}
+	f := &provider.Fake{IsLocal: true, Script: func(_ int, req provider.Request) (provider.Response, error) {
+		if len(req.Tools) == 0 {
+			return final(`{"statements":[{"text":"hosts","evidence":["ev_1"]}]}`), nil
+		}
+		return provider.Response{ToolCalls: calls, Usage: usage}, nil
+	}}
+	if _, err := e.svc(f).Ask(context.Background(), e.org.ID, "q"); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.evidenceCount(); n > 8 {
+		t.Fatalf("executed %d tool calls", n)
+	}
+	for _, req := range f.Requests() {
+		sent := 0
+		for _, m := range req.Messages {
+			sent += len(m.ToolCalls)
+		}
+		if sent > 8 {
+			t.Fatalf("%d tool calls echoed to the provider", sent)
+		}
 	}
 }

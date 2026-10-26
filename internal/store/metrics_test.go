@@ -110,7 +110,9 @@ func TestInsertAndSeriesRaw(t *testing.T) {
 	}
 	h := enrollHost(t, s, org.ID, "mhost")
 
-	now := time.Date(2026, 10, 24, 15, 30, 0, 0, time.UTC)
+	// Relative to the clock: HostSeries picks the resolution from the real
+	// time (raw rows are only read for the last 48 h).
+	now := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	if err := s.EnsurePartitions(ctx, now); err != nil {
 		t.Fatalf("EnsurePartitions: %v", err)
 	}
@@ -186,11 +188,13 @@ func TestRollup1mIdempotent(t *testing.T) {
 	h := enrollHost(t, s, org.ID, "rollup-host")
 
 	// now at :05 so minutes ending at :01,:02,:03,:04 are complete; put samples in :03.
-	now := time.Date(2026, 10, 24, 12, 5, 0, 0, time.UTC)
+	// Relative to the clock so the 1 min resolution window (30 days) never expires.
+	hourStart := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
+	now := hourStart.Add(5 * time.Minute)
 	if err := s.EnsurePartitions(ctx, now); err != nil {
 		t.Fatalf("EnsurePartitions: %v", err)
 	}
-	bucket := time.Date(2026, 10, 24, 12, 3, 0, 0, time.UTC)
+	bucket := hourStart.Add(3 * time.Minute)
 	ms := []store.HostMetric{
 		{TS: bucket.Add(10 * time.Second), CPUPct: 10, Load1: 1, MemTotal: 100, MemAvail: 40, DiskTotal: 200, DiskUsed: 50, NetRxBps: 1, NetTxBps: 2},
 		{TS: bucket.Add(20 * time.Second), CPUPct: 30, Load1: 3, MemTotal: 100, MemAvail: 20, DiskTotal: 200, DiskUsed: 70, NetRxBps: 5, NetTxBps: 6},

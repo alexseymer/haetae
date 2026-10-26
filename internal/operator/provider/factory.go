@@ -67,8 +67,9 @@ func resolveBase(cfg Config, def string) (base string, local bool, err error) {
 	return strings.TrimRight(u.String(), "/"), local, nil
 }
 
-// isLocalHost is true for localhost and literal loopback, private or
-// link-local IPs. Names are never resolved.
+// isLocalHost is true for localhost and literal loopback or private (RFC1918,
+// unique-local) IPs. Link-local addresses (169.254.0.0/16 with the cloud
+// metadata address, fe80::/10) are not local. Names are never resolved.
 func isLocalHost(host string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host == "localhost" {
@@ -81,5 +82,5 @@ func isLocalHost(host string) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	return ip.IsLoopback() || ip.IsPrivate()
 }

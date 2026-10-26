@@ -12,6 +12,7 @@ import (
 
 	"github.com/alexseymer/haetae/internal/agent"
 	agentv1 "github.com/alexseymer/haetae/internal/gen/haetae/agent/v1"
+	"github.com/alexseymer/haetae/internal/store"
 )
 
 func TestAutonomyWelcomeAndPushPolicy(t *testing.T) {
@@ -23,7 +24,7 @@ func TestAutonomyWelcomeAndPushPolicy(t *testing.T) {
 		t.Fatalf("default autonomy = %q, %v; want report", got, err)
 	}
 	// The stored level is announced in Welcome.
-	if err := e.st.SetOrgAutonomy(ctx, e.org.ID, "suggest"); err != nil {
+	if err := setLevel(ctx, e, "suggest"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,7 +59,7 @@ func TestAutonomyWelcomeAndPushPolicy(t *testing.T) {
 	}
 
 	// PushPolicy reaches the connected session.
-	if err := e.st.SetOrgAutonomy(ctx, e.org.ID, "act"); err != nil {
+	if err := setLevel(ctx, e, "act"); err != nil {
 		t.Fatal(err)
 	}
 	e.gw.PushPolicy(e.org.ID)
@@ -72,9 +73,15 @@ func TestAutonomyWelcomeAndPushPolicy(t *testing.T) {
 		t.Fatal("restart handler not reached")
 	}
 
-	if err := e.st.SetOrgAutonomy(ctx, e.org.ID, "report"); err != nil {
+	if err := setLevel(ctx, e, "report"); err != nil {
 		t.Fatal(err)
 	}
 	e.gw.PushPolicy(e.org.ID)
 	waitFor(t, 10*time.Second, "pushed autonomy report", func() bool { return policy.Effective() == "report" })
+}
+
+// setLevel stores the level with the AI enabled (the agent-facing level is
+// report whenever the AI is off).
+func setLevel(ctx context.Context, e *env, level string) error {
+	return e.st.SetOperatorSettings(ctx, e.org.ID, store.OperatorSettings{AIEnabled: true, Autonomy: level, DailyTokenCap: 1000})
 }

@@ -137,7 +137,7 @@ func (a *API) handlePutOperatorSettings(w http.ResponseWriter, r *http.Request) 
 		"org", p.OrgID, "user", p.UserID,
 		"ai_enabled", next.AIEnabled, "autonomy", next.Autonomy, "daily_token_cap", next.DailyTokenCap,
 		"prev_ai_enabled", prev.AIEnabled, "prev_autonomy", prev.Autonomy, "prev_daily_token_cap", prev.DailyTokenCap)
-	if prev.Autonomy != next.Autonomy && a.cfg.PolicyPusher != nil {
+	if (prev.Autonomy != next.Autonomy || prev.AIEnabled != next.AIEnabled) && a.cfg.PolicyPusher != nil {
 		a.cfg.PolicyPusher.PushPolicy(p.OrgID)
 	}
 	out, err := a.operatorJSON(r.Context(), p.OrgID, next)

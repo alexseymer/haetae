@@ -15,8 +15,11 @@ const (
 	LevelAct     = "act"
 )
 
-// Command classes. "user" commands are user- or setting-initiated and the
-// operator cannot issue them; "operator" commands need an autonomy level.
+// Command classes. "user" commands are allowed at every level: user- or
+// setting-initiated ones (deploy, remove_project, scans, pull_image, ping) and
+// the read-only diagnostics the operator may issue (query_logs). Only
+// restart_container is operator-gated: "operator" commands need an autonomy
+// level and an authorization.
 const (
 	ClassUser     = "user"
 	ClassOperator = "operator"

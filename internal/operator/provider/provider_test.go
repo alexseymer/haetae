@@ -323,7 +323,11 @@ func TestLocalTruthTable(t *testing.T) {
 		{"local", "http://10.1.2.3/v1", true},
 		{"local", "http://192.168.0.5/v1", true},
 		{"local", "http://172.16.0.1/v1", true},
-		{"local", "http://169.254.1.1/v1", true},
+		{"local", "https://[fc00::1]/v1", true},
+		{"local", "https://[fd12:3456::1]/v1", true},
+		{"local", "https://169.254.1.1/v1", false},
+		{"local", "https://169.254.169.254/v1", false}, // cloud metadata
+		{"local", "https://[fe80::1]/v1", false},
 		{"local", "https://llm.internal.lan/v1", false}, // names are not resolved
 		{"local", "https://8.8.8.8/v1", false},
 		{"local", "https://api.example.com/v1", false},
@@ -341,6 +345,14 @@ func TestLocalTruthTable(t *testing.T) {
 				t.Fatalf("Local() = %v, want %v", p.Local(), tt.want)
 			}
 		})
+	}
+}
+
+func TestLinkLocalIsNotLocalOverHTTP(t *testing.T) {
+	for _, base := range []string{"http://169.254.169.254/v1", "http://[fe80::1]/v1"} {
+		if _, err := New(Config{Kind: "local", BaseURL: base, Model: "m", APIKey: "k"}); err == nil {
+			t.Fatalf("%s: plain http to a non-local host was accepted", base)
+		}
 	}
 }
 

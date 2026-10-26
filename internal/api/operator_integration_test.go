@@ -128,6 +128,12 @@ func TestOperatorSettingsAPI(t *testing.T) {
 	if len(fp.orgs) != 2 {
 		t.Fatalf("pushes %v", fp.orgs)
 	}
+	// Turning the AI off alone changes the effective level agents see.
+	body["aiEnabled"] = false
+	_, _, _ = admin.do(http.MethodPut, "/api/settings/operator", body)
+	if len(fp.orgs) != 3 {
+		t.Fatalf("no push when only aiEnabled changed: %v", fp.orgs)
+	}
 }
 
 func mustReq(t *testing.T, url string) *http.Request {

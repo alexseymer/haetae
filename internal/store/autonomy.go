@@ -8,15 +8,23 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// OrgAutonomy returns org_settings.autonomy: report, suggest or act. An
+// OrgAutonomy returns the effective autonomy level: org_settings.autonomy
+// (report, suggest or act), or report when ai_enabled is false. An
 // organisation without a settings row is at the safe default, report.
 func (s *Store) OrgAutonomy(ctx context.Context, orgID uuid.UUID) (string, error) {
 	var v string
-	err := s.pool.QueryRow(ctx, `SELECT autonomy FROM org_settings WHERE org_id = $1`, orgID).Scan(&v)
+	var enabled bool
+	err := s.pool.QueryRow(ctx, `SELECT autonomy, ai_enabled FROM org_settings WHERE org_id = $1`, orgID).Scan(&v, &enabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "report", nil
 	}
-	return v, err
+	if err != nil {
+		return "", err
+	}
+	if !enabled {
+		return "report", nil
+	}
+	return v, nil
 }
 
 // SetOrgAutonomy sets the autonomy level (report, suggest or act).

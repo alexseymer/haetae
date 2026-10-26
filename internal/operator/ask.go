@@ -57,7 +57,13 @@ func (s *Service) runConv(ctx context.Context, c *conv, msgs []provider.Message,
 		}
 
 		if len(resp.ToolCalls) > 0 && offer != nil {
-			am, err := s.egressMessage(ctx, provider.Message{Role: provider.RoleAssistant, Text: resp.Text, ToolCalls: withIDs(resp.ToolCalls, round)})
+			// Bound the calls of one turn to the remaining budget; the
+			// extra ones are dropped, not executed and not answered.
+			calls := withIDs(resp.ToolCalls, round)
+			if remaining := maxToolCalls - c.calls; len(calls) > remaining {
+				calls = calls[:remaining]
+			}
+			am, err := s.egressMessage(ctx, provider.Message{Role: provider.RoleAssistant, Text: resp.Text, ToolCalls: calls})
 			if err != nil {
 				return Answer{ConversationID: c.id}, err
 			}
@@ -119,6 +125,8 @@ func (s *Service) finish(ctx context.Context, c *conv, w wireAnswer, allowAction
 	if len(kept) == 0 {
 		ans.CauseNotFound = true
 		ans.Statements, ans.Evidence = nil, nil
+		// No supported statement: nothing the model proposed is acted on.
+		return ans
 	}
 	for i, a := range w.Actions {
 		if !allowActions || i >= maxActionsPerAns {

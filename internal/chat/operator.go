@@ -331,7 +331,7 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 		}
 	}
 	ev := evidenceLinks(evs)
-	_, err := s.broadcast(ctx, orgID, func(channel string) store.ChatMessage {
+	build := func(channel string, buttons bool) store.ChatMessage {
 		kind := d.Action.Kind
 		if kind == "restart_container" || kind == "" {
 			kind = "restart"
@@ -348,21 +348,65 @@ func (s *Service) postApproval(orgID uuid.UUID, incidentID *uuid.UUID, d operato
 				body += fmt.Sprintf("\n%s: %s", e.Label, s.publicURL+e.Path)
 			}
 		}
-		return store.ChatMessage{
+		m := store.ChatMessage{
 			Kind:       store.KindAnswer,
 			Body:       body,
 			Evidence:   ev,
 			IncidentID: incidentID,
-			Actions: []store.ChatAction{
+		}
+		if buttons {
+			m.Actions = []store.ChatAction{
 				{ID: store.ActionApprove, Label: "Approve"},
 				{ID: store.ActionDecline, Label: "Decline"},
-			},
+			}
+		} else {
+			m.Body += "\nAsk an administrator to approve."
 		}
-	}, func(m store.ChatMessage) error {
-		return s.st.LinkMessageApproval(ctx, orgID, m.ID, d.ApprovalID)
-	})
-	if err != nil {
+		return m
+	}
+	// Buttons go only to verified accounts of organisation admins. The web
+	// chat is visible to every member, so it gets the text without buttons.
+	web := build(store.ChannelWeb, false)
+	web.OrgID, web.Channel, web.AccountID = orgID, store.ChannelWeb, nil
+	if _, err := s.enqueueOut(ctx, web); err != nil {
 		s.log.Warn("post approval", "err", err)
+		return
+	}
+	for name := range s.channels {
+		if name == store.ChannelWeb {
+			continue
+		}
+		accounts, err := s.st.ListVerifiedAccounts(ctx, orgID, name)
+		if err != nil {
+			s.log.Warn("post approval", "err", err)
+			return
+		}
+		admins, err := s.st.ListVerifiedAdminAccounts(ctx, orgID, name)
+		if err != nil {
+			s.log.Warn("post approval", "err", err)
+			return
+		}
+		isAdmin := make(map[uuid.UUID]bool, len(admins))
+		for _, a := range admins {
+			isAdmin[a.ID] = true
+		}
+		for _, acc := range accounts {
+			buttons := isAdmin[acc.ID]
+			cp := build(name, buttons)
+			cp.OrgID, cp.Channel = orgID, name
+			id := acc.ID
+			cp.AccountID = &id
+			var pre func(store.ChatMessage) error
+			if buttons {
+				pre = func(m store.ChatMessage) error {
+					return s.st.LinkMessageApproval(ctx, orgID, m.ID, d.ApprovalID)
+				}
+			}
+			if _, err := s.enqueueOutPre(ctx, cp, pre); err != nil {
+				s.log.Warn("post approval", "err", err)
+				return
+			}
+		}
 	}
 }
 
@@ -461,7 +505,7 @@ func (s *Service) applyApproval(ctx context.Context, acc store.ChatAccount, msg 
 	}
 	approvalID, err := s.st.ApplyApprovalAction(ctx, msg.ID, action, inbound)
 	if err != nil {
-		if errors.Is(err, store.ErrActionAlreadyUsed) {
+		if errors.Is(err, store.ErrActionAlreadyUsed) || errors.Is(err, store.ErrApprovalAlreadyHandled) {
 			return replyAlreadyHandled, nil
 		}
 		s.auditReject(acc.Channel, acc.ExternalID, "action_consume", err)
@@ -475,6 +519,9 @@ func (s *Service) applyApproval(ctx context.Context, acc store.ChatAccount, msg 
 	_, err = callTimeout(cctx, func(c context.Context) (struct{}, error) {
 		return struct{}{}, op.ExecuteApproved(c, msg.OrgID, approvalID)
 	})
+	if errors.Is(err, operator.ErrNoLongerNeeded) {
+		return "No longer needed: the container is no longer exited, restarting or unhealthy. Nothing was sent.", nil
+	}
 	if err != nil {
 		s.log.Warn("execute approved action", "approval", approvalID, "err", err)
 		return "Approved, but the action could not be run: " + LimitRunes(stripControls(err.Error()), maxFieldRunes), nil
