@@ -255,8 +255,17 @@ func (e *Evaluator) cveWatermark(ctx context.Context, orgID uuid.UUID, now time.
 	return t
 }
 
+// cveWatermarkLag keeps the watermark behind the evaluation time. A finding's
+// first_seen is the database time when its match transaction started; that
+// transaction can commit after an evaluation already read the findings, and
+// the database clock can differ from ours. Findings in the overlap are seen
+// twice, which is harmless: the alert key is per container and CVE, and a
+// still-firing alert is not notified again.
+const cveWatermarkLag = 2 * time.Minute
+
 // commitCVEWatermark advances the watermark after a completed evaluation.
 func (e *Evaluator) commitCVEWatermark(ctx context.Context, orgID uuid.UUID, now time.Time) {
+	now = now.Add(-cveWatermarkLag)
 	e.mu.Lock()
 	if prev, ok := e.cveMark[orgID]; ok && !now.After(prev) {
 		e.mu.Unlock()

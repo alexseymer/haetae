@@ -63,7 +63,9 @@ func ruleNewCVE(snap Snapshot) []Candidate {
 		if f.Severity != store.FindingHigh && f.Severity != store.FindingCritical {
 			continue
 		}
-		fresh := isNewFinding(f, snap.CVESince)
+		// A finding with a firing alert is not new again (the watermark
+		// trails the evaluation, so it can fall in the window twice).
+		fresh := !f.Active && isNewFinding(f, snap.CVESince)
 		if !fresh && !f.Active {
 			continue
 		}
