@@ -25,6 +25,10 @@ const (
 
 // ErrNoLongerNeeded is returned by ExecuteApproved when the container is no
 // longer exited, restarting or unhealthy at approval time.
+// ErrAlreadyHandled is returned by ExecuteApproved when another press (or a
+// decline) got to the proposal first.
+var ErrAlreadyHandled = errors.New("operator: proposal was already handled")
+
 var ErrNoLongerNeeded = errors.New("operator: container is no longer exited, restarting or unhealthy")
 
 // Outcomes of an ActionDecision (in addition to the three in api.go).
@@ -220,10 +224,12 @@ func (s *Service) ExecuteApproved(ctx context.Context, orgID, approvalID uuid.UU
 		return err
 	}
 	if act.Outcome != store.ActionAwaitingApproval || act.Kind != ActionRestartContainer {
-		return errors.New("operator: proposal is not awaiting approval")
+		return ErrAlreadyHandled
 	}
 	refuse := func(msg string) error {
-		_ = s.cfg.Store.RefuseAwaitingAction(ctx, orgID, approvalID, msg)
+		if err := s.cfg.Store.RefuseAwaitingAction(ctx, orgID, approvalID, msg); err != nil {
+			s.cfg.Log.Warn("operator: could not mark the proposal refused", "err", err)
+		}
 		return errors.New("operator: " + msg)
 	}
 	if s.cfg.Now().Sub(act.CreatedAt) > approvalTTL {
@@ -242,7 +248,9 @@ func (s *Service) ExecuteApproved(ctx context.Context, orgID, approvalID uuid.UU
 	// An approval can come up to approvalTTL after the proposal: the evidence
 	// it was based on may be stale, so check the container's state now.
 	if !stateShowsUnhealthy(ct.State, ct.Health) {
-		_ = s.cfg.Store.RefuseAwaitingAction(ctx, orgID, approvalID, "container is no longer exited, restarting or unhealthy")
+		if err := s.cfg.Store.RefuseAwaitingAction(ctx, orgID, approvalID, "container is no longer exited, restarting or unhealthy"); err != nil {
+			s.cfg.Log.Warn("operator: could not mark the stale proposal refused", "err", err)
+		}
 		return ErrNoLongerNeeded
 	}
 
@@ -260,7 +268,7 @@ func (s *Service) ExecuteApproved(ctx context.Context, orgID, approvalID uuid.UU
 	s.actMu.Unlock()
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return errors.New("operator: proposal is not awaiting approval")
+			return ErrAlreadyHandled
 		}
 		return err
 	}

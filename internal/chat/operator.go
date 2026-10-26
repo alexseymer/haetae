@@ -545,6 +545,9 @@ func (s *Service) applyApproval(ctx context.Context, acc store.ChatAccount, msg 
 	_, err = callTimeout(cctx, func(c context.Context) (struct{}, error) {
 		return struct{}{}, op.ExecuteApproved(c, msg.OrgID, approvalID)
 	})
+	if errors.Is(err, operator.ErrAlreadyHandled) {
+		return "Already handled.", nil
+	}
 	if errors.Is(err, operator.ErrNoLongerNeeded) {
 		return "No longer needed: the container is no longer exited, restarting or unhealthy. Nothing was sent.", nil
 	}

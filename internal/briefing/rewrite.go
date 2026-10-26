@@ -134,7 +134,7 @@ func briefingPreserves(ruleText, aiText string) bool {
 			}
 			continue
 		}
-		if !strings.Contains(aiText, t) {
+		if !aiTokens[t] { // whole tokens: "host-1" must not satisfy "host-10"
 			return false
 		}
 	}
@@ -156,12 +156,18 @@ func words(s string) map[string]bool {
 	return out
 }
 
-// stateWordsKept reports whether every state word of the rule text is also in
-// the AI text.
+// stateWordsKept reports whether the state words of the AI text are exactly
+// those of the rule text: none dropped ("offline" becoming "online") and none
+// added ("is offline" becoming "is not offline", or an invented "critical").
 func stateWordsKept(ruleText, aiText string) bool {
-	ai := words(aiText)
-	for w := range words(ruleText) {
+	ai, rule := words(aiText), words(ruleText)
+	for w := range rule {
 		if stateWords[w] && !ai[w] {
+			return false
+		}
+	}
+	for w := range ai {
+		if stateWords[w] && !rule[w] {
 			return false
 		}
 	}
@@ -181,11 +187,15 @@ func noNewFacts(ruleText, aiText string) bool {
 			return false
 		}
 	}
+	ruleTokens := map[string]bool{}
+	for _, t := range tokens(ruleText) {
+		ruleTokens[t] = true
+	}
 	for _, t := range tokens(aiText) {
 		if isNumber(t) || !strings.ContainsAny(t, "._:/-0123456789") {
 			continue
 		}
-		if !strings.Contains(ruleText, t) {
+		if !ruleTokens[t] { // whole tokens: "host-1" is not "host-10"
 			return false
 		}
 	}

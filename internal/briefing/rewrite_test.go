@@ -113,6 +113,11 @@ func TestBriefingPreservesStateAndNoNewFacts(t *testing.T) {
 		want           bool
 	}{
 		{"inverted offline", "2 hosts offline", "2 hosts online", false},
+		{"negation added", "host-1 is offline", "host-1 is not offline", false},
+		{"invented severity", "1 host offline", "1 host offline, critical", false},
+		{"identifier prefix spoof", "host-10 offline", "host-1 offline", false},
+		{"identifier superstring spoof", "host-1 offline", "host-10 offline", false},
+		{"trailing punctuation is fine", "api exited", "api exited.", true},
 		{"inverted not running", "3 not running", "all running", false},
 		{"extra number", "2 hosts, 5 containers", "2 hosts, 5 containers, 7 alerts", false},
 		{"new identifier", "api crash-looping", "api crash-looping on web-9", false},
