@@ -141,6 +141,19 @@ func (l *Launcher) Run(ctx context.Context, req LaunchRequest) LaunchResult {
 		cmd.Env = env
 		// New process group so timeout can kill the whole tree.
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		// On timeout kill the whole group, not just the helper: a surviving
+		// child keeps the output pipes open and would block Wait for as long
+		// as it lives. WaitDelay bounds that wait regardless.
+		cmd.Cancel = func() error {
+			if cmd.Process == nil {
+				return nil
+			}
+			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+				return cmd.Process.Kill()
+			}
+			return nil
+		}
+		cmd.WaitDelay = 2 * time.Second
 		return cmd
 	}
 

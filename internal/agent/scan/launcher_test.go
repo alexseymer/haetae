@@ -202,3 +202,26 @@ func TestParseBytes(t *testing.T) {
 		t.Fatalf("%d %v", n, err)
 	}
 }
+
+// The helper's child must not outlive a timeout: it holds the output pipes,
+// and Wait would block until it exits.
+func TestLauncherTimeoutKillsChildren(t *testing.T) {
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "haetae-inventory")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\nsleep 30\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l := NewLauncher()
+	l.HelperPath = shim
+	l.Timeout = 500 * time.Millisecond
+	l.CgroupRoot = filepath.Join(dir, "cg")
+	mustFakeCgroup(t, l.CgroupRoot, "oom_kill 0\n", "1")
+	start := time.Now()
+	res := l.Run(context.Background(), LaunchRequest{DockerImage: "sha256:" + strings.Repeat("c", 64)})
+	if res.Status != StatusTimeout {
+		t.Fatalf("status=%s err=%s", res.Status, res.Error)
+	}
+	if d := time.Since(start); d > 6*time.Second {
+		t.Fatalf("timeout took %s; a child kept the pipe open", d)
+	}
+}
