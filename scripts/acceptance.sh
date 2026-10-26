@@ -38,6 +38,7 @@ step security-e2e     make test-security
 step operator-e2e     make test-operator
 if grep -q '^release:' Makefile; then
   step release        make release
+  step release-image  make release-image
   step release-verify make test-release
   step release-rss    make bench-release-rss
 fi

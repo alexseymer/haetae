@@ -56,7 +56,10 @@ func TestAgentRSSWithScanSecurity(t *testing.T) {
 	}
 
 	e := newBenchEnv(t)
-	docker(t, "pull", "-q", "busybox:1.37")
+	// Pull only when missing: anonymous Docker Hub pulls are rate limited.
+	if err := exec.Command("docker", "image", "inspect", "busybox:1.37").Run(); err != nil {
+		docker(t, "pull", "-q", "busybox:1.37")
+	}
 	label := "haetae-m7-rss=" + uuid.NewString()[:8]
 	for i := range rssContainers {
 		docker(t, "run", "-d", "--rm", "--name", fmt.Sprintf("haetae-m7-rss-%d-%s", i, label[len(label)-8:]),
