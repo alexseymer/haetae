@@ -131,8 +131,13 @@ compose() {
 # Create the user settings file once; never overwrite it (it may hold tokens).
 create_user_env() {
 	mkdir -p "$HAETAE_DIR"
+	if [ -L "$HAETAE_DIR/haetae.env" ]; then
+		die "haetae: $HAETAE_DIR/haetae.env must not be a symbolic link"
+	fi
 	if [ ! -e "$HAETAE_DIR/haetae.env" ]; then
-		: >"$HAETAE_DIR/haetae.env"
+		# Created private from the start (no window at the default umask);
+		# the redirect below keeps the mode of the existing file.
+		( umask 077 && : >"$HAETAE_DIR/haetae.env" )
 		chmod 0600 "$HAETAE_DIR/haetae.env"
 		cat >"$HAETAE_DIR/haetae.env" <<'USERENV'
 # Haetae server settings. Uncomment and edit, then run: sh install-server.sh

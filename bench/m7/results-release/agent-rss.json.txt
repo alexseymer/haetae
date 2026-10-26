@@ -1,1 +1,1 @@
-MEASURE M7 agent RSS over 3m0s with 4 containers (scan+security active): max 18.69 MiB, mean 18.10 MiB, peak (VmHWM) 18.69 MiB, budget 50.00 MiB, samples 180, host_containers_seen 5
+MEASURE M7 agent RSS over 3m0s with 4 containers (scan+security active): max 18.44 MiB, mean 17.89 MiB, peak (VmHWM) 18.57 MiB, budget 50.00 MiB, samples 180, host_containers_seen 5
