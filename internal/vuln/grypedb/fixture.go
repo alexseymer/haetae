@@ -3,6 +3,7 @@ package grypedb
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -202,7 +203,7 @@ func stampBuilt(dir string, built time.Time) error {
 		return fmt.Errorf("grypedb: open for stamp: %w", err)
 	}
 	defer func() { _ = db.Close() }()
-	if _, err := db.Exec("UPDATE db_metadata SET build_timestamp = ?", built.UTC().Round(time.Second)); err != nil {
+	if _, err := db.ExecContext(context.Background(), "UPDATE db_metadata SET build_timestamp = ?", built.UTC().Round(time.Second)); err != nil {
 		return fmt.Errorf("grypedb: stamp build time: %w", err)
 	}
 	return nil
