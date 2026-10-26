@@ -81,7 +81,24 @@ Record exit code, `OOMKilled`, wall time, helper `peakRssBytes` when JSON is pro
 
 Grype DB built-at: **2026-10-25T06:27:34Z**. Comparison does **not** hide poor agreement.
 
-### Summary table
+### Summary table (after the source-package fix, 2026-10-26)
+
+The first run (table further below) exposed a matcher bug: the compact SBOM handed Grype only binary package names, but Debian, Ubuntu, Alpine and RHEL advisories are keyed by **source** package (`pam`, not `libpam-modules`). `internal/vuln/grypedb` now reads Syft's `upstream=` PURL qualifier into `Package.Upstreams` (regression test `TestMatchUsesUpstreamSourcePackage`). Same SBOMs, same Grype DB, same Trivy results, re-matched:
+
+| Image | Band | Grype \|set\| | Trivy \|set\| | ∩ | Jaccard (before → after) |
+|---|---|---|---|---|---|
+| `debian:12-slim` | all | 222 | 229 | 222 | 0.127 → **0.969** |
+| | ≥ medium | 144 | 144 | 139 | 0.097 → **0.933** |
+| `ubuntu:24.04` | all | 74 | 26 | 26 | 0.129 → **0.351** |
+| | ≥ medium | 65 | 22 | 22 | 0.154 → **0.339** |
+| `alpine:3.20` | all | 2 | 2 | 2 | 0.500 → **1.000** |
+| | ≥ medium | 0 | 0 | 0 | 1.000 → **1.000** |
+| `node:22-bookworm` | all | 4574 | 4609 | 4553 | 0.059 → **0.983** |
+| | ≥ medium | 2531 | 2679 | 2193 | 0.036 → **0.727** |
+
+**Reading (after):** Debian-based images and Alpine now agree closely. On Ubuntu every Trivy finding is also found by Grype; Grype reports more: every sampled Grype-only finding has no fixed version yet (unfixed in Ubuntu, e.g. CVE-2024-10041 in the pam packages), which this Trivy run does not list. The remaining ≥ medium gap on Node is mostly severity mapping (Grype "unknown"/"low" vs Trivy "medium" for kernel headers in `linux-libc-dev`), not missing matches. Raw data: `bench/m7/results/grype-trivy-v2.json`.
+
+### Summary table (first run, before the fix)
 
 | Image | Grype raw | Trivy raw | Band | Grype \|set\| | Trivy \|set\| | ∩ | only Grype | only Trivy | Jaccard |
 |---|---|---|---|---|---|---|---|---|---|
@@ -94,7 +111,7 @@ Grype DB built-at: **2026-10-25T06:27:34Z**. Comparison does **not** hide poor a
 | `node:22-bookworm` | 293 | 4610 | all | 292 | 4609 | 271 | 21 | 4338 | **0.059** |
 | | | | ≥ medium | 139 | 2679 | 97 | 42 | 2582 | **0.036** |
 
-**Reading:** On Debian/Ubuntu/Node, Trivy’s `(CVE, package)` set is much larger than Grype’s; almost every Grype finding on debian:12-slim appears in Trivy, but Trivy adds hundreds of extras (often unfixed / `will_not_fix`, severity mapping, or kernel meta-packages like `linux-libc-dev` on Node). Alpine ≥ medium agrees vacuously (both empty). **Do not treat the two scanners as interchangeable for counts or “clean” images.**
+**Reading (first run, superseded):** the gap below was mostly the missing source-package mapping, not a scanner policy difference. Original note: On Debian/Ubuntu/Node, Trivy’s `(CVE, package)` set is much larger than Grype’s; almost every Grype finding on debian:12-slim appears in Trivy, but Trivy adds hundreds of extras (often unfixed / `will_not_fix`, severity mapping, or kernel meta-packages like `linux-libc-dev` on Node). Alpine ≥ medium agrees vacuously (both empty). **Do not treat the two scanners as interchangeable for counts or “clean” images.**
 
 ### Disagreement samples (≤10 per image)
 

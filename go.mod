@@ -6,6 +6,7 @@ require (
 	connectrpc.com/connect v1.21.1
 	github.com/anchore/clio v0.1.1
 	github.com/anchore/grype v0.121.0
+	github.com/anchore/packageurl-go v0.2.0
 	github.com/anchore/stereoscope v0.3.4
 	github.com/anchore/syft v1.55.0
 	github.com/coder/websocket v1.8.14
@@ -62,7 +63,6 @@ require (
 	github.com/anchore/go-struct-converter v0.2.0-rc2 // indirect
 	github.com/anchore/go-sync v0.1.2 // indirect
 	github.com/anchore/go-version v1.2.2-0.20210903204242-51efa5b487c4 // indirect
-	github.com/anchore/packageurl-go v0.2.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v17 v17.0.1 // indirect

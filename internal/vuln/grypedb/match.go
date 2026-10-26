@@ -6,6 +6,7 @@ package grypedb
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/anchore/grype/grype/matcher"
 	grypePkg "github.com/anchore/grype/grype/pkg"
 	"github.com/anchore/grype/grype/vulnerability"
+	"github.com/anchore/packageurl-go"
 	syftPkg "github.com/anchore/syft/syft/pkg"
 )
 
@@ -153,15 +155,63 @@ func packagesFromSbom(sbom Sbom, d *distro.Distro) []grypePkg.Package {
 			continue
 		}
 		out = append(out, grypePkg.Package{
-			ID:      grypePkg.ID(fmt.Sprintf("%d-%s@%s", i, p.Name, p.Version)),
-			Name:    p.Name,
-			Version: p.Version,
-			Type:    mapPkgType(p.Type, p.PURL),
-			PURL:    p.PURL,
-			Distro:  d,
+			ID:        grypePkg.ID(fmt.Sprintf("%d-%s@%s", i, p.Name, p.Version)),
+			Name:      p.Name,
+			Version:   p.Version,
+			Type:      mapPkgType(p.Type, p.PURL),
+			PURL:      p.PURL,
+			Distro:    d,
+			Upstreams: upstreamsFromPURL(p.Name, p.PURL),
 		})
 	}
 	return out
+}
+
+// upstreamsFromPURL reads the source package from Syft's "upstream" PURL
+// qualifier. Distro advisories (Debian, Ubuntu, Alpine, RHEL) are keyed by
+// source package (pam, not libpam-modules), so without it most OS package
+// matches are missed. Mirrors grype's unexported purl provider logic.
+func upstreamsFromPURL(name, purl string) []grypePkg.UpstreamPackage {
+	if purl == "" {
+		return nil
+	}
+	pu, err := packageurl.FromString(purl)
+	if err != nil {
+		return nil
+	}
+	var out []grypePkg.UpstreamPackage
+	for _, q := range pu.Qualifiers {
+		if q.Key != syftPkg.PURLQualifierUpstream || q.Value == "" {
+			continue
+		}
+		var up grypePkg.UpstreamPackage
+		if pu.Type == packageurl.TypeRPM {
+			up = upstreamFromSourceRPM(q.Value)
+		} else {
+			srcName, srcVer, _ := strings.Cut(q.Value, "@")
+			up = grypePkg.UpstreamPackage{Name: srcName, Version: srcVer}
+		}
+		if up.Name == "" || up.Name == name || slices.Contains(out, up) {
+			continue
+		}
+		out = append(out, up)
+	}
+	return out
+}
+
+// upstreamFromSourceRPM splits "name-version-release.src.rpm"; grype only
+// uses the upstream when both name and version are known.
+func upstreamFromSourceRPM(src string) grypePkg.UpstreamPackage {
+	s := strings.TrimSuffix(strings.TrimSuffix(src, ".rpm"), ".src")
+	rel := strings.LastIndex(s, "-")
+	if rel <= 0 {
+		return grypePkg.UpstreamPackage{}
+	}
+	ver := strings.LastIndex(s[:rel], "-")
+	if ver <= 0 {
+		return grypePkg.UpstreamPackage{}
+	}
+	return grypePkg.UpstreamPackage{Name: s[:ver], Version: s[ver+1:]}
 }
 
 func mapPkgType(t, purl string) syftPkg.Type {
