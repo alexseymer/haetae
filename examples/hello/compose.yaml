@@ -1,0 +1,13 @@
+# A tiny web page served by nginx, for trying Haetae deploys.
+# Service name: web. Container port: 80. Published on host port 8088.
+services:
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8088:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 2s
+      retries: 10

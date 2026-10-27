@@ -7,7 +7,9 @@ import { Badge } from "../components/Badge";
 import { DeployHistory } from "../components/DeployHistory";
 import { DeployLogViewer } from "../components/DeployLogViewer";
 import { DeployResult } from "../components/DeployResult";
+import { InfoTip } from "../components/InfoTip";
 import { Modal } from "../components/Modal";
+import { PageHeader } from "../components/PageHeader";
 import { PhaseStepper } from "../components/PhaseStepper";
 import { ProjectForm } from "../components/ProjectForm";
 import {
@@ -16,6 +18,7 @@ import {
   sourceSummary,
 } from "../lib/deploy";
 import { usePolling } from "../hooks/usePolling";
+import { INTROS } from "../lib/help";
 
 export function ProjectPage() {
   const { id = "" } = useParams();
@@ -198,70 +201,86 @@ export function ProjectPage() {
 
       {project ? (
         <>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <div>
-              <h1 style={{ margin: 0 }}>{project.name}</h1>
-              <p className="muted mono">{sourceSummary(project.source)}</p>
-              {project.domain ? (
-                <p>
-                  {domainLink ? (
-                    <a href={domainLink} rel="noopener noreferrer" target="_blank">
-                      {project.domain}
-                    </a>
-                  ) : (
-                    project.domain
-                  )}
-                </p>
-              ) : null}
-            </div>
-            {isAdmin ? (
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={deploying}
-                  onClick={() => void onDeployNow()}
-                >
-                  {deploying ? "Starting…" : "Deploy now"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setEditError(null);
-                    setEditOpen(true);
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setRemoveForce(false);
-                    setShowForce(false);
-                    setRemoveError(null);
-                    setRemoveOpen(true);
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <PageHeader
+            title={project.name}
+            intro={INTROS.project}
+            actions={
+              isAdmin && !editOpen ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={deploying}
+                    onClick={() => void onDeployNow()}
+                  >
+                    {deploying ? "Starting…" : "Deploy now"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setEditError(null);
+                      setEditOpen(true);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setRemoveForce(false);
+                      setShowForce(false);
+                      setRemoveError(null);
+                      setRemoveOpen(true);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </>
+              ) : null
+            }
+          />
+          <p className="muted mono">{sourceSummary(project.source)}</p>
+          {project.domain ? (
+            <p>
+              {domainLink ? (
+                <a href={domainLink} rel="noopener noreferrer" target="_blank">
+                  {project.domain}
+                </a>
+              ) : (
+                project.domain
+              )}
+            </p>
+          ) : null}
 
+          {editOpen ? (
+            <ProjectForm
+              mode="edit"
+              project={project}
+              inlineCompose={inlineCompose}
+              serverError={editError}
+              submitting={editSubmitting}
+              onClose={() => setEditOpen(false)}
+              onSubmit={onEdit}
+            />
+          ) : (
+            <>
           {project.source.kind === "git" && isAdmin ? (
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={project.autoDeploy}
-                onChange={() => void onToggleAuto()}
-              />{" "}
-              Auto-deploy
-              {project.autoDeploy ? (
-                <Badge variant="info">On</Badge>
-              ) : null}
-            </label>
+            <div className="row checkbox-row">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={project.autoDeploy}
+                  onChange={() => void onToggleAuto()}
+                />{" "}
+                Auto-deploy
+                {project.autoDeploy ? (
+                  <Badge variant="info">On</Badge>
+                ) : null}
+              </label>
+              <InfoTip term="autoDeploy" />
+            </div>
           ) : project.autoDeploy ? (
             <Badge variant="info">Auto-deploy</Badge>
           ) : null}
@@ -296,25 +315,19 @@ export function ProjectPage() {
               />
             </div>
           ) : null}
+            </>
+          )}
         </>
       ) : !error ? (
         <p className="muted">Loading…</p>
       ) : null}
 
-      <ProjectForm
-        open={editOpen}
-        mode="edit"
-        project={project}
-        inlineCompose={inlineCompose}
-        serverError={editError}
-        submitting={editSubmitting}
-        onClose={() => setEditOpen(false)}
-        onSubmit={onEdit}
-      />
-
       <Modal title="Remove project" open={removeOpen} onClose={() => setRemoveOpen(false)}>
         <div className="stack">
-          <p>Stops the containers. Volumes and data are kept.</p>
+          <p>
+            Remove <strong>{project?.name}</strong>? Stops the containers. Volumes and data
+            are kept.
+          </p>
           {showForce ? (
             <label className="checkbox">
               <input

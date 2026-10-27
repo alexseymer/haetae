@@ -7,10 +7,14 @@ import {
 } from "react";
 import { ApiError, api } from "../api/client";
 import type { ChatMessage } from "../api/m6Types";
+import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
 import { usePolling } from "../hooks/usePolling";
 import { isSafeEvidencePath } from "../lib/evidenceLink";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 
 export function ChatPage() {
   const { user } = useAuth();
@@ -25,6 +29,8 @@ export function ChatPage() {
   const [usedActions, setUsedActions] = useState<Record<string, true>>({});
   const [actionReplies, setActionReplies] = useState<Record<string, string>>({});
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [noChannel, setNoChannel] = useState(false);
+  const [aiOff, setAiOff] = useState(false);
 
   const mountedRef = useRef(true);
   const genRef = useRef(0);
@@ -37,6 +43,22 @@ export function ChatPage() {
     return () => {
       mountedRef.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    // Best effort: only used to suggest linking a channel.
+    void api
+      .chatAccounts()
+      .then((res) => {
+        if (mountedRef.current) setNoChannel(res.accounts.length === 0);
+      })
+      .catch(() => undefined);
+    void api
+      .operatorSettings()
+      .then((res) => {
+        if (mountedRef.current) setAiOff(!res.available);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -134,7 +156,22 @@ export function ChatPage() {
 
   return (
     <div className="page chat-page">
-      <h1>Chat</h1>
+      <PageHeader title="Chat" intro={INTROS.chat} />
+
+      {aiOff ? (
+        <p className="muted" role="note">
+          The AI operator is off, so questions get a fixed reply and rule-based alerts keep
+          running. <Link to="/settings?tab=operator">See how to turn it on</Link>.
+        </p>
+      ) : null}
+
+      {noChannel ? (
+        <p className="muted" role="note">
+          No chat channel is linked to your account yet, so incident messages only show up here.{" "}
+          <Link to="/settings?tab=chat">Link Telegram, Slack, email or Signal</Link> to get them
+          in your chat app too.
+        </p>
+      ) : null}
 
       {error ? (
         <div className="app-error" role="alert" aria-live="assertive">
@@ -144,7 +181,10 @@ export function ChatPage() {
 
       <div className="chat-log card" role="log" aria-live="polite" ref={listRef}>
         {messages.length === 0 && !error ? (
-          <p className="muted">No messages yet.</p>
+          <EmptyState title="No messages yet">
+            Incident reports and the daily briefing appear here. You can also ask a question
+            below, for example "why was shop slow at lunchtime?".
+          </EmptyState>
         ) : null}
         {messages.map((m) => {
           const kindClass =
@@ -227,7 +267,7 @@ export function ChatPage() {
 
       <form className="chat-composer card" onSubmit={(e) => void onSend(e)}>
         <div className="field">
-          <label htmlFor="chat-body">Message</label>
+          <label htmlFor="chat-body">Ask the operator</label>
           <textarea
             id="chat-body"
             name="body"

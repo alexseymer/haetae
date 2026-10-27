@@ -27,7 +27,7 @@ describe("ProjectForm", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
-      <ProjectForm open mode="create" onClose={() => {}} onSubmit={onSubmit} />,
+      <ProjectForm mode="create" onClose={() => {}} onSubmit={onSubmit} />,
     );
     expect(screen.getByRole("note")).toHaveTextContent(/root access/);
 
@@ -72,7 +72,6 @@ describe("ProjectForm", () => {
     const onSubmit = vi.fn();
     render(
       <ProjectForm
-        open
         mode="edit"
         project={project}
         onClose={() => {}}
@@ -88,14 +87,14 @@ describe("ProjectForm", () => {
     expect(token).toHaveAttribute("autocomplete", "off");
     expect(token).toHaveValue("");
 
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const patch = onSubmit.mock.calls[0]![0].patch;
     expect(patch.source.gitToken).toBeUndefined();
 
     onSubmit.mockClear();
     await user.type(token, "new-token");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0]![0].patch.source.gitToken).toBe("new-token");
   });
@@ -105,7 +104,6 @@ describe("ProjectForm", () => {
     const onSubmit = vi.fn();
     render(
       <ProjectForm
-        open
         mode="edit"
         project={project}
         onClose={() => {}}
@@ -113,7 +111,7 @@ describe("ProjectForm", () => {
       />,
     );
     await user.click(screen.getByRole("checkbox", { name: /Remove token/i }));
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0]![0].patch.source.gitToken).toBe("");
   });

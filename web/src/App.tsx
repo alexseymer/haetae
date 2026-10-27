@@ -6,6 +6,7 @@ import { Layout } from "./components/Layout";
 import { ChatPage } from "./pages/Chat";
 import { DeployPage } from "./pages/Deploy";
 import { HostPage } from "./pages/Host";
+import { HelpPage } from "./pages/Help";
 import { HostsPage } from "./pages/Hosts";
 import { IncidentDetailPage } from "./pages/IncidentDetail";
 import { IncidentsPage } from "./pages/Incidents";
@@ -122,6 +123,7 @@ export function App() {
         <Route path="/projects/:id" element={<ProjectPage />} />
         <Route path="/deploys/:id" element={<DeployPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/help" element={<HelpPage />} />
       </Route>
       <Route
         path="*"

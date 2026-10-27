@@ -18,9 +18,13 @@ import type {
 } from "../api/types";
 import { Badge, OnlineBadge } from "../components/Badge";
 import { Chart } from "../components/Chart";
+import { EmptyState } from "../components/EmptyState";
+import { InfoTip } from "../components/InfoTip";
 import { Modal } from "../components/Modal";
+import { PageHeader } from "../components/PageHeader";
 import { useAuth } from "../auth";
 import { usePolling } from "../hooks/usePolling";
+import { INTROS } from "../lib/help";
 import { formatDateTime, formatPercent, formatRelativeTime, withheldPercent } from "../lib/format";
 import { HostDeployTab } from "./HostDeployTab";
 import { HostSecurityTab } from "./HostSecurityTab";
@@ -326,30 +330,36 @@ export function HostPage() {
       ) : null}
       {host ? (
         <>
-          <div className="row" style={{ marginBottom: "0.5rem" }}>
-            <h1 style={{ margin: 0 }}>{host.name}</h1>
-            <OnlineBadge online={host.connected} />
-            {openIncidentCount > 0 ? (
-              <Link to="/incidents" className="incident-count-badge">
-                {openIncidentCount} open{" "}
-                {openIncidentCount === 1 ? "incident" : "incidents"}
-              </Link>
-            ) : null}
-            {isAdmin ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ marginLeft: "auto" }}
-                onClick={() => {
-                  setRemoveError(null);
-                  setRemoveOpen(true);
-                }}
-              >
-                Remove host
-              </button>
-            ) : null}
-          </div>
-          <p className="muted">
+          <PageHeader
+            title={host.name}
+            intro="One server: its health, containers, logs, deploys and security."
+            meta={
+              <>
+                <OnlineBadge online={host.connected} />
+                {openIncidentCount > 0 ? (
+                  <Link to="/incidents" className="incident-count-badge">
+                    {openIncidentCount} open{" "}
+                    {openIncidentCount === 1 ? "incident" : "incidents"}
+                  </Link>
+                ) : null}
+              </>
+            }
+            actions={
+              isAdmin ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setRemoveError(null);
+                    setRemoveOpen(true);
+                  }}
+                >
+                  Remove host
+                </button>
+              ) : null
+            }
+          />
+          <p className="muted host-facts">
             {host.hostname} · {host.os} / {host.kernel} / {host.arch} · Docker{" "}
             {host.dockerVersion} · agent {host.agentVersion}
           </p>
@@ -424,6 +434,7 @@ export function HostPage() {
           id="panel-overview"
           aria-labelledby="tab-overview"
         >
+          <p className="tab-intro">{INTROS.hostOverview}</p>
           <div className="range-select" role="group" aria-label="Time range">
             {RANGES.map((r) => (
               <button
@@ -523,7 +534,10 @@ export function HostPage() {
             />
           </div>
           <div className="card">
-            <h2>Log pipeline</h2>
+            <div className="row heading-row">
+              <h2>Log pipeline</h2>
+              <InfoTip term="logTemplates" />
+            </div>
             {logStats ? (
               <div className="stat-grid">
                 <div className="stat">
@@ -531,7 +545,9 @@ export function HostPage() {
                   <div className="stat-value">{logStats.linesIn}</div>
                 </div>
                 <div className="stat">
-                  <div className="stat-label">Withheld</div>
+                  <div className="stat-label">
+                    Withheld <InfoTip term="withheld" />
+                  </div>
                   <div className="stat-value">
                     {formatPercent(withheldPercent(logStats.linesIn, logStats.linesSkipped))}
                   </div>
@@ -550,7 +566,7 @@ export function HostPage() {
                 </div>
               </div>
             ) : (
-              <p className="muted">No pipeline stats yet.</p>
+              <p className="muted">No pipeline stats yet. They appear once the agent has read some log lines.</p>
             )}
           </div>
         </div>
@@ -563,6 +579,7 @@ export function HostPage() {
           id="panel-containers"
           aria-labelledby="tab-containers"
         >
+          <p className="tab-intro">{INTROS.hostContainers}</p>
           <div className="range-select" role="group" aria-label="Time range">
             {RANGES.map((r) => (
               <button
@@ -577,7 +594,10 @@ export function HostPage() {
             ))}
           </div>
           {byStack.length === 0 ? (
-            <div className="empty-state">No containers.</div>
+            <EmptyState title="No containers yet">
+              Containers appear here once they run on this host. Start a Compose app on the
+              server, or deploy one from the Deploy tab.
+            </EmptyState>
           ) : (
             byStack.map(([stack, list]) => (
               <div key={stack}>
@@ -729,6 +749,9 @@ export function HostPage() {
 
       {tab === "logs" ? (
         <div className="stack" role="tabpanel" id="panel-logs" aria-labelledby="tab-logs">
+          <p className="tab-intro">
+            {INTROS.hostLogs} <InfoTip term="logTemplates" />
+          </p>
           <div className="field" style={{ maxWidth: 240 }}>
             <label htmlFor="log-level">Minimum level</label>
             <select
@@ -748,7 +771,11 @@ export function HostPage() {
             </div>
           ) : null}
           {events.length === 0 && !logsError ? (
-            <div className="empty-state">No events</div>
+            <EmptyState title="No log events at this level">
+              {logLevel === "all"
+                ? "Nothing has been logged on this host recently. New lines appear here within seconds."
+                : "Nothing at this level yet. Warnings and errors appear here when containers log them; choose a lower level to see more."}
+            </EmptyState>
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }} className="stack">
               {[...events]

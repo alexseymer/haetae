@@ -3,9 +3,13 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { AlertDetail, IncidentSummary } from "../api/m6Types";
 import { useAuth } from "../auth";
+import { EmptyState } from "../components/EmptyState";
+import { InfoTip } from "../components/InfoTip";
+import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { evidenceToText } from "../lib/evidenceText";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 
 export function IncidentDetailPage() {
   const { id = "" } = useParams();
@@ -78,10 +82,16 @@ export function IncidentDetailPage() {
 
       {incident ? (
         <>
-          <div className="row" style={{ marginBottom: "0.5rem" }}>
-            <h1 style={{ margin: 0 }}>{incident.title}</h1>
-            <SeverityBadge severity={incident.severity} />
-          </div>
+          <PageHeader
+            title={incident.title}
+            intro={INTROS.incidentDetail}
+            meta={
+              <>
+                <SeverityBadge severity={incident.severity} />
+                <InfoTip term="severity" />
+              </>
+            }
+          />
           <p className="muted">
             Host{" "}
             <Link to={`/hosts/${incident.hostId}`}>{incident.hostName || incident.hostId}</Link>
@@ -104,6 +114,10 @@ export function IncidentDetailPage() {
           {isAdmin && incident.state === "open" ? (
             <section className="card" style={{ marginBottom: "1.5rem" }}>
               <h2>Mute host</h2>
+              <p className="muted">
+                A mute stops notifications for this host for a while. Its alerts are still
+                recorded and shown.
+              </p>
               <form onSubmit={(e) => void onMute(e)} className="row">
                 <div className="field" style={{ marginBottom: 0 }}>
                   <label htmlFor="mute-days">Days</label>
@@ -135,9 +149,14 @@ export function IncidentDetailPage() {
             </section>
           ) : null}
 
-          <h2>Alerts</h2>
+          <div className="row heading-row">
+            <h2>Alerts</h2>
+            <InfoTip term="alert" />
+          </div>
           {alerts.length === 0 ? (
-            <p className="muted">No alerts on this incident.</p>
+            <EmptyState title="No alerts on this incident">
+              Alerts that belong to this incident are listed here.
+            </EmptyState>
           ) : (
             <div className="stack">
               {alerts.map((a) => {

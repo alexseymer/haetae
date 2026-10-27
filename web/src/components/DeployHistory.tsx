@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Deploy } from "../api/types";
 import { Badge } from "./Badge";
+import { EmptyState } from "./EmptyState";
+import { InfoTip } from "./InfoTip";
 import { Modal } from "./Modal";
 import {
   canRollback,
@@ -49,7 +51,13 @@ export function DeployHistory({
   };
 
   if (deploys.length === 0) {
-    return <div className="empty-state">No deploys yet.</div>;
+    return (
+      <EmptyState title="No deploys yet">
+        {isAdmin
+          ? "Press Deploy now to build and start this project on its host. The progress and build log appear here."
+          : "Deploys appear here once an admin starts one."}
+      </EmptyState>
+    );
   }
 
   return (
@@ -64,7 +72,9 @@ export function DeployHistory({
               <th>Started</th>
               <th>Duration</th>
               <th>URL</th>
-              <th>Actions</th>
+              <th>
+                Actions <InfoTip term="rollback" />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -148,6 +158,9 @@ export function DeployHistory({
                 <span className="muted"> ({confirm.commit})</span>
               ) : null}
               ?
+            </p>
+            <p className="muted">
+              This starts a new deploy of that earlier version. Volumes and data are kept.
             </p>
             {err ? (
               <div className="app-error" role="alert">

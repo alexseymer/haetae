@@ -13,8 +13,8 @@ export function validateProjectName(name: string): string | null {
 }
 
 export function validateGitUrl(url: string): string | null {
-  if (!url) return "Repository URL is required";
-  if (!url.startsWith("https://")) return "Repository URL must start with https://";
+  if (!url) return "Enter the repository URL, for example https://github.com/acme/shop";
+  if (!url.startsWith("https://")) return "Repository URL must start with https:// (ssh:// and git@ addresses are not supported)";
   try {
     const u = new URL(url);
     if (u.protocol !== "https:" || !u.host || u.username || u.password) {
@@ -27,7 +27,7 @@ export function validateGitUrl(url: string): string | null {
 }
 
 export function validateGitRef(ref: string): string | null {
-  if (!ref) return "Ref is required";
+  if (!ref) return "Enter a branch name such as main, or a 40-character commit id";
   if (/^[0-9a-f]{40}$/.test(ref)) return null;
   if (
     !GIT_REF_RE.test(ref) ||
@@ -65,9 +65,9 @@ export function validateIngress(
 }
 
 export function validateInlineCompose(text: string): string | null {
-  if (!text.trim()) return "Compose file is empty";
+  if (!text.trim()) return "Paste your compose file, or switch the source to a Git repository";
   if (new TextEncoder().encode(text).length > MAX_INLINE_COMPOSE) {
-    return "Compose file is larger than 256 KiB";
+    return "Compose file is larger than 256 KiB. Shorten it or use a Git repository instead";
   }
   return null;
 }

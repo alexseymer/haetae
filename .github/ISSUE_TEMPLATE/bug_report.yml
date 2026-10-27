@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please check [docs/troubleshooting.md](https://github.com/alexseymer/haetae/blob/main/docs/troubleshooting.md) first.
+        **Security problems:** do not use this form, see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Output of `haetae-agent --version` / `haetae-server --version`, or the commit you built from."
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Built from source with deploy/install-server.sh (local image)
+        - Published image (once available)
+        - Running binaries directly
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include the steps to reproduce, the host OS and architecture, and which part is affected (server, agent, deploy, chat, security, AI operator).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Server: `docker compose --project-directory /opt/haetae logs server`. Agent: `journalctl -u haetae-agent`.
+        **Do not paste secrets** (enrollment tokens, Git or bot tokens, API keys, passwords, private keys) or personal data. Redact them first.
+      render: text
+    validations:
+      required: false
