@@ -240,11 +240,13 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=$STATE_Q
-# The agent delegates its cgroup: it moves itself into an "agent" leaf
-# (60M high / 100M max, set by the agent) and runs the inventory helper in
-# sibling leaves capped at 256M. MemoryMax covers agent plus helper.
+# The agent delegates its cgroup. It moves itself into a leaf (100M max) and
+# runs the inventory helper in sibling leaves capped at 256M. Measured on a
+# host that scanned 1-2.5 GB images: the unit total sat at about 390-400 MB
+# after the helper was already killed, mostly page cache from reading image
+# layers, and the kernel killed the agent at that limit. Hence 1G here.
 Delegate=memory pids cpu
-MemoryMax=400M
+MemoryMax=1G
 ProtectKernelModules=yes
 # CAP_NET_ADMIN and AF_NETLINK for the conntrack listener. The agent clears
 # its ambient set at start so child processes do not inherit the capability.
