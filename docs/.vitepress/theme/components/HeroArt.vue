@@ -93,16 +93,16 @@ const [cx, cy] = proj([2, 2, 1.9])
       <!-- labels -->
       <g class="hx-art__labels" font-family="JetBrains Mono, ui-monospace, monospace" font-size="18" font-weight="700">
         <g :transform="`translate(${cx - 75} ${cy - 60})`">
-          <rect width="150" height="30" fill="#050d0a" />
+          <rect width="150" height="30" fill="#0b1d3a" />
           <text x="75" y="21" text-anchor="middle" fill="#fff">control plane</text>
         </g>
         <g v-for="h in hosts" :key="'t' + h.name" :transform="`translate(${h.lx - 66} ${h.ly + 8})`">
-          <rect width="132" height="28" fill="#050d0a" />
+          <rect width="132" height="28" fill="#0b1d3a" />
           <text x="66" y="20" text-anchor="middle" fill="#fff" font-size="16">{{ h.name }}</text>
         </g>
         <g transform="translate(24 484)">
-          <rect width="236" height="28" fill="#050d0a" />
-          <path d="M10 13h34" stroke="#6ee7b7" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 6" />
+          <rect width="236" height="28" fill="#0b1d3a" />
+          <path d="M10 13h34" stroke="#8fb0ff" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 6" />
           <text x="54" y="20" fill="#fff" font-size="15" font-weight="500">outbound only, mTLS</text>
         </g>
       </g>
