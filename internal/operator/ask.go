@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -19,6 +20,12 @@ const (
 
 // Ask implements Operator.
 func (s *Service) Ask(ctx context.Context, orgID uuid.UUID, question string) (Answer, error) {
+	ans, err := s.ask(ctx, orgID, question)
+	s.logFailure("ask", err)
+	return ans, err
+}
+
+func (s *Service) ask(ctx context.Context, orgID uuid.UUID, question string) (Answer, error) {
 	if err := s.gate(ctx, orgID); err != nil {
 		return Answer{}, err
 	}
@@ -161,7 +168,13 @@ func (s *Service) complete(ctx context.Context, orgID uuid.UUID, req provider.Re
 	if err := s.gate(ctx, orgID); err != nil {
 		return provider.Response{}, err
 	}
-	cctx, cancel := context.WithTimeout(ctx, s.cfg.CallTimeout)
+	return s.call(ctx, orgID, req, s.cfg.CallTimeout)
+}
+
+// call is complete without the gate: the provider call with its own timeout
+// and the usage record.
+func (s *Service) call(ctx context.Context, orgID uuid.UUID, req provider.Request, timeout time.Duration) (provider.Response, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	resp, err := s.cfg.Provider.Complete(cctx, req)
 	if err != nil {

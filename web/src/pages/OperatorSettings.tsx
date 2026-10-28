@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { ApiError, api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
-import type { OperatorAutonomy, OperatorSettings } from "../api/operatorTypes";
+import type { OperatorAutonomy, OperatorSettings, OperatorTestResult } from "../api/operatorTypes";
 import {
   AUTONOMY_OPTIONS,
+  describeTest,
   providerStatus,
   validateTokenCap,
 } from "../lib/operatorSettings";
@@ -20,6 +21,8 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ tone: "ok" | "warn" | "fail"; text: string } | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -77,6 +80,24 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
+  const onTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r: OperatorTestResult = await api.testOperatorProvider();
+      if (mountedRef.current) setTestResult(describeTest(r));
+    } catch (err) {
+      if (mountedRef.current) {
+        setTestResult({
+          tone: "fail",
+          text: `Connection test failed: ${err instanceof ApiError ? err.message : "request failed"}.`,
+        });
+      }
+    } finally {
+      if (mountedRef.current) setTesting(false);
+    }
+  };
+
   const help = AUTONOMY_OPTIONS.find((o) => o.id === autonomy)?.help ?? "";
 
   return (
@@ -106,6 +127,23 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
           <p className="muted" data-testid="operator-provider">
             {providerStatus(data.provider)}
           </p>
+          {isAdmin && data.provider.configured ? (
+            <div className="field">
+              <div className="row label-row">
+                <button type="button" className="btn" disabled={testing} onClick={() => void onTest()}>
+                  {testing ? "Testing…" : "Test connection"}
+                </button>
+                <InfoTip term="toolCalling" />
+              </div>
+              <p
+                className={testResult?.tone === "fail" ? "field-error" : "muted"}
+                aria-live="polite"
+                data-testid="operator-test-result"
+              >
+                {testResult?.text ?? ""}
+              </p>
+            </div>
+          ) : null}
           <p className="muted" data-testid="operator-status">
             {data.available
               ? "The operator is available."

@@ -29,6 +29,70 @@ function json(body: unknown, status = 200) {
   );
 }
 
+function testStub(result: unknown, status = 200) {
+  const posts: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posts.push(url);
+        return json(result, status);
+      }
+      return json({ ...base, provider: { ...base.provider, model: "vendor/m" } });
+    }),
+  );
+  return posts;
+}
+
+describe("Test connection", () => {
+  it("shows success with latency and tool support, and shows the model", async () => {
+    const posts = testStub({ ok: true, latencyMs: 412, provider: "openai", model: "vendor/m", local: false, toolCalling: "supported" });
+    render(<OperatorSettingsSection isAdmin />);
+    expect(await screen.findByTestId("operator-provider")).toHaveTextContent("model vendor/m");
+    await userEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    const out = await screen.findByText(/Connected to openai \/ vendor\/m in 412 ms, tool calling: supported/);
+    expect(out).toHaveAttribute("aria-live", "polite");
+    expect(posts).toEqual(["/api/settings/operator/test"]);
+  });
+
+  it("warns when the model does not call tools", async () => {
+    testStub({ ok: true, latencyMs: 90, provider: "openai", model: "free/m", local: false, toolCalling: "not used by this model" });
+    render(<OperatorSettingsSection isAdmin />);
+    await userEvent.click(await screen.findByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText(/did not call tools; the operator needs a model with tool support/)).toBeInTheDocument();
+  });
+
+  it("shows the reason and hint on failure and disables the button while running", async () => {
+    let release: (r: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_u: string, init?: RequestInit) =>
+        init?.method === "POST" ? new Promise<Response>((res) => (release = res)) : json(base),
+      ),
+    );
+    render(<OperatorSettingsSection isAdmin />);
+    const btn = await screen.findByRole("button", { name: "Test connection" });
+    await userEvent.click(btn);
+    expect(await screen.findByRole("button", { name: "Testing…" })).toBeDisabled();
+    release(
+      new Response(
+        JSON.stringify({ ok: false, latencyMs: 5, provider: "openai", model: "m", local: false, toolCalling: "unknown",
+          reason: "the provider rejected the API key (HTTP 401)", hint: "Check HAETAE_AI_API_KEY." }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    expect(await screen.findByText(/the provider rejected the API key \(HTTP 401\)\. Check HAETAE_AI_API_KEY\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeEnabled();
+  });
+
+  it("is hidden from members", async () => {
+    testStub({});
+    render(<OperatorSettingsSection isAdmin={false} />);
+    await screen.findByTestId("operator-provider");
+    expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+  });
+});
+
 describe("OperatorSettingsSection", () => {
   it("shows provider, usage and status, and saves changes", async () => {
     const puts: unknown[] = [];

@@ -44,6 +44,9 @@ type Service struct {
 	// actMu serialises the rate-limit check and the audit insert of restarts,
 	// so concurrent proposals cannot exceed the per-container limit.
 	actMu sync.Mutex
+
+	failMu   sync.Mutex
+	failLast map[string]time.Time // class -> last logged failure
 }
 
 var _ Operator = (*Service)(nil)

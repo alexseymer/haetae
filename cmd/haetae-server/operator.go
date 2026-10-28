@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -49,7 +50,7 @@ func startOperator(st *store.Store, gw *gateway.Gateway, log *slog.Logger) (*ope
 	})
 	if prov != nil {
 		gateway.SetAIJudge(op)
-		log.Info("AI operator configured", "provider", prov.Name(), "local", prov.Local(),
+		log.Info("AI operator configured", "provider", prov.Name(), "model", provider.ModelOf(prov), "local", prov.Local(),
 			"note", "off for every organisation until an administrator enables it")
 	}
 	return op, operatorSettings{st: st, op: op, prov: prov}, nil
@@ -88,9 +89,20 @@ func (o operatorSettings) ProviderInfo() api.OperatorProvider {
 	if o.prov == nil {
 		return api.OperatorProvider{}
 	}
-	return api.OperatorProvider{Configured: true, Name: o.prov.Name(), Local: o.prov.Local()}
+	return api.OperatorProvider{Configured: true, Name: o.prov.Name(), Local: o.prov.Local(), Model: provider.ModelOf(o.prov)}
 }
 
 func (o operatorSettings) Available(ctx context.Context, org uuid.UUID) (bool, string) {
 	return o.op.Available(ctx, org)
+}
+
+func (o operatorSettings) TestProvider(ctx context.Context, org uuid.UUID) (api.OperatorTestResult, error) {
+	r, err := o.op.TestProvider(ctx, org)
+	if errors.Is(err, operator.ErrDisabled) {
+		return api.OperatorTestResult{}, api.ErrOperatorNotConfigured
+	}
+	if err != nil {
+		return api.OperatorTestResult{}, err
+	}
+	return api.OperatorTestResult(r), nil
 }

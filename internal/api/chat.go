@@ -429,6 +429,9 @@ func chatMessageJSON(m store.ChatMessage) map[string]any {
 	if m.AccountID != nil {
 		out["accountId"] = m.AccountID.String()
 	}
+	if m.Meta != nil {
+		out["meta"] = m.Meta
+	}
 	if m.IncidentID != nil {
 		out["incidentId"] = m.IncidentID.String()
 	}

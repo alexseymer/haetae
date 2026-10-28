@@ -71,3 +71,14 @@ func TestLinkInstructionsPerChannel(t *testing.T) {
 		}
 	}
 }
+
+func TestChatMessageJSONIncludesMeta(t *testing.T) {
+	m := store.ChatMessage{Kind: store.KindIncident, Meta: &store.ChatMeta{Severity: "critical", Title: "t", State: "open", Host: "h"}}
+	got, ok := chatMessageJSON(m)["meta"].(*store.ChatMeta)
+	if !ok || got.Title != "t" || got.Host != "h" {
+		t.Fatalf("meta: %#v", got)
+	}
+	if _, has := chatMessageJSON(store.ChatMessage{Kind: store.KindText})["meta"]; has {
+		t.Fatal("meta must be absent for non-incident messages")
+	}
+}

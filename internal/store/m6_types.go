@@ -124,6 +124,16 @@ type ChatEvidence struct {
 	Path  string `json:"path"` // app-relative, e.g. /hosts/<id>?tab=logs
 }
 
+// ChatMeta is the structured form of an incident message for the web client.
+// Links are carried in ChatMessage.Evidence. Absent for other kinds.
+type ChatMeta struct {
+	Severity string   `json:"severity"`
+	Title    string   `json:"title"`
+	State    string   `json:"state"` // open | resolved
+	Host     string   `json:"host,omitempty"`
+	Summary  []string `json:"summary,omitempty"`
+}
+
 // ChatMessage is one chat message, in either direction.
 type ChatMessage struct {
 	ID             uuid.UUID      `json:"id"`
@@ -135,6 +145,7 @@ type ChatMessage struct {
 	Body           string         `json:"body"`
 	Actions        []ChatAction   `json:"actions"`
 	Evidence       []ChatEvidence `json:"evidence"`
+	Meta           *ChatMeta      `json:"meta,omitempty"`
 	IncidentID     *uuid.UUID     `json:"incidentId,omitempty"`
 	CreatedAt      time.Time      `json:"createdAt"`
 	DeliveredAt    *time.Time     `json:"deliveredAt,omitempty"`

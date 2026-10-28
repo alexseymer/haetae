@@ -64,6 +64,11 @@ export const HELP = {
     body: "The most AI text (input plus output tokens) Haetae uses per UTC day. At the cap the operator pauses until the next day and rule-based alerts keep working. 0 means no AI use.",
     doc: "ai-operator",
   },
+  toolCalling: {
+    title: "Tool calling",
+    body: "The operator answers by asking the model to call small tools that read your hosts, metrics and logs. A model without tool support cannot do this and the operator answers \"cause not found\". Use Test connection in Settings to check your model. Free models on OpenRouter often lack it.",
+    doc: "ai-operator",
+  },
   matchingPending: {
     title: "Matching pending",
     body: "Haetae has the list of software in this container but has not checked it against the vulnerability database yet. It is not a clean result, and it retries on its own.",
@@ -141,6 +146,7 @@ export const GLOSSARY_ORDER: HelpTerm[] = [
   "severity",
   "autonomy",
   "tokenCap",
+  "toolCalling",
   "logTemplates",
   "withheld",
   "scanFailed",

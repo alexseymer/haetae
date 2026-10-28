@@ -115,8 +115,10 @@ type API struct {
 
 	linkConfirm *auth.Limiter // failed email link confirmations per user
 
-	scanMu   sync.Mutex
-	scanLast map[string]time.Time // host|container → last forced scan
+	opTestMu   sync.Mutex
+	opTestLast map[uuid.UUID]time.Time // org -> last connection test
+	scanMu     sync.Mutex
+	scanLast   map[string]time.Time // host|container → last forced scan
 }
 
 // New returns an API.
