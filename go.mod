@@ -9,7 +9,7 @@ require (
 	github.com/anchore/packageurl-go v0.2.0
 	github.com/anchore/stereoscope v0.3.4
 	github.com/anchore/syft v1.55.0
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/glebarez/go-sqlite v1.23.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
