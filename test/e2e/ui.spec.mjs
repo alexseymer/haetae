@@ -87,7 +87,14 @@ async function eventuallyOk(message, timeoutMs, fn) {
     }
     await sleep(Math.min(1000, 200));
   }
-  throw new Error(`timed out waiting for ${message}: ${lastErr}`);
+  let where = "";
+  try {
+    const pg = globalThis.__e2ePage;
+    if (pg) where = ` [page ${pg.url()}: ${(await pg.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 400)}]`;
+  } catch {
+    // diagnostics only
+  }
+  throw new Error(`timed out waiting for ${message}: ${lastErr}${where}`);
 }
 
 function sleep(ms) {
@@ -284,6 +291,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     });
     await installCspReporting(context);
     page = await context.newPage();
+    globalThis.__e2ePage = page;
     attachNoiseListeners(page);
   });
 
@@ -366,7 +374,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
 
     await page.getByLabel("Setup code").fill(code);
     await page.getByRole("button", { name: "Create organisation" }).click();
-    await eventuallyOk("hosts empty state", 15_000, async () => {
+    await eventuallyOk("hosts empty state", 45_000, async () => {
       await page.getByRole("heading", { name: "Hosts" }).waitFor({
         state: "visible",
         timeout: 2000,

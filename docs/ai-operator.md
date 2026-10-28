@@ -53,7 +53,7 @@ Administrators can press **Test connection** in **Settings**, **AI operator**. I
 
 ## Troubleshooting
 
-The reply "The operator is unavailable (<reason>); rule alerts are active." names the cause. The server log has one warning per cause per minute (`operator: AI call failed`, with `class`, `status` and `detail`; never the question or the key).
+The reply "The operator is unavailable (`<reason>`); rule alerts are active." names the cause. The server log has one warning per cause per minute (`operator: AI call failed`, with `class`, `status` and `detail`; never the question or the key).
 
 | Message (reason) | Cause | Fix |
 |---|---|---|
