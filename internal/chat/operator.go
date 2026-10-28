@@ -83,17 +83,10 @@ func unavailableReply(reason string) string {
 	return fmt.Sprintf("The operator is unavailable (%s); rule alerts are active.", reason)
 }
 
-func reasonFor(err error) string {
-	switch {
-	case errors.Is(err, operator.ErrCapped):
-		return "daily usage cap reached"
-	case errors.Is(err, operator.ErrDisabled):
-		return "turned off"
-	case errors.Is(err, context.DeadlineExceeded):
-		return "timed out"
-	}
-	return "provider unreachable"
-}
+// reasonFor turns an operator error into the reason shown to the user: the
+// operator package says what went wrong (bad key, wrong model, rate limit,
+// network, timeout) so the user can fix the setup.
+func reasonFor(err error) string { return operator.Reason(err) }
 
 // callTimeout runs fn in its own goroutine and returns when it finishes or
 // ctx ends, so an operator that ignores its context cannot hold a caller.

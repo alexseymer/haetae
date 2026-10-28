@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -430,6 +431,42 @@ func isUnhealthyContainer(c store.Container) bool {
 	return st == "exited" || st == "restarting" || containerHealth(c) == "unhealthy"
 }
 
+// displayName makes third-party text safe for a link label: control characters
+// are removed, surrounding spaces trimmed and the result limited to 60 runes.
+func displayName(s string) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
+	if r := []rune(s); len(r) > 60 {
+		s = string(r[:60])
+	}
+	return s
+}
+
+// hostLabel names a host for a title: its name, never its UUID.
+func hostLabel(h store.Host) string {
+	if n := displayName(h.Name); n != "" {
+		return n
+	}
+	return "this host"
+}
+
+// containerLabel names a container for a title: its name, else the first 12
+// characters of its container id.
+func containerLabel(c store.Container) string {
+	if n := displayName(c.Name); n != "" {
+		return n
+	}
+	id := []rune(c.ContainerID)
+	if len(id) > 12 {
+		id = id[:12]
+	}
+	return displayName(string(id))
+}
+
 func hostLink(id uuid.UUID, tab string) string {
 	if tab == "" {
 		return "/hosts/" + id.String()
@@ -463,7 +500,8 @@ func (s *Service) toolListHosts(ctx context.Context, org uuid.UUID) (*toolOut, e
 }
 
 func (s *Service) toolListContainers(ctx context.Context, org, hostID uuid.UUID) (*toolOut, error) {
-	if _, err := s.hostFor(ctx, org, hostID); err != nil {
+	h, err := s.hostFor(ctx, org, hostID)
+	if err != nil {
 		return nil, err
 	}
 	cs, err := s.cfg.Store.ListContainers(ctx, org, hostID)
@@ -481,7 +519,7 @@ func (s *Service) toolListContainers(ctx context.Context, org, hostID uuid.UUID)
 		}
 		return &toolOut{
 			kind: EvidenceContainers, trusted: true, subjectType: "host", subjectID: hostID.String(),
-			title: "Containers of host " + hostID.String(), summary: fmt.Sprintf("%d containers", len(cs)),
+			title: "Containers of " + hostLabel(h), summary: fmt.Sprintf("%d containers", len(cs)),
 			link:      hostLink(hostID, "containers"),
 			data:      map[string]any{"containers": data, "total": len(cs), "truncated": n < len(cs)},
 			untrusted: map[string]any{"containers": unt},
@@ -513,7 +551,8 @@ func summarize(pts []store.Point) map[string]any {
 }
 
 func (s *Service) toolHostMetrics(ctx context.Context, org, hostID uuid.UUID, from, to time.Time) (*toolOut, error) {
-	if _, err := s.hostFor(ctx, org, hostID); err != nil {
+	h, err := s.hostFor(ctx, org, hostID)
+	if err != nil {
 		return nil, err
 	}
 	series := map[string]any{}
@@ -528,7 +567,7 @@ func (s *Service) toolHostMetrics(ctx context.Context, org, hostID uuid.UUID, fr
 	}
 	return &toolOut{
 		kind: EvidenceMetrics, trusted: true, subjectType: "host", subjectID: hostID.String(),
-		title: "Metrics of host " + hostID.String(), summary: windowText(from, to), link: hostLink(hostID, ""),
+		title: "Metrics of " + hostLabel(h), summary: windowText(from, to), link: hostLink(hostID, ""),
 		data: map[string]any{"target": "host", "host_id": hostID.String(), "from": from.Format(time.RFC3339),
 			"to": to.Format(time.RFC3339), "resolution": res, "series": series},
 	}, nil
@@ -551,7 +590,7 @@ func (s *Service) toolContainerMetrics(ctx context.Context, org uuid.UUID, conta
 	}
 	return &toolOut{
 		kind: EvidenceMetrics, trusted: true, subjectType: "container", subjectID: containerID,
-		title: "Metrics of container " + containerID, summary: windowText(from, to), link: hostLink(c.HostID, ""),
+		title: "Metrics of container " + containerLabel(c), summary: windowText(from, to), link: hostLink(c.HostID, ""),
 		data: map[string]any{"target": "container", "container_id": containerID, "host_id": c.HostID.String(),
 			"from": from.Format(time.RFC3339), "to": to.Format(time.RFC3339), "resolution": res, "series": series},
 	}, nil
@@ -787,7 +826,7 @@ func (s *Service) toolListFindings(ctx context.Context, org uuid.UUID, container
 		}
 		return &toolOut{
 			kind: EvidenceFindings, trusted: true, subjectType: "container", subjectID: containerID,
-			title: "Findings for container " + containerID, summary: fmt.Sprintf("%d vulnerabilities, %d misconfigurations, %d outbound destinations", len(fs), len(mine), len(out)),
+			title: "Findings for container " + containerLabel(c), summary: fmt.Sprintf("%d vulnerabilities, %d misconfigurations, %d outbound destinations", len(fs), len(mine), len(out)),
 			link: hostLink(c.HostID, "security"), data: data, untrusted: unt,
 		}
 	}), nil
@@ -831,7 +870,7 @@ func (s *Service) toolGetLogs(ctx context.Context, org uuid.UUID, containerID st
 		}
 		return &toolOut{
 			kind: EvidenceLogs, trusted: false, subjectType: "container", subjectID: containerID,
-			title: "Logs of container " + containerID, summary: fmt.Sprintf("%d log lines, %s", len(all), windowText(from, to)),
+			title: "Logs of container " + containerLabel(c), summary: fmt.Sprintf("%d log lines, %s", len(all), windowText(from, to)),
 			link:      hostLink(c.HostID, "logs"),
 			untrusted: map[string]any{"lines": lines, "truncated": truncated || n < len(all)},
 		}

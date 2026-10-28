@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scope is defined in [docs/spec.md](https://github.com/alexseymer/haetae/blob/main/docs/spec.md). Kubernetes, Swarm, buildpacks, preview deployments, running backups, SAML/SCIM and mobile apps are out of scope for v1.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: Describe the behavior you expect. Alternatives you considered are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Number of hosts and people, chat channel, anything else that helps.

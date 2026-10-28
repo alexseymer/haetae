@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { Deploy as DeployType } from "../api/types";
+import { PageHeader } from "../components/PageHeader";
 import { DeployLogViewer } from "../components/DeployLogViewer";
 import { DeployResult } from "../components/DeployResult";
 import { PhaseStepper } from "../components/PhaseStepper";
 import { isTerminalStatus } from "../lib/deploy";
+import { INTROS } from "../lib/help";
 import { usePolling } from "../hooks/usePolling";
 
 export function DeployPage() {
@@ -59,7 +61,7 @@ export function DeployPage() {
       ) : null}
       {deploy ? (
         <div className="stack">
-          <h1>Deploy {deploy.id.slice(0, 8)}</h1>
+          <PageHeader title={`Deploy ${deploy.id.slice(0, 8)}`} intro={INTROS.deploy} />
           <PhaseStepper status={deploy.status} />
           <DeployResult deploy={deploy} />
           <DeployLogViewer

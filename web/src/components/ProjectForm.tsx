@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { CreateProjectRequest, PatchProjectRequest, Project } from "../api/types";
 import { projectInlineCompose } from "../lib/deploy";
 import {
@@ -9,7 +9,7 @@ import {
   validateInlineCompose,
   validateProjectName,
 } from "../lib/projectValidation";
-import { Modal } from "./Modal";
+import { InfoTip } from "./InfoTip";
 
 export interface ProjectFormValues {
   name: string;
@@ -61,7 +61,6 @@ function fromProject(project: Project, inlineCompose?: string): ProjectFormValue
 }
 
 interface ProjectFormProps {
-  open: boolean;
   mode: "create" | "edit";
   project?: Project | null;
   inlineCompose?: string;
@@ -74,8 +73,11 @@ interface ProjectFormProps {
   }) => void | Promise<void>;
 }
 
+/**
+ * Create or edit a project. This is an inline panel on a page, not a dialog:
+ * it is too long to fit a dialog without scrolling.
+ */
 export function ProjectForm({
-  open,
   mode,
   project = null,
   inlineCompose,
@@ -84,16 +86,10 @@ export function ProjectForm({
   onClose,
   onSubmit,
 }: ProjectFormProps) {
-  const [values, setValues] = useState<ProjectFormValues>(emptyValues);
+  const [values, setValues] = useState<ProjectFormValues>(() =>
+    mode === "edit" && project ? fromProject(project, inlineCompose) : emptyValues(),
+  );
   const [touched, setTouched] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setValues(
-      mode === "edit" && project ? fromProject(project, inlineCompose) : emptyValues(),
-    );
-    setTouched(false);
-  }, [open, mode, project, inlineCompose]);
 
   const set = <K extends keyof ProjectFormValues>(key: K, value: ProjectFormValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
@@ -175,11 +171,11 @@ export function ProjectForm({
   };
 
   return (
-    <Modal
-      title={mode === "create" ? "New project" : "Edit project"}
-      open={open}
-      onClose={onClose}
+    <section
+      className="card project-form-card"
+      aria-labelledby="project-form-title"
     >
+      <h2 id="project-form-title">{mode === "create" ? "New project" : "Edit project"}</h2>
       <form className="stack project-form" onSubmit={onFormSubmit} noValidate>
         <div className="warning-banner" role="note">
           Deploying runs containers on the host with whatever privileges the compose
@@ -253,7 +249,12 @@ export function ProjectForm({
                 <p className="field-error" role="alert">
                   {urlErr}
                 </p>
-              ) : null}
+              ) : (
+                <p className="field-hint">
+                  A plain https address with no password in it. For a private repository, use
+                  the access token below.
+                </p>
+              )}
             </div>
             <div className="field">
               <label htmlFor="proj-ref">Ref</label>
@@ -281,6 +282,10 @@ export function ProjectForm({
                 autoComplete="off"
                 spellCheck={false}
               />
+              <p className="field-hint">
+                Where the compose file is inside the repository, ending in .yml or .yaml.
+                Keep compose.yaml if it sits at the top.
+              </p>
             </div>
             <div className="field">
               <label htmlFor="proj-token">Access token</label>
@@ -295,6 +300,12 @@ export function ProjectForm({
                 }
                 disabled={values.removeToken}
               />
+              {!hasStoredToken ? (
+                <p className="field-hint">
+                  Only for private repositories. It is stored encrypted on the server and never
+                  shown again.
+                </p>
+              ) : null}
               {hasStoredToken ? (
                 <>
                   <p className="field-hint">
@@ -314,17 +325,22 @@ export function ProjectForm({
                 </>
               ) : null}
             </div>
-            <label className="checkbox field">
-              <input
-                type="checkbox"
-                checked={values.autoDeploy}
-                onChange={(e) => set("autoDeploy", e.target.checked)}
-              />{" "}
-              Auto-deploy on push
-              <span className="field-hint">
-                The agent checks the branch every 10 seconds.
-              </span>
-            </label>
+            <div className="field">
+              <div className="row checkbox-row">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={values.autoDeploy}
+                    onChange={(e) => set("autoDeploy", e.target.checked)}
+                  />{" "}
+                  Auto-deploy on push
+                </label>
+                <InfoTip term="autoDeploy" />
+              </div>
+              <p className="field-hint">
+                Deploys again when the branch changes. Use a branch name, not a commit id.
+              </p>
+            </div>
           </>
         ) : (
           <div className="field">
@@ -349,7 +365,7 @@ export function ProjectForm({
         )}
 
         <fieldset className="field">
-          <legend>Ingress (optional)</legend>
+          <legend>Domain and HTTPS (optional)</legend>
           <div className="field">
             <label htmlFor="proj-domain">Domain</label>
             <input
@@ -360,6 +376,7 @@ export function ProjectForm({
               autoComplete="off"
               spellCheck={false}
             />
+            <p className="field-hint">The address people will open, in lower case.</p>
           </div>
           <div className="field">
             <label htmlFor="proj-service">Service</label>
@@ -370,6 +387,7 @@ export function ProjectForm({
               autoComplete="off"
               spellCheck={false}
             />
+            <p className="field-hint">The service name in your compose file that receives the traffic.</p>
           </div>
           <div className="field">
             <label htmlFor="proj-port">Port</label>
@@ -380,6 +398,7 @@ export function ProjectForm({
               onChange={(e) => set("port", e.target.value)}
               autoComplete="off"
             />
+            <p className="field-hint">The port that service listens on inside its container.</p>
           </div>
           {ingressErr ? (
             <p className="field-error" role="alert">
@@ -387,8 +406,8 @@ export function ProjectForm({
             </p>
           ) : (
             <p className="field-hint">
-              DNS must point to the host; ports 80 and 443 must be reachable for
-              automatic HTTPS. All three fields are required together.
+              Fill in all three or none. DNS must point to the host, and ports 80 and 443 must
+              be reachable for automatic HTTPS. <InfoTip term="ingress" />
             </p>
           )}
         </fieldset>
@@ -399,15 +418,15 @@ export function ProjectForm({
           </p>
         ) : null}
 
-        <div className="row">
+        <div className="row form-actions">
           <button type="submit" className="btn" disabled={submitting}>
-            {submitting ? "Saving…" : mode === "create" ? "Create project" : "Save"}
+            {submitting ? "Saving…" : mode === "create" ? "Create project" : "Save changes"}
           </button>
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
         </div>
       </form>
-    </Modal>
+    </section>
   );
 }

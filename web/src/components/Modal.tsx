@@ -13,6 +13,12 @@ interface ModalProps {
   children: ReactNode;
 }
 
+/**
+ * Dialogs never scroll: their content is designed to fit (split into steps,
+ * moved to a page, or shortened). CSS clips instead of scrolling, and tests
+ * assert that nothing is actually clipped (see test/dialogGuard.ts and the
+ * real-browser check in test/e2e/ui.spec.mjs).
+ */
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -109,7 +115,7 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
             Close
           </button>
         </div>
-        {children}
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   );

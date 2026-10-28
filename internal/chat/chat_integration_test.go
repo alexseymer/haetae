@@ -562,3 +562,57 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 var _ = sync.Mutex{}
+
+func TestWebIncidentStructuredAndActionEcho(t *testing.T) {
+	s := storetest.New(t)
+	ctx := context.Background()
+	org, host, admin := seedOrg(t, s, "card-org", "admin@card.test")
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	svc := chat.New(chat.Config{Store: s, Secret: secret, Channels: []chat.Channel{web.Channel{}}})
+	linkAndAccount(t, s, svc, org.ID, admin.ID, store.ChannelTelegram, "555")
+
+	inc, err := s.InsertIncidentForTest(ctx, store.Incident{
+		OrgID: org.ID, HostID: host.ID, Title: "Strato offline", Severity: store.SeverityCritical, State: "open",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alerts := []store.Alert{{
+		OrgID: org.ID, HostID: host.ID, IncidentID: inc.ID, Rule: "host_offline",
+		Severity: store.SeverityCritical, State: "firing", DedupeKey: "off", Summary: "Strato offline",
+	}}
+	if _, err := s.InsertAlertForTest(ctx, alerts[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.IncidentChanged(ctx, org.ID, inc, alerts); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := s.ListMessages(ctx, org.ID, nil, 50)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("messages: %v %v", msgs, err)
+	}
+	m := msgs[0]
+	if m.Meta == nil || m.Meta.Severity != "critical" || m.Meta.Title != "Strato offline" ||
+		m.Meta.State != "open" || m.Meta.Host != host.Name {
+		t.Fatalf("meta: %+v", m.Meta)
+	}
+	if len(m.Evidence) != 2 || m.Evidence[0].Path != "/hosts/"+host.ID.String() ||
+		m.Evidence[1].Path != "/incidents/"+inc.ID.String() {
+		t.Fatalf("evidence: %+v", m.Evidence)
+	}
+	if strings.Contains(m.Body, "/hosts/") {
+		t.Fatalf("web body has baked links: %q", m.Body)
+	}
+
+	tok := store.SignActionToken(secret, m.ID, "ack", time.Now().Add(time.Hour))
+	if reply, err := svc.HandleAction(ctx, store.ChannelTelegram, "555", tok); err != nil || reply != "Acknowledged." {
+		t.Fatalf("ack: %q %v", reply, err)
+	}
+	var echo string
+	if err := s.Pool().QueryRow(ctx, `SELECT body FROM chat_messages WHERE org_id = $1 AND kind = 'action'`, org.ID).Scan(&echo); err != nil {
+		t.Fatal(err)
+	}
+	if echo != "You acknowledged Strato offline" {
+		t.Fatalf("echo: %q", echo)
+	}
+}

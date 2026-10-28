@@ -40,6 +40,18 @@ const proposal = {
   createdAt: new Date().toISOString(),
 };
 
+/** A fresh Response per call: the page also asks for accounts and operator status. */
+function always(body: unknown): typeof fetch {
+  return vi.fn().mockImplementation(() =>
+    Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
+  ) as unknown as typeof fetch;
+}
+
 function setup(fetchImpl: typeof fetch, who: User = admin) {
   vi.stubGlobal("fetch", fetchImpl);
   return render(
@@ -58,12 +70,7 @@ function setup(fetchImpl: typeof fetch, who: User = admin) {
 describe("operator messages in chat", () => {
   it("renders evidence as in-app links and drops unsafe ones", async () => {
     setup(
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ messages: [proposal], next: "p1" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ) as unknown as typeof fetch,
+      always({ messages: [proposal], next: "p1" }),
     );
     const link = await screen.findByRole("link", { name: "Container api" });
     expect(link).toHaveAttribute("href", `/hosts/${hostId}?tab=containers`);
@@ -101,12 +108,7 @@ describe("operator messages in chat", () => {
 
   it("members see the proposal without buttons and are told to ask an admin", async () => {
     setup(
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ messages: [proposal], next: "p1" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ) as unknown as typeof fetch,
+      always({ messages: [proposal], next: "p1" }),
       { id: "2", email: "m@b.c", role: "member" },
     );
     expect(await screen.findByText(/Haetae proposes/)).toBeInTheDocument();

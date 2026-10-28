@@ -39,6 +39,12 @@ func judgeable(level int16) bool {
 // JudgeTemplates implements Operator. Templates the model does not mention
 // are omitted from the result; the caller treats omitted as no change.
 func (s *Service) JudgeTemplates(ctx context.Context, orgID uuid.UUID, ts []TemplateQuery) ([]Verdict, error) {
+	out, err := s.judgeTemplates(ctx, orgID, ts)
+	s.logFailure("judge_templates", err)
+	return out, err
+}
+
+func (s *Service) judgeTemplates(ctx context.Context, orgID uuid.UUID, ts []TemplateQuery) ([]Verdict, error) {
 	if err := s.gate(ctx, orgID); err != nil {
 		return nil, err
 	}

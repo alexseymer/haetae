@@ -241,7 +241,7 @@ table.data tbody tr.clickable:focus-within {
 }
 
 .empty-state {
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-5) var(--space-4);
   text-align: center;
   color: var(--color-text-muted);
   border: 1px dashed var(--color-border);
@@ -412,13 +412,39 @@ table.data tbody tr.clickable:focus-within {
 
 .modal {
   width: min(520px, 100%);
-  max-height: min(90vh, 720px);
-  overflow: auto;
+  max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.modal-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  /* Phone: the dialog becomes a bottom sheet. It still never scrolls. */
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: 100vh;
+    max-height: 100dvh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-width: 1px 0 0;
+    padding: var(--space-4);
+  }
 }
 
 .modal-header {
@@ -443,7 +469,11 @@ table.data tbody tr.clickable:focus-within {
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  overflow-x: auto;
+  /* Wrap, never scroll sideways: long commands break anywhere. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  overflow: hidden;
 }
 
 .copy-actions {
@@ -702,10 +732,6 @@ table.data tbody tr.clickable:focus-within {
   word-break: break-word;
 }
 
-.modal:has(.project-form) {
-  width: min(640px, 100%);
-}
-
 .topnav {
   display: flex;
   flex: 1;
@@ -863,4 +889,502 @@ table.data tbody tr.clickable:focus-within {
 
 .chat-msg-answer {
   border-color: var(--color-chart-2);
+}
+
+/* ---- Orientation: page header, intros, help ---- */
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+}
+
+.app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.app-footer a {
+  color: var(--color-text-muted);
+}
+
+.page-header {
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.page-header-main {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+
+.page-header-title {
+  gap: var(--space-3);
+}
+
+.page-header-title h1 {
+  margin: 0;
+}
+
+.page-header-actions {
+  flex-shrink: 0;
+}
+
+.page-intro,
+.tab-intro {
+  margin: var(--space-2) 0 0;
+  max-width: 46rem;
+  color: var(--color-text-muted);
+}
+
+.tab-intro {
+  margin: 0;
+}
+
+.host-facts {
+  overflow-wrap: anywhere;
+}
+
+.heading-row,
+.label-row,
+.checkbox-row {
+  gap: var(--space-2);
+}
+
+.heading-row h2 {
+  margin: 0;
+}
+
+.heading-row {
+  margin-bottom: var(--space-3);
+}
+
+.badge-row {
+  gap: var(--space-2);
+}
+
+.empty-state-title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--color-text);
+}
+
+.empty-state-body {
+  max-width: 38rem;
+  margin: 0 auto var(--space-3);
+}
+
+.empty-state-action {
+  margin-bottom: var(--space-2);
+}
+
+.empty-state-doc {
+  margin: var(--space-2) 0 0;
+  font-size: 0.9rem;
+}
+
+.empty-state .field-hint,
+.empty-state p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- InfoTip ---- */
+
+.infotip {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.infotip-btn {
+  appearance: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.infotip-btn:hover,
+.infotip-btn[aria-expanded="true"] {
+  color: var(--color-text);
+  border-color: var(--color-primary);
+}
+
+.infotip-pop {
+  position: fixed;
+  z-index: 60;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), 0 8px 24px rgba(16, 24, 40, 0.18);
+  font-size: 0.88rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+}
+
+.infotip-pop p {
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.infotip-pop a {
+  font-size: 0.85rem;
+}
+
+.infotip-title {
+  display: block;
+}
+
+/* ---- Stepper, dialogs ---- */
+
+.stepper {
+  display: flex;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stepper-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stepper-current {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+
+.stepper-done {
+  color: var(--color-success);
+  border-bottom-color: var(--color-success);
+}
+
+.stepper-num {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.dialog-stack {
+  gap: var(--space-3);
+}
+
+.dialog-form .field {
+  margin-bottom: var(--space-3);
+}
+
+.dialog-form p {
+  margin-bottom: var(--space-2);
+}
+
+.dialog-intro {
+  margin-top: 0;
+}
+
+.dialog-meta {
+  font-size: 0.85rem;
+}
+
+.dialog-actions {
+  margin-top: var(--space-3);
+}
+
+.connect-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.connect-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--color-warning);
+  animation: connect-pulse 1.4s ease-in-out infinite;
+}
+
+.connect-ok {
+  color: var(--color-success);
+  font-size: 1.1rem;
+}
+
+@keyframes connect-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connect-dot {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .stepper-label {
+    font-size: 0.8rem;
+  }
+
+  .dialog-actions .btn {
+    flex: 1;
+  }
+}
+
+/* ---- Getting started ---- */
+
+.getting-started {
+  margin-bottom: var(--space-4);
+}
+
+.getting-started-head {
+  justify-content: space-between;
+}
+
+.getting-started-head h2 {
+  margin: 0;
+  margin-right: auto;
+}
+
+.progress {
+  height: 0.4rem;
+  margin: var(--space-3) 0;
+  background: var(--color-surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checklist-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.checklist-mark {
+  flex: none;
+  width: 1.5rem;
+  text-align: center;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.checklist-done .checklist-mark {
+  color: var(--color-success);
+}
+
+.checklist-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.checklist-text p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.checklist-action {
+  flex: none;
+}
+
+/* ---- Help page ---- */
+
+.help-section {
+  margin-top: var(--space-5);
+}
+
+.help-section h2 {
+  margin-bottom: 0;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-4);
+}
+
+.help-card h3 {
+  font-size: 1.02rem;
+}
+
+.help-card p {
+  color: var(--color-text-muted);
+}
+
+.glossary {
+  margin: 0;
+}
+
+.glossary-item {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.glossary-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.glossary-item:last-child {
+  padding-bottom: 0;
+}
+
+.glossary dt {
+  font-weight: 650;
+}
+
+.glossary dd {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+}
+
+.doc-list {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.doc-list li {
+  margin: var(--space-1) 0;
+}
+
+.project-form-card {
+  max-width: 40rem;
+}
+
+.form-actions {
+  margin-top: var(--space-2);
+}
+
+/* ---- Chat feed: day separators, incident cards, notes ---- */
+
+.chat-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-day {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 0.8rem;
+  color: var(--color-muted, inherit);
+}
+
+.chat-day::before,
+.chat-day::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--color-border);
+}
+
+.chat-kind {
+  font-weight: 600;
+}
+
+.chat-msg-mine {
+  background: var(--color-surface-2);
+}
+
+.chat-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.chat-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-card-title {
+  flex: 1;
+  min-width: 8rem;
+  word-break: break-word;
+}
+
+.chat-card-host {
+  margin: var(--space-2) 0 0;
+}
+
+.chat-card-summary {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  word-break: break-word;
+}
+
+.chat-evidence-inline {
+  list-style: none;
+  padding-left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.chat-card-resolved {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.chat-thinking {
+  margin: 0;
 }

@@ -62,4 +62,34 @@ describe("IncidentsPage", () => {
     const badge = screen.getByText("critical");
     expect(badge.className).toMatch(/badge/);
   });
+
+  it("empty state reassures and explains", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ incidents: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={["/incidents"]}>
+        <AuthProvider>
+          <Seed>
+            <Routes>
+              <Route path="/incidents" element={<IncidentsPage />} />
+            </Routes>
+          </Seed>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("All quiet.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Incidents appear here when something needs attention."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Related alerts are grouped into one incident per host/)).toBeInTheDocument();
+  });
 });

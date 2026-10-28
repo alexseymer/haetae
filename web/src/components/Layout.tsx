@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth";
+import { DOCS_INDEX } from "../lib/help";
 
 export function Layout() {
   const { user, orgName, clearSession } = useAuth();
@@ -9,6 +10,22 @@ export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .status()
+      .then((s) => {
+        if (!cancelled) setVersion(s.version || null);
+      })
+      .catch(() => {
+        // the footer simply omits the version
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -39,7 +56,7 @@ export function Layout() {
   };
 
   return (
-    <div>
+    <div className="app-shell">
       <header className="topbar">
         <Link to="/" className="brand">
           <span className="brand-name">Haetae</span>
@@ -51,6 +68,7 @@ export function Layout() {
           </NavLink>
           <NavLink to="/incidents">Incidents</NavLink>
           <NavLink to="/chat">Chat</NavLink>
+          <NavLink to="/help">Help</NavLink>
         </nav>
         <div className="menu" ref={menuRef}>
           <button
@@ -79,7 +97,18 @@ export function Layout() {
           ) : null}
         </div>
       </header>
-      <Outlet />
+      <main className="app-main">
+        <Outlet />
+      </main>
+      <footer className="app-footer">
+        <span>Haetae{version ? ` ${version.startsWith("v") ? version : `v${version}`}` : ""}</span>
+        <span aria-hidden="true">·</span>
+        <NavLink to="/help">Help</NavLink>
+        <span aria-hidden="true">·</span>
+        <a href={DOCS_INDEX} target="_blank" rel="noopener noreferrer">
+          Documentation
+        </a>
+      </footer>
     </div>
   );
 }

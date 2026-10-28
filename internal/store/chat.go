@@ -70,6 +70,10 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, m ChatMessage) (ChatMess
 	if m.Evidence == nil {
 		evidence = []byte("[]")
 	}
+	meta, err := marshalChatMeta(m.Meta)
+	if err != nil {
+		return ChatMessage{}, fmt.Errorf("store: EnqueueChatMessage: meta: %w", err)
+	}
 	var idemArg any
 	if m.IdempotencyKey != "" {
 		idemArg = m.IdempotencyKey
@@ -78,21 +82,21 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, m ChatMessage) (ChatMess
 	err = s.pool.QueryRow(ctx, `
 		INSERT INTO chat_messages (
 			id, org_id, channel, account_id, direction, kind, body, actions, evidence,
-			incident_id, created_at, attempts, next_attempt_at, delivery_error, idempotency_key
+			incident_id, created_at, attempts, next_attempt_at, delivery_error, idempotency_key, meta
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
 		)
 		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id, org_id, channel, account_id, direction, kind, body, actions, evidence,
 			incident_id, created_at, delivered_at, send_started_at, sent_at,
-			attempts, next_attempt_at, delivery_error, idempotency_key`,
+			attempts, next_attempt_at, delivery_error, idempotency_key, meta`,
 		m.ID, m.OrgID, m.Channel, m.AccountID, m.Direction, m.Kind, m.Body, actions, evidence,
-		m.IncidentID, m.CreatedAt, m.Attempts, m.NextAttemptAt, m.DeliveryError, idemArg,
+		m.IncidentID, m.CreatedAt, m.Attempts, m.NextAttemptAt, m.DeliveryError, idemArg, meta,
 	).Scan(
 		&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 		&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
 		&m.SendStartedAt, &m.SentAt,
-		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError, &idemOut,
+		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError, &idemOut, &meta,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) && m.IdempotencyKey != "" {
@@ -111,6 +115,9 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, m ChatMessage) (ChatMess
 		m.IdempotencyKey = ""
 	}
 	if err := unmarshalChatJSON(actions, evidence, &m); err != nil {
+		return ChatMessage{}, err
+	}
+	if err := unmarshalChatMeta(meta, &m); err != nil {
 		return ChatMessage{}, err
 	}
 	if _, err := s.pool.Exec(ctx, `SELECT pg_notify($1, $2)`, ChatNotifyChannel, m.Channel); err != nil {
@@ -161,7 +168,7 @@ func (s *Store) ClaimDueChatMessages(ctx context.Context, limit int) ([]ChatMess
 	rows, err := tx.Query(ctx, `
 		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
 			incident_id, created_at, delivered_at, send_started_at, sent_at,
-			attempts, next_attempt_at, delivery_error
+			attempts, next_attempt_at, delivery_error, meta
 		FROM chat_messages
 		WHERE direction = 'out'
 		  AND delivered_at IS NULL
@@ -281,7 +288,7 @@ func (s *Store) ListMessages(ctx context.Context, orgID uuid.UUID, after *uuid.U
 		rows, err = s.pool.Query(ctx, `
 			SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
 				incident_id, created_at, delivered_at, send_started_at, sent_at,
-				attempts, next_attempt_at, delivery_error
+				attempts, next_attempt_at, delivery_error, meta
 			FROM chat_messages
 			WHERE org_id = $1 AND channel = $2
 			ORDER BY created_at ASC, id ASC
@@ -290,7 +297,7 @@ func (s *Store) ListMessages(ctx context.Context, orgID uuid.UUID, after *uuid.U
 		rows, err = s.pool.Query(ctx, `
 			SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
 				incident_id, created_at, delivered_at, send_started_at, sent_at,
-				attempts, next_attempt_at, delivery_error
+				attempts, next_attempt_at, delivery_error, meta
 			FROM chat_messages
 			WHERE org_id = $1 AND channel = $2
 			  AND (created_at, id) > (
@@ -626,7 +633,7 @@ func (s *Store) FindOutboundByShortRef(ctx context.Context, orgID uuid.UUID, cha
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
 			incident_id, created_at, delivered_at, send_started_at, sent_at,
-			attempts, next_attempt_at, delivery_error
+			attempts, next_attempt_at, delivery_error, meta
 		FROM chat_messages
 		WHERE org_id = $1 AND channel = $2 AND direction = 'out'
 		  AND replace(id::text, '-', '') LIKE $3
@@ -648,17 +655,17 @@ func (s *Store) FindOutboundByShortRef(ctx context.Context, orgID uuid.UUID, cha
 // GetChatMessage returns a message by id (server role; optional org filter).
 func (s *Store) GetChatMessage(ctx context.Context, id uuid.UUID) (ChatMessage, error) {
 	var m ChatMessage
-	var actions, evidence []byte
+	var actions, evidence, meta []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, org_id, channel, account_id, direction, kind, body, actions, evidence,
 			incident_id, created_at, delivered_at, send_started_at, sent_at,
-			attempts, next_attempt_at, delivery_error
+			attempts, next_attempt_at, delivery_error, meta
 		FROM chat_messages WHERE id = $1`, id,
 	).Scan(
 		&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 		&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
 		&m.SendStartedAt, &m.SentAt,
-		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError,
+		&m.Attempts, &m.NextAttemptAt, &m.DeliveryError, &meta,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -667,6 +674,9 @@ func (s *Store) GetChatMessage(ctx context.Context, id uuid.UUID) (ChatMessage, 
 		return ChatMessage{}, fmt.Errorf("store: GetChatMessage: %w", err)
 	}
 	if err := unmarshalChatJSON(actions, evidence, &m); err != nil {
+		return ChatMessage{}, err
+	}
+	if err := unmarshalChatMeta(meta, &m); err != nil {
 		return ChatMessage{}, err
 	}
 	return m, nil
@@ -777,16 +787,19 @@ func scanChatMessages(rows pgx.Rows) ([]ChatMessage, error) {
 	var out []ChatMessage
 	for rows.Next() {
 		var m ChatMessage
-		var actions, evidence []byte
+		var actions, evidence, meta []byte
 		if err := rows.Scan(
 			&m.ID, &m.OrgID, &m.Channel, &m.AccountID, &m.Direction, &m.Kind, &m.Body,
 			&actions, &evidence, &m.IncidentID, &m.CreatedAt, &m.DeliveredAt,
 			&m.SendStartedAt, &m.SentAt,
-			&m.Attempts, &m.NextAttemptAt, &m.DeliveryError,
+			&m.Attempts, &m.NextAttemptAt, &m.DeliveryError, &meta,
 		); err != nil {
 			return nil, err
 		}
 		if err := unmarshalChatJSON(actions, evidence, &m); err != nil {
+			return nil, err
+		}
+		if err := unmarshalChatMeta(meta, &m); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -866,4 +879,24 @@ func hmacSHA256(secret, msg []byte) []byte {
 	mac := hmac.New(sha256.New, secret)
 	_, _ = mac.Write(msg)
 	return mac.Sum(nil)
+}
+
+func marshalChatMeta(m *ChatMeta) ([]byte, error) {
+	if m == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(m)
+}
+
+func unmarshalChatMeta(raw []byte, m *ChatMessage) error {
+	m.Meta = nil
+	if len(raw) == 0 || string(raw) == "{}" || string(raw) == "null" {
+		return nil
+	}
+	var meta ChatMeta
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return fmt.Errorf("store: chat meta: %w", err)
+	}
+	m.Meta = &meta
+	return nil
 }

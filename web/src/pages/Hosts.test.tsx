@@ -94,6 +94,30 @@ describe("HostsPage", () => {
     expect(await screen.findByText(/No hosts yet/i)).toBeInTheDocument();
   });
 
+  it("empty state guides admins to add the first host and members to ask an admin", async () => {
+    const empty = () =>
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ hosts: [], projects: [], accounts: [], incidents: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ) as unknown as typeof fetch;
+    const { unmount } = renderHosts(admin, empty());
+    expect(await screen.findByText(/small agent on each server/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Hosts" })).toBeInTheDocument();
+    expect(screen.getByText(/A host is a Linux server running Docker/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add your first host" }));
+    expect(screen.getByRole("dialog", { name: "Add host" })).toBeInTheDocument();
+    unmount();
+
+    renderHosts({ id: "2", email: "m@b.c", role: "member" }, empty());
+    expect(await screen.findByText(/Ask an admin to add the first host/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add your first host" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Getting started")).not.toBeInTheDocument();
+  });
+
   it("ignores a stale hosts response that finishes after a newer one", async () => {
     const slowResolvers: Array<(r: Response) => void> = [];
     let calls = 0;
@@ -201,8 +225,8 @@ describe("HostsPage", () => {
     await user.click(screen.getByRole("button", { name: "Add host" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await user.type(screen.getByLabelText("Host name"), "new-host");
-    await user.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByText(/Run this on the server/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Get install command" }));
+    expect(await screen.findByText(/Run this as root on the server/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Command")).toHaveTextContent("curl -sL");
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

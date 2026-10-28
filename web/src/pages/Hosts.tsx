@@ -1,17 +1,27 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { SeveritySummary } from "../api/securityTypes";
-import type { EnrollmentResponse, HostSummary } from "../api/types";
+import type { HostSummary } from "../api/types";
 import { useAuth } from "../auth";
 import { Badge, OnlineBadge } from "../components/Badge";
-import { CopyBlock } from "../components/CopyBlock";
-import { Modal } from "../components/Modal";
+import { AddHostDialog } from "../components/AddHostDialog";
+import { EmptyState } from "../components/EmptyState";
+import { GettingStarted } from "../components/GettingStarted";
+import { InfoTip } from "../components/InfoTip";
+import { PageHeader } from "../components/PageHeader";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 import { hostSecurityBadgeText } from "../lib/security";
 
 type HostSecBadge = { scanFailed: boolean; matchPending: number; summary: SeveritySummary };
+
+function SecurityStateTip({ text }: { text: string }) {
+  if (text === "scan failed") return <InfoTip term="scanFailed" />;
+  if (text === "matching pending") return <InfoTip term="matchingPending" />;
+  return null;
+}
 
 export function HostsPage() {
   const { user } = useAuth();
@@ -21,11 +31,6 @@ export function HostsPage() {
   const [openIncidentCount, setOpenIncidentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [created, setCreated] = useState<EnrollmentResponse | null>(null);
-  const [name, setName] = useState("");
-  const [ttlHours, setTtlHours] = useState(24);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const mountedRef = useRef(true);
   const loadGenRef = useRef(0);
 
@@ -82,51 +87,34 @@ export function HostsPage() {
 
   usePolling(load, 10_000, true);
 
-  const openDialog = () => {
-    setCreated(null);
-    setName("");
-    setTtlHours(24);
-    setFormError(null);
-    setDialogOpen(true);
-  };
+  const openDialog = () => setDialogOpen(true);
 
   const closeDialog = () => {
     setDialogOpen(false);
     void load();
   };
 
-  const onCreate = async (e: FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    setSubmitting(true);
-    try {
-      const res = await api.enroll({ name, ttlHours });
-      setCreated(res);
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "Enrollment failed");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div className="page">
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
-        <div className="row">
-          <h1 style={{ margin: 0 }}>Hosts</h1>
-          {openIncidentCount > 0 ? (
+      <PageHeader
+        title="Hosts"
+        intro={INTROS.hosts}
+        meta={
+          openIncidentCount > 0 ? (
             <Link to="/incidents" className="incident-count-badge">
               {openIncidentCount} open{" "}
               {openIncidentCount === 1 ? "incident" : "incidents"}
             </Link>
-          ) : null}
-        </div>
-        {isAdmin ? (
-          <button type="button" className="btn" onClick={openDialog}>
-            Add host
-          </button>
-        ) : null}
-      </div>
+          ) : null
+        }
+        actions={
+          isAdmin ? (
+            <button type="button" className="btn" onClick={openDialog}>
+              Add host
+            </button>
+          ) : null
+        }
+      />
 
       {error ? (
         <div className="app-error" role="alert" aria-live="assertive">
@@ -134,15 +122,24 @@ export function HostsPage() {
         </div>
       ) : null}
 
+      {isAdmin && hosts ? <GettingStarted hosts={hosts} onAddHost={openDialog} /> : null}
+
       {hosts && hosts.length === 0 ? (
-        <div className="empty-state">
-          <p>No hosts yet.</p>
-          <p>
-            {isAdmin
-              ? 'Click "Add host" to create a one-time enrollment token, then run the command on the server you want to manage.'
-              : "Ask an admin to enroll the first host."}
-          </p>
-        </div>
+        <EmptyState
+          title="No hosts yet"
+          action={
+            isAdmin ? (
+              <button type="button" className="btn" onClick={openDialog}>
+                Add your first host
+              </button>
+            ) : null
+          }
+          doc={{ name: "enroll", label: "How enrolling works" }}
+        >
+          {isAdmin
+            ? "Haetae needs a small agent on each server it watches. Add a host to get a one-time command to run on the server. The agent connects out to Haetae, so no inbound port is needed."
+            : "Ask an admin to add the first host."}
+        </EmptyState>
       ) : null}
 
       {hosts && hosts.length > 0 ? (
@@ -153,7 +150,9 @@ export function HostsPage() {
                 <tr>
                   <th>Name</th>
                   <th>Status</th>
-                  <th>Security</th>
+                  <th>
+                    Security <InfoTip term="securityBadge" />
+                  </th>
                   <th>OS</th>
                   <th>Containers</th>
                   <th>Last seen</th>
@@ -178,9 +177,12 @@ export function HostsPage() {
                     </td>
                     <td>
                       {badgeText ? (
-                        <Link to={`/hosts/${h.id}?tab=security`}>
-                          <Badge variant="danger">{badgeText}</Badge>
-                        </Link>
+                        <span className="row badge-row">
+                          <Link to={`/hosts/${h.id}?tab=security`}>
+                            <Badge variant="danger">{badgeText}</Badge>
+                          </Link>
+                          <SecurityStateTip text={badgeText} />
+                        </span>
                       ) : (
                         <span className="muted">—</span>
                       )}
@@ -222,10 +224,11 @@ export function HostsPage() {
                     </div>
                   </Link>
                   {badgeText ? (
-                    <div style={{ marginTop: "0.35rem" }}>
+                    <div className="row badge-row" style={{ marginTop: "0.35rem" }}>
                       <Link to={`/hosts/${h.id}?tab=security`}>
                         <Badge variant="danger">{badgeText}</Badge>
                       </Link>
+                      <SecurityStateTip text={badgeText} />
                     </div>
                   ) : null}
                 </div>
@@ -237,61 +240,7 @@ export function HostsPage() {
 
       {!hosts && !error ? <p className="muted">Loading hosts…</p> : null}
 
-      <Modal title="Add host" open={dialogOpen} onClose={closeDialog}>
-        {created ? (
-          <div className="stack">
-            <p>
-              Run this on the server. The token works once.
-            </p>
-            <CopyBlock text={created.command} />
-            <p className="muted">
-              Expires {formatDateTime(created.expiresAt)}
-            </p>
-            <button type="button" className="btn" onClick={closeDialog}>
-              Done
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={(e) => void onCreate(e)}>
-            <div className="field">
-              <label htmlFor="host-name">Host name</label>
-              <input
-                id="host-name"
-                name="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="ttl-hours">Validity (hours)</label>
-              <input
-                id="ttl-hours"
-                name="ttlHours"
-                type="number"
-                min={1}
-                max={168}
-                value={ttlHours}
-                onChange={(e) => setTtlHours(Number(e.target.value))}
-                required
-              />
-            </div>
-            {formError ? (
-              <div className="app-error" role="alert" aria-live="assertive">
-                {formError}
-              </div>
-            ) : null}
-            <div className="row">
-              <button type="submit" className="btn" disabled={submitting}>
-                {submitting ? "Creating…" : "Create token"}
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={closeDialog}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
+      <AddHostDialog open={dialogOpen} onClose={closeDialog} />
     </div>
   );
 }

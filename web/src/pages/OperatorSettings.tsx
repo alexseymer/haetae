@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, api } from "../api/client";
-import type { OperatorAutonomy, OperatorSettings } from "../api/operatorTypes";
+import { EmptyState } from "../components/EmptyState";
+import { InfoTip } from "../components/InfoTip";
+import type { OperatorAutonomy, OperatorSettings, OperatorTestResult } from "../api/operatorTypes";
 import {
   AUTONOMY_OPTIONS,
+  describeTest,
   providerStatus,
   validateTokenCap,
 } from "../lib/operatorSettings";
+import { docUrl } from "../lib/help";
 
 /** Settings section "AI operator": enable, autonomy, daily cap, provider, usage. */
 export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
@@ -17,6 +21,8 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ tone: "ok" | "warn" | "fail"; text: string } | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -74,6 +80,24 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
+  const onTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r: OperatorTestResult = await api.testOperatorProvider();
+      if (mountedRef.current) setTestResult(describeTest(r));
+    } catch (err) {
+      if (mountedRef.current) {
+        setTestResult({
+          tone: "fail",
+          text: `Connection test failed: ${err instanceof ApiError ? err.message : "request failed"}.`,
+        });
+      }
+    } finally {
+      if (mountedRef.current) setTesting(false);
+    }
+  };
+
   const help = AUTONOMY_OPTIONS.find((o) => o.id === autonomy)?.help ?? "";
 
   return (
@@ -87,9 +111,39 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
       {!data && !error ? <p className="muted">Loading…</p> : null}
       {data ? (
         <>
+          {!data.provider.configured ? (
+            <EmptyState title="The AI operator is not set up on this server yet">
+              Two switches turn it on. First, an administrator of the server sets
+              HAETAE_AI_PROVIDER, HAETAE_AI_MODEL and, for hosted providers,
+              HAETAE_AI_API_KEY in the server settings and restarts it. Then enable it below.
+              Until then no AI connection is made, and rule-based alerts and the daily briefing
+              keep working.{" "}
+              <a href={docUrl("ai-operator")} target="_blank" rel="noopener noreferrer">
+                Read the setup steps
+              </a>
+              .
+            </EmptyState>
+          ) : null}
           <p className="muted" data-testid="operator-provider">
             {providerStatus(data.provider)}
           </p>
+          {isAdmin && data.provider.configured ? (
+            <div className="field">
+              <div className="row label-row">
+                <button type="button" className="btn" disabled={testing} onClick={() => void onTest()}>
+                  {testing ? "Testing…" : "Test connection"}
+                </button>
+                <InfoTip term="toolCalling" />
+              </div>
+              <p
+                className={testResult?.tone === "fail" ? "field-error" : "muted"}
+                aria-live="polite"
+                data-testid="operator-test-result"
+              >
+                {testResult?.text ?? ""}
+              </p>
+            </div>
+          ) : null}
           <p className="muted" data-testid="operator-status">
             {data.available
               ? "The operator is available."
@@ -117,7 +171,10 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
                 </p>
               </div>
               <div className="field">
-                <label htmlFor="operator-autonomy">Autonomy</label>
+                <div className="row label-row">
+                  <label htmlFor="operator-autonomy">Autonomy</label>
+                  <InfoTip term="autonomy" />
+                </div>
                 <select
                   id="operator-autonomy"
                   name="autonomy"
@@ -134,16 +191,12 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
                 <p className="field-hint" id="operator-autonomy-help">
                   {help}
                 </p>
-                <ul className="field-hint">
-                  {AUTONOMY_OPTIONS.map((o) => (
-                    <li key={o.id}>
-                      <strong>{o.label}:</strong> {o.help}
-                    </li>
-                  ))}
-                </ul>
               </div>
               <div className="field">
-                <label htmlFor="operator-cap">Daily token cap</label>
+                <div className="row label-row">
+                  <label htmlFor="operator-cap">Daily token cap</label>
+                  <InfoTip term="tokenCap" />
+                </div>
                 <input
                   id="operator-cap"
                   name="dailyTokenCap"

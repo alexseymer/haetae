@@ -155,9 +155,10 @@ describe("ChatPage", () => {
   });
 
   it("renders unsafe evidence paths as text and safe ones as links", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
           messages: [
             msg("e1", {
               evidence: [
@@ -174,7 +175,8 @@ describe("ChatPage", () => {
           ],
           next: "e1",
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
       ),
     );
     renderChat(admin, fetchMock as unknown as typeof fetch);
@@ -191,9 +193,10 @@ describe("ChatPage", () => {
   });
 
   it("hides action buttons for members", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
           messages: [
             msg("a1", {
               kind: "incident",
@@ -202,7 +205,8 @@ describe("ChatPage", () => {
           ],
           next: "a1",
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
       ),
     );
     renderChat(member, fetchMock as unknown as typeof fetch);

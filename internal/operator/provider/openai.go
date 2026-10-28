@@ -30,6 +30,9 @@ func NewOpenAICompat(cfg Config) (Provider, error) {
 func (o *openAI) Name() string { return o.name }
 func (o *openAI) Local() bool  { return o.local }
 
+// Model returns the configured model id.
+func (o *openAI) Model() string { return o.model }
+
 type oaFunc struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
@@ -63,6 +66,8 @@ type oaRequest struct {
 }
 
 type oaResponse struct {
+	// Some gateways (OpenRouter) answer HTTP 200 with an error object.
+	Error   json.RawMessage `json:"error"`
 	Choices []struct {
 		Message oaMessage `json:"message"`
 	} `json:"choices"`
@@ -114,7 +119,13 @@ func (o *openAI) Complete(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err
 	}
 	if len(out.Choices) == 0 {
-		return Response{}, fmt.Errorf("%w: no choices", ErrBadResponse)
+		d := "no choices in the response"
+		if len(out.Error) > 0 {
+			if m := errorMessage([]byte(`{"error":` + string(out.Error) + `}`)); m != "" {
+				d = m
+			}
+		}
+		return Response{}, &Error{Kind: ErrBadResponse, Status: http.StatusOK, Detail: cleanDetail(d, o.key)}
 	}
 	msg := out.Choices[0].Message
 	var resp Response

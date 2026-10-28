@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X github.com/alexseymer/haetae/internal/version.Version=$(VERS
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
 
-.PHONY: build test test-integration test-e2e test-deploy test-alerts test-security test-operator test-load test-selfhost bench-m7 web dist docker-image release release-image test-release bench-release-rss lint vuln fmt generate clean
+.PHONY: build test test-integration test-e2e test-deploy test-alerts test-security test-operator screenshots test-load test-selfhost bench-m7 web dist docker-image release release-image test-release bench-release-rss lint vuln fmt generate clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
@@ -33,6 +33,10 @@ test-alerts:
 # M7 security acceptance: real server + agent + inventory + crafted Grype DB (needs Docker).
 test-security:
 	bash -o pipefail -c "go test -count=1 -tags e2e_security -timeout 40m -v ./test/security/ 2>&1 | tee security-e2e.log | grep -E 'MEASURE|^(--- |ok|FAIL|PASS)'"
+
+# Regenerates docs/images/*.png from a live demo stack (Docker, Chromium, Playwright; ~5 minutes).
+screenshots:
+	go test -count=1 -tags screenshots -timeout 30m -v ./test/screenshots/
 
 # M8 AI operator acceptance: real server + agent + scripted OpenAI-compatible provider (needs Docker).
 test-operator:

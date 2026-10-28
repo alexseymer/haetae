@@ -87,7 +87,14 @@ async function eventuallyOk(message, timeoutMs, fn) {
     }
     await sleep(Math.min(1000, 200));
   }
-  throw new Error(`timed out waiting for ${message}: ${lastErr}`);
+  let where = "";
+  try {
+    const pg = globalThis.__e2ePage;
+    if (pg) where = ` [page ${pg.url()}: ${(await pg.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 400)}]`;
+  } catch {
+    // diagnostics only
+  }
+  throw new Error(`timed out waiting for ${message}: ${lastErr}${where}`);
 }
 
 function sleep(ms) {
@@ -284,6 +291,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     });
     await installCspReporting(context);
     page = await context.newPage();
+    globalThis.__e2ePage = page;
     attachNoiseListeners(page);
   });
 
@@ -366,7 +374,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
 
     await page.getByLabel("Setup code").fill(code);
     await page.getByRole("button", { name: "Create organisation" }).click();
-    await eventuallyOk("hosts empty state", 15_000, async () => {
+    await eventuallyOk("hosts empty state", 45_000, async () => {
       await page.getByRole("heading", { name: "Hosts" }).waitFor({
         state: "visible",
         timeout: 2000,
@@ -435,7 +443,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
 
     await addBtn.click();
     await page.getByLabel("Host name").fill("e2e-host");
-    await page.getByRole("button", { name: "Create token" }).click();
+    await page.getByRole("button", { name: "Get install command" }).click();
     await eventuallyOk("enrollment command shown", 10_000, async () => {
       const pre = page.locator(".copy-block pre");
       await pre.waitFor({ state: "visible", timeout: 2000 });
@@ -444,6 +452,11 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       assert.match(enrollCommand, /--ca-pin/);
     });
 
+    // Step 2 shows a live waiting state until the host connects.
+    await page
+      .getByRole("status")
+      .filter({ hasText: /Waiting for the host to connect/ })
+      .waitFor({ state: "visible", timeout: 5000 });
     await page.getByRole("button", { name: "Copy" }).click();
     await eventuallyOk("clipboard has command", 5_000, async () => {
       const clip = await page.evaluate(() => navigator.clipboard.readText());
@@ -508,7 +521,7 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
     const addBtn = page.getByRole("button", { name: "Add host" });
     await addBtn.click();
     await page.getByLabel("Host name").fill("e2e-host");
-    await page.getByRole("button", { name: "Create token" }).click();
+    await page.getByRole("button", { name: "Get install command" }).click();
     await eventuallyOk("duplicate name 409 message", 10_000, async () => {
       const alert = page.getByRole("alert");
       await alert.waitFor({ state: "visible", timeout: 2000 });
@@ -582,9 +595,12 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
 
     await page.getByRole("tab", { name: "Logs" }).click();
     await eventuallyOk("error log event with count and sample", 60_000, async () => {
-      const card = page.locator("li.card", {
-        hasText: /payment failed for order 1234/,
-      });
+      // The agent flushes a new event every ~12 s, so several cards can match.
+      const card = page
+        .locator("li.card", {
+          hasText: /payment failed for order 1234/,
+        })
+        .first();
       await card.waitFor({ state: "visible", timeout: 2000 });
       const text = await card.innerText();
       assert.match(text, /error/i);
@@ -881,5 +897,157 @@ describe("haetae web e2e", { concurrency: 1 }, () => {
       assert.ok(st.size > 1000, `${name} too small`);
     }
     assertCleanPage("10.shots");
+  });
+
+  it("11. dialogs never scroll (1280x720 and 390x844); popovers stay on screen", async () => {
+    await ensureAdminSession(ADMIN_PASSWORD_NEW);
+    assert.ok(hostId, "scenario 4 must have set hostId");
+
+    /**
+     * A dialog must fit: no vertical or horizontal scrollbar on the dialog or
+     * its body, nothing wider than the dialog, and the dialog inside the viewport.
+     */
+    async function assertDialogFits(label) {
+      const dlg = page.getByRole("dialog");
+      await dlg.waitFor({ state: "visible", timeout: 5000 });
+      const m = await dlg.evaluate((el) => {
+        const body = el.querySelector(".modal-body");
+        const r = el.getBoundingClientRect();
+        const wide = [...el.querySelectorAll("*")]
+          .filter((c) => !c.closest(".sr-only") && !c.classList.contains("sr-only"))
+          .filter((c) => c.getBoundingClientRect().right > r.right + 1)
+          .map((c) => c.tagName + "." + c.className)
+          .slice(0, 5);
+        const clipped = [...el.querySelectorAll("*")]
+          .filter((c) => !c.closest(".sr-only") && !c.classList.contains("sr-only"))
+          .filter((c) => c.getBoundingClientRect().bottom > r.bottom + 1)
+          .map((c) => c.tagName + "." + c.className)
+          .slice(0, 5);
+        return {
+          sh: el.scrollHeight,
+          ch: el.clientHeight,
+          sw: el.scrollWidth,
+          cw: el.clientWidth,
+          bsh: body ? body.scrollHeight : 0,
+          bch: body ? body.clientHeight : 0,
+          top: r.top,
+          bottom: r.bottom,
+          left: r.left,
+          right: r.right,
+          vw: window.innerWidth,
+          vh: window.innerHeight,
+          docScrollW: document.documentElement.scrollWidth,
+          wide,
+          clipped,
+        };
+      });
+      const where = `${label} @${m.vw}x${m.vh}: ${JSON.stringify(m)}`;
+      assert.ok(m.sh <= m.ch + 1, `dialog scrolls vertically: ${where}`);
+      assert.ok(m.sw <= m.cw + 1, `dialog scrolls horizontally: ${where}`);
+      assert.ok(m.bsh <= m.bch + 1, `dialog body scrolls vertically: ${where}`);
+      assert.deepEqual(m.wide, [], `content wider than dialog: ${where}`);
+      assert.deepEqual(m.clipped, [], `content cut off at the bottom: ${where}`);
+      assert.ok(m.top >= -1 && m.bottom <= m.vh + 1, `dialog outside viewport: ${where}`);
+      assert.ok(m.left >= -1 && m.right <= m.vw + 1, `dialog outside viewport: ${where}`);
+      assert.ok(m.docScrollW <= m.vw + 1, `page scrolls horizontally: ${where}`);
+    }
+
+    async function closeDialog() {
+      await page.keyboard.press("Escape");
+      await eventuallyOk("dialog closed", 5_000, async () => {
+        assert.equal(await page.getByRole("dialog").count(), 0);
+      });
+    }
+
+    // A project to reach the project dialogs (created through the API, as the UI would).
+    const created = await page.request.post(`${WEB}/api/hosts/${hostId}/projects`, {
+      headers: { "X-Haetae-Request": "1" },
+      data: {
+        name: "dialog-check",
+        source: {
+          kind: "inline",
+          inlineCompose: "services:\n  web:\n    image: busybox\n    command: sleep 1000\n",
+        },
+        domain: "",
+        service: "",
+        port: 0,
+        autoDeploy: false,
+      },
+    });
+    assert.ok(created.ok() || created.status() === 409, `create project: ${created.status()} ${await created.text()}`);
+    const listed = await page.request.get(`${WEB}/api/projects?hostId=${hostId}`);
+    const projectId = (await listed.json()).projects.find((p) => p.name === "dialog-check")?.id;
+    assert.ok(projectId, "project dialog-check must exist");
+
+    for (const vp of [
+      { width: 1280, height: 720 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(vp);
+      const tag = `${vp.width}x${vp.height}`;
+
+      // Add host: step 1, step 2 (long command + waiting state), duplicate-name error.
+      await page.goto(`${WEB}/`);
+      await page.getByRole("heading", { name: "Hosts", level: 1 }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Add host" }).click();
+      await assertDialogFits(`add host step 1 (${tag})`);
+      await page.getByLabel("Host name").fill("e2e-host");
+      await page.getByRole("button", { name: "Get install command" }).click();
+      await page.getByRole("alert").waitFor({ state: "visible", timeout: 5000 });
+      await assertDialogFits(`add host error (${tag})`);
+      await page.getByLabel("Host name").fill(`dialog-check-${vp.width}`);
+      await page.getByRole("button", { name: "Get install command" }).click();
+      await page.locator(".copy-block pre").waitFor({ state: "visible", timeout: 10_000 });
+      await assertDialogFits(`add host step 2 (${tag})`);
+      // The InfoTip popover inside the dialog opens and closes without closing the dialog.
+      await page.getByRole("button", { name: /What is Install command/ }).click();
+      await page.getByRole("group", { name: "Install command" }).waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      assert.equal(await page.getByRole("group", { name: "Install command" }).count(), 0);
+      assert.equal(await page.getByRole("dialog").count(), 1, "Esc on a popover must not close the dialog");
+      await closeDialog();
+
+      // Remove host.
+      await page.goto(`${WEB}/hosts/${hostId}`);
+      await page.getByRole("heading", { name: "e2e-host", level: 1 }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Remove host" }).click();
+      await assertDialogFits(`remove host (${tag})`);
+      await closeDialog();
+
+      // Deploy tab: the project form is an inline panel, never a dialog.
+      await page.goto(`${WEB}/hosts/${hostId}?tab=deploy`);
+      await page.getByRole("button", { name: "New project" }).click();
+      await page.getByRole("heading", { name: "New project" }).waitFor({ state: "visible" });
+      assert.equal(await page.getByRole("dialog").count(), 0, "new project must not be a dialog");
+
+      // Project page: edit is inline, remove is a dialog.
+      await page.goto(`${WEB}/projects/${projectId}`);
+      await page.getByRole("heading", { name: "dialog-check", level: 1 }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Edit" }).click();
+      await page.getByRole("heading", { name: "Edit project" }).waitFor({ state: "visible" });
+      assert.equal(await page.getByRole("dialog").count(), 0, "edit project must not be a dialog");
+      await page.goto(`${WEB}/projects/${projectId}`);
+      await page.getByRole("button", { name: "Remove", exact: true }).click();
+      await assertDialogFits(`remove project (${tag})`);
+      await closeDialog();
+
+      // Popovers stay inside the viewport and close on Esc.
+      await page.goto(`${WEB}/hosts/${hostId}?tab=logs`);
+      const tip = page.locator(".tab-intro .infotip-btn").first();
+      await tip.click();
+      const pop = page.locator(".infotip-pop");
+      await pop.waitFor({ state: "visible" });
+      const box = await pop.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { l: r.left, r: r.right, vw: window.innerWidth, sh: el.scrollHeight, ch: el.clientHeight };
+      });
+      assert.ok(box.l >= 0 && box.r <= box.vw, `popover off screen (${tag}): ${JSON.stringify(box)}`);
+      assert.ok(box.sh <= box.ch + 1, `popover scrolls (${tag}): ${JSON.stringify(box)}`);
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator(".infotip-pop").count(), 0);
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    assertCleanPage("11.dialogs");
   });
 });

@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type { CreateProjectRequest, Project } from "../api/types";
 import { useAuth } from "../auth";
 import { Badge } from "../components/Badge";
+import { EmptyState } from "../components/EmptyState";
 import { ProjectForm } from "../components/ProjectForm";
 import {
   deployStatusLabel,
@@ -14,6 +15,7 @@ import {
   toDeployBrief,
 } from "../lib/deploy";
 import { formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 
 interface HostDeployTabProps {
   hostId: string;
@@ -84,6 +86,11 @@ export function HostDeployTab({ hostId, active }: HostDeployTabProps) {
     }
   };
 
+  const openForm = () => {
+    setFormError(null);
+    setFormOpen(true);
+  };
+
   if (!active) return null;
 
   return (
@@ -93,21 +100,26 @@ export function HostDeployTab({ hostId, active }: HostDeployTabProps) {
       id="panel-deploy"
       aria-labelledby="tab-deploy"
     >
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0 }}>Projects</h2>
-        {isAdmin ? (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setFormError(null);
-              setFormOpen(true);
-            }}
-          >
-            New project
-          </button>
-        ) : null}
-      </div>
+      <p className="tab-intro">{INTROS.hostDeploy}</p>
+
+      {formOpen ? (
+        <ProjectForm
+          mode="create"
+          serverError={formError}
+          submitting={submitting}
+          onClose={() => setFormOpen(false)}
+          onSubmit={onCreate}
+        />
+      ) : (
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h2 style={{ margin: 0 }}>Projects</h2>
+          {isAdmin ? (
+            <button type="button" className="btn" onClick={openForm}>
+              New project
+            </button>
+          ) : null}
+        </div>
+      )}
 
       {error ? (
         <div className="app-error" role="alert" aria-live="assertive">
@@ -115,18 +127,25 @@ export function HostDeployTab({ hostId, active }: HostDeployTabProps) {
         </div>
       ) : null}
 
-      {projects && projects.length === 0 ? (
-        <div className="empty-state">
-          <p>No projects yet.</p>
-          <p>
-            A project is a compose app on this host — from a Git repository or a
-            pasted compose file. Admins can deploy; deploys run with the
-            privileges the compose file asks for.
-          </p>
-        </div>
+      {!formOpen && projects && projects.length === 0 ? (
+        <EmptyState
+          title="Deploy your first app"
+          action={
+            isAdmin ? (
+              <button type="button" className="btn" onClick={openForm}>
+                Create your first project
+              </button>
+            ) : null
+          }
+          doc={{ name: "deploy", label: "How deploys work" }}
+        >
+          {isAdmin
+            ? "A project is a Docker Compose app on this host. Point it at a Git repository or paste a compose file, then press Deploy. Deploys run with the privileges the compose file asks for, which is the same as root on the server."
+            : "A project is a Docker Compose app on this host. Only admins can deploy."}
+        </EmptyState>
       ) : null}
 
-      {projects && projects.length > 0 ? (
+      {!formOpen && projects && projects.length > 0 ? (
         <div className="table-wrap">
           <table className="data">
             <thead>
@@ -192,14 +211,6 @@ export function HostDeployTab({ hostId, active }: HostDeployTabProps) {
 
       {!projects && !error ? <p className="muted">Loading…</p> : null}
 
-      <ProjectForm
-        open={formOpen}
-        mode="create"
-        serverError={formError}
-        submitting={submitting}
-        onClose={() => setFormOpen(false)}
-        onSubmit={onCreate}
-      />
     </div>
   );
 }

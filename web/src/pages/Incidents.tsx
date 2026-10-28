@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { IncidentState, IncidentSummary } from "../api/m6Types";
+import { EmptyState } from "../components/EmptyState";
+import { InfoTip } from "../components/InfoTip";
+import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 
 type ListTab = IncidentState;
 
@@ -66,7 +70,7 @@ export function IncidentsPage() {
 
   return (
     <div className="page">
-      <h1>Incidents</h1>
+      <PageHeader title="Incidents" intro={INTROS.incidents} />
 
       <div
         className="tabs"
@@ -103,9 +107,15 @@ export function IncidentsPage() {
         aria-labelledby={`tab-incidents-${tab}`}
       >
         {incidents && incidents.length === 0 ? (
-          <div className="empty-state">
-            <p>{tab === "open" ? "No open incidents." : "No resolved incidents."}</p>
-          </div>
+          tab === "open" ? (
+            <EmptyState title="All quiet.">
+              Incidents appear here when something needs attention.
+            </EmptyState>
+          ) : (
+            <EmptyState title="No resolved incidents yet.">
+              Resolved incidents stay here as history.
+            </EmptyState>
+          )
         ) : null}
 
         {incidents && incidents.length > 0 ? (
@@ -113,11 +123,15 @@ export function IncidentsPage() {
             <table className="data">
               <thead>
                 <tr>
-                  <th>Severity</th>
+                  <th>
+                    Severity <InfoTip term="severity" />
+                  </th>
                   <th>Host</th>
                   <th>Title</th>
                   <th>Updated</th>
-                  <th>Alerts</th>
+                  <th>
+                    Alerts <InfoTip term="alert" />
+                  </th>
                 </tr>
               </thead>
               <tbody>

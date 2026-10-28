@@ -305,10 +305,86 @@ func TestNetworkErrorUnavailable(t *testing.T) {
 	}
 }
 
-func TestScrubRemovesKeyAndClips(t *testing.T) {
-	got := scrub("a "+secretKey+" "+strings.Repeat("y", 300), secretKey)
-	if strings.Contains(got, secretKey) || len([]rune(got)) > 203 {
-		t.Fatalf("scrub = %q", got)
+func TestCleanDetailRemovesKeyControlsAndClips(t *testing.T) {
+	got := cleanDetail("a "+secretKey+"\x00\x1b[31m b\n"+strings.Repeat("y", 300), secretKey)
+	if strings.Contains(got, secretKey) || len([]rune(got)) > 160 || strings.ContainsAny(got, "\x00\x1b\n") {
+		t.Fatalf("cleanDetail = %q", got)
+	}
+}
+
+func TestTypedErrors(t *testing.T) {
+	body := func(msg string) string { return `{"error":{"message":"` + msg + `"}}` }
+	cases := []struct {
+		name   string
+		status int
+		reply  string
+		kind   error
+		detail string
+	}{
+		{"model not found", 404, body("No endpoints found for foo/bar"), ErrBadResponse, "No endpoints found for foo/bar"},
+		{"bad request", 400, body("bad model id"), ErrBadResponse, "bad model id"},
+		{"auth", 401, body("User not found."), ErrAuth, "User not found."},
+		{"forbidden", 403, `{"error":"nope"}`, ErrAuth, "nope"},
+		{"rate", 429, body("slow down"), ErrRateLimited, "slow down"},
+		{"server", 503, `<html>down</html>`, ErrUnavailable, ""},
+		{"key echoed", 400, body("bad key " + secretKey), ErrBadResponse, "bad key [redacted]"},
+	}
+	for _, c := range cases {
+		for name, p := range backends(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(c.status)
+			_, _ = w.Write([]byte(c.reply))
+		}), time.Second) {
+			_, err := p.Complete(context.Background(), Request{})
+			var pe *Error
+			if !errors.As(err, &pe) || !errors.Is(err, c.kind) || pe.Status != c.status || pe.Detail != c.detail {
+				t.Fatalf("%s/%s: err = %#v", c.name, name, err)
+			}
+			if strings.Contains(err.Error(), secretKey) {
+				t.Fatalf("key leaked: %v", err)
+			}
+		}
+	}
+}
+
+func TestTypedNetworkAndTimeoutErrors(t *testing.T) {
+	ts := httptest.NewTLSServer(http.NotFoundHandler())
+	p, _ := NewOpenAICompat(Config{BaseURL: ts.URL, APIKey: secretKey, Model: "m", HTTPClient: ts.Client()})
+	ts.Close()
+	_, err := p.Complete(context.Background(), Request{})
+	var pe *Error
+	if !errors.As(err, &pe) || pe.Status != 0 || pe.Timeout || !errors.Is(err, ErrUnavailable) ||
+		!strings.Contains(pe.Detail, "connection refused") || strings.Contains(pe.Detail, "https://") {
+		t.Fatalf("network err = %#v", err)
+	}
+
+	release := make(chan struct{})
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+	defer hang.Close()
+	defer close(release)
+	p2, _ := NewOpenAICompat(Config{BaseURL: hang.URL, Kind: "local", Model: "m", Timeout: 50 * time.Millisecond})
+	_, err = p2.Complete(context.Background(), Request{})
+	if !errors.As(err, &pe) || !pe.Timeout || pe.Detail != "timeout awaiting response" {
+		t.Fatalf("timeout err = %#v", err)
+	}
+}
+
+func TestOpenAIErrorObjectWith200(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"error":{"message":"Provider returned error","code":502}}`))
+	}))
+	defer srv.Close()
+	p, _ := NewOpenAICompat(Config{BaseURL: srv.URL, APIKey: secretKey, Model: "m", HTTPClient: srv.Client()})
+	_, err := p.Complete(context.Background(), Request{})
+	var pe *Error
+	if !errors.As(err, &pe) || !errors.Is(err, ErrBadResponse) || pe.Detail != "Provider returned error" {
+		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestModelOf(t *testing.T) {
+	p, _ := NewOpenAICompat(Config{Kind: "local", BaseURL: "http://localhost:1", Model: "vendor/model"})
+	if ModelOf(p) != "vendor/model" {
+		t.Fatal(ModelOf(p))
 	}
 }
 

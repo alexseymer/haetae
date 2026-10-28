@@ -10,9 +10,12 @@ import type {
 } from "../api/securityTypes";
 import { useAuth } from "../auth";
 import { Badge } from "../components/Badge";
+import { EmptyState } from "../components/EmptyState";
+import { InfoTip } from "../components/InfoTip";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 import {
   containerScanStatusLine,
   imageUpdateDecisionLabel,
@@ -121,6 +124,7 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
       id="panel-security"
       aria-labelledby="tab-security"
     >
+      <p className="tab-intro">{INTROS.hostSecurity}</p>
       {error ? (
         <div className="app-error" role="alert" aria-live="assertive">
           {error}
@@ -128,7 +132,10 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
       ) : null}
 
       <section className="stack" aria-labelledby="sec-vulns-heading">
-        <h2 id="sec-vulns-heading">Vulnerabilities</h2>
+        <div className="row heading-row">
+          <h2 id="sec-vulns-heading">Vulnerabilities</h2>
+          <InfoTip term="severity" />
+        </div>
         {vulns && !vulns.db.configured ? (
           <p className="muted" role="status">
             Vulnerability database not configured
@@ -143,7 +150,10 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
         {!vulns ? (
           <p className="muted">Loading…</p>
         ) : vulns.containers.length === 0 ? (
-          <p className="muted">No containers.</p>
+          <EmptyState title="No running containers to scan">
+            Haetae scans the software in running containers. Start a container or deploy an
+            app and the first scan runs on its own.
+          </EmptyState>
         ) : (
           vulns.containers.map((c) => (
             <VulnCard
@@ -170,7 +180,10 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
         {!security ? (
           <p className="muted">Loading…</p>
         ) : Object.keys(misByContainer).length === 0 ? (
-          <p className="muted">No open misconfigurations.</p>
+          <EmptyState title="No misconfigurations found">
+            Haetae checks for risky settings such as published ports, a mounted Docker socket,
+            running as root and expiring certificates. None are open right now.
+          </EmptyState>
         ) : (
           Object.entries(misByContainer).map(([name, items]) => (
             <div key={name} className="stack" style={{ gap: "0.35rem" }}>
@@ -196,18 +209,21 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
         {degraded ? (
           <div className="app-error" role="status" aria-live="polite">
             Conntrack {conntrack.state}
-            {conntrack.reason ? `: ${conntrack.reason}` : ""}
+            {conntrack.reason ? `: ${conntrack.reason}` : ""} <InfoTip term="degraded" />
           </div>
         ) : null}
         {conntrack && conntrack.notMonitored.length > 0 ? (
           <p className="muted" role="status">
-            Not monitored (host network): {conntrack.notMonitored.join(", ")}
+            Not monitored (host network): {conntrack.notMonitored.join(", ")}{" "}
+            <InfoTip term="notMonitored" />
           </p>
         ) : null}
         {!outbound ? (
           <p className="muted">Loading…</p>
         ) : outbound.conns.length === 0 ? (
-          <p className="muted">No outbound connections recorded.</p>
+          <EmptyState title="No outbound connections recorded yet">
+            Connections made by your containers to other servers are listed here as they happen.
+          </EmptyState>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -241,7 +257,10 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
       </section>
 
       <section className="stack" aria-labelledby="sec-img-heading">
-        <h2 id="sec-img-heading">Image updates</h2>
+        <div className="row heading-row">
+          <h2 id="sec-img-heading">Image updates</h2>
+          <InfoTip term="autoPull" />
+        </div>
         {isAdmin ? (
           <label className="row" style={{ gap: "0.5rem" }}>
             <input
@@ -263,7 +282,9 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
         {!updates ? (
           <p className="muted">Loading…</p>
         ) : updates.updates.length === 0 ? (
-          <p className="muted">No image update decisions yet.</p>
+          <EmptyState title="No image update decisions yet">
+            Once a running image has been checked against its registry, the decision appears here.
+          </EmptyState>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -345,6 +366,15 @@ function VulnCard({
       <p className={failed ? "app-error" : "muted"} role="status" style={{ margin: 0 }}>
         {statusLine}
       </p>
+      {failed ? <InfoTip term="scanFailed" /> : null}
+      {c.scan.status === "ok" && c.match.status !== "ok" && !failed ? (
+        <InfoTip term="matchingPending" />
+      ) : null}
+      {showCounts && c.findings.length === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>
+          No known vulnerabilities found in the last completed scan.
+        </p>
+      ) : null}
       {message ? (
         <p className="muted" role="status" style={{ margin: 0 }}>
           {message}

@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type {
   AlertSettings,
@@ -18,6 +19,9 @@ import type {
 import type { Role, User } from "../api/types";
 import { useAuth } from "../auth";
 import { Badge } from "../components/Badge";
+import { EmptyState } from "../components/EmptyState";
+import { InfoTip } from "../components/InfoTip";
+import { PageHeader } from "../components/PageHeader";
 import { channelEnvHint } from "../lib/chatChannels";
 import {
   hasAlertSettingsErrors,
@@ -26,6 +30,7 @@ import {
 } from "../lib/alertSettings";
 import { OperatorSettingsSection } from "./OperatorSettings";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { INTROS } from "../lib/help";
 
 type SettingsTab = "account" | "alerts" | "chat" | "operator";
 
@@ -56,7 +61,11 @@ const DEFAULT_SETTINGS: AlertSettings = {
 export function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [tab, setTab] = useState<SettingsTab>("account");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [tab, setTab] = useState<SettingsTab>(
+    TABS.some((t) => t.id === tabParam) ? (tabParam as SettingsTab) : "account",
+  );
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -349,7 +358,7 @@ export function SettingsPage() {
 
   return (
     <div className="page">
-      <h1>Settings</h1>
+      <PageHeader title="Settings" intro={INTROS.settings} />
 
       <div
         className="tabs"
@@ -380,6 +389,7 @@ export function SettingsPage() {
           id="panel-settings-account"
           aria-labelledby="tab-settings-account"
         >
+          <p className="tab-intro">{INTROS.settingsAccount}</p>
           <section className="card" style={{ marginBottom: "1.5rem" }}>
             <h2>Change password</h2>
             <form onSubmit={(e) => void onPassword(e)}>
@@ -406,6 +416,7 @@ export function SettingsPage() {
                   onChange={(e) => setNext(e.target.value)}
                   required
                 />
+                <p className="field-hint">Use a long passphrase that you do not use elsewhere.</p>
               </div>
               {pwError ? (
                 <div className="app-error" role="alert" aria-live="assertive">
@@ -455,6 +466,7 @@ export function SettingsPage() {
           {isAdmin ? (
             <section className="card">
               <h2>Add user</h2>
+              <p className="muted">They sign in with this email and password.</p>
               <form onSubmit={(e) => void onAddUser(e)}>
                 <div className="field">
                   <label htmlFor="new-user-email">Email</label>
@@ -490,6 +502,10 @@ export function SettingsPage() {
                     <option value="member">member</option>
                     <option value="admin">admin</option>
                   </select>
+                  <p className="field-hint">
+                    Members can view. Admins can also add hosts, deploy, change
+                    settings and approve operator actions.
+                  </p>
                 </div>
                 {addError ? (
                   <div className="app-error" role="alert" aria-live="assertive">
@@ -511,8 +527,12 @@ export function SettingsPage() {
           id="panel-settings-alerts"
           aria-labelledby="tab-settings-alerts"
         >
+          <p className="tab-intro">{INTROS.settingsAlerts}</p>
           <section className="card" style={{ marginBottom: "1.5rem" }}>
-            <h2>Alert thresholds</h2>
+            <div className="row heading-row">
+              <h2>Alert thresholds</h2>
+              <InfoTip term="alert" />
+            </div>
             {!settingsLoaded && !settingsError ? (
               <p className="muted">Loading…</p>
             ) : (
@@ -559,6 +579,7 @@ export function SettingsPage() {
                         {settingsErrors.briefingHour}
                       </p>
                     ) : null}
+                    <p className="field-hint">Hour of the day, in the time zone above, when the daily briefing is sent.</p>
                   </div>
                   <div className="field">
                     <label htmlFor="alert-cpu">CPU %</label>
@@ -577,6 +598,7 @@ export function SettingsPage() {
                         {settingsErrors.cpuPct}
                       </p>
                     ) : null}
+                    <p className="field-hint">Alert when CPU stays above this percentage for the sustained time below.</p>
                   </div>
                   <div className="field">
                     <label htmlFor="alert-mem">Memory %</label>
@@ -595,6 +617,7 @@ export function SettingsPage() {
                         {settingsErrors.memPct}
                       </p>
                     ) : null}
+                    <p className="field-hint">Alert when memory stays above this percentage for the sustained time below.</p>
                   </div>
                   <div className="field">
                     <label htmlFor="alert-disk">Disk %</label>
@@ -613,6 +636,7 @@ export function SettingsPage() {
                         {settingsErrors.diskPct}
                       </p>
                     ) : null}
+                    <p className="field-hint">Alert when disk use stays above this percentage for the sustained time below.</p>
                   </div>
                   <div className="field">
                     <label htmlFor="alert-sustained">Sustained seconds</label>
@@ -631,6 +655,7 @@ export function SettingsPage() {
                         {settingsErrors.sustainedS}
                       </p>
                     ) : null}
+                    <p className="field-hint">How long a value must stay above its threshold before an alert fires.</p>
                   </div>
                   <div className="field">
                     <label htmlFor="alert-offline">Offline after seconds</label>
@@ -649,6 +674,7 @@ export function SettingsPage() {
                         {settingsErrors.offlineAfterS}
                       </p>
                     ) : null}
+                    <p className="field-hint">A host with no connection for this long raises a critical alert.</p>
                   </div>
                 </fieldset>
                 {settingsError ? (
@@ -680,7 +706,11 @@ export function SettingsPage() {
               </div>
             ) : null}
             {mutes.length === 0 ? (
-              <p className="muted">No active mutes.</p>
+              <EmptyState title="No active mutes">
+                A mute silences notifications for a host for a while; its alerts are still
+                recorded. Use Mute 30 days on an incident message, or mute a host from an
+                incident page.
+              </EmptyState>
             ) : (
               <div className="table-wrap">
                 <table className="data">
@@ -727,6 +757,7 @@ export function SettingsPage() {
           id="panel-settings-operator"
           aria-labelledby="tab-settings-operator"
         >
+          <p className="tab-intro">{INTROS.settingsOperator}</p>
           <OperatorSettingsSection isAdmin={isAdmin} />
         </div>
       ) : null}
@@ -737,6 +768,7 @@ export function SettingsPage() {
           id="panel-settings-chat"
           aria-labelledby="tab-settings-chat"
         >
+          <p className="tab-intro">{INTROS.settingsChat}</p>
           {chatError ? (
             <div className="app-error" role="alert" aria-live="assertive">
               {chatError}
@@ -745,6 +777,9 @@ export function SettingsPage() {
 
           <section className="card" style={{ marginBottom: "1.5rem" }}>
             <h2>Channels</h2>
+            <p className="muted">
+              Each channel is off until the server is configured for it. Web chat needs no setup.
+            </p>
             {channels.length === 0 ? (
               <p className="muted">Loading channels…</p>
             ) : (
@@ -763,7 +798,7 @@ export function SettingsPage() {
                           {hint ? (
                             <span className="muted">
                               {" "}
-                              Set env var {hint} on the server.
+                              Turn it on by setting {hint} on the server, then restart it.
                             </span>
                           ) : null}
                         </>
@@ -778,7 +813,10 @@ export function SettingsPage() {
           <section className="card" style={{ marginBottom: "1.5rem" }}>
             <h2>Linked accounts</h2>
             {accounts.length === 0 ? (
-              <p className="muted">No linked accounts.</p>
+              <EmptyState title="No chat channel linked yet">
+                Link a channel below to get incident messages and the daily briefing in your
+                chat app. Web chat is always on.
+              </EmptyState>
             ) : (
               <div className="table-wrap">
                 <table className="data">
@@ -817,6 +855,10 @@ export function SettingsPage() {
 
           <section className="card">
             <h2>Link a channel</h2>
+            <p className="muted">
+              Linking connects your account to a channel with a one-time code. Only linked
+              admin accounts can press the buttons on incident messages.
+            </p>
             <div className="row" style={{ marginBottom: "1rem" }}>
               {LINKABLE.map(({ id: ch, label }) => (
                 <button

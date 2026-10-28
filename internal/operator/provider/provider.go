@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // Role of a message in a conversation.
@@ -79,3 +80,40 @@ var (
 	ErrAuth        = errors.New("provider rejected the credentials")
 	ErrBadResponse = errors.New("provider returned an unusable response")
 )
+
+// Error is the typed failure of one provider call. Kind is one of the Err*
+// values above and Unwrap returns it, so errors.Is(err, ErrAuth) keeps
+// working. Status is the HTTP status (0 for network errors). Detail is a
+// short cause with the API key removed, control characters stripped and at
+// most 160 characters; it never holds the request or the full response.
+type Error struct {
+	Kind    error
+	Status  int
+	Detail  string
+	Timeout bool // the call ended because a deadline passed
+}
+
+func (e *Error) Error() string {
+	s := e.Kind.Error()
+	if e.Status != 0 {
+		s += fmt.Sprintf(": status %d", e.Status)
+	}
+	if e.Detail != "" {
+		s += ": " + e.Detail
+	}
+	return s
+}
+
+// Unwrap returns Kind.
+func (e *Error) Unwrap() error { return e.Kind }
+
+// ModelNamer is implemented by providers that know their model id.
+type ModelNamer interface{ Model() string }
+
+// ModelOf returns the model id of p, or "" when unknown.
+func ModelOf(p Provider) string {
+	if m, ok := p.(ModelNamer); ok {
+		return m.Model()
+	}
+	return ""
+}

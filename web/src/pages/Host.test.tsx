@@ -122,14 +122,14 @@ describe("HostPage", () => {
         "true",
       ),
     );
-    expect(await screen.findByText("No containers.")).toBeInTheDocument();
+    expect(await screen.findByText("No containers yet")).toBeInTheDocument();
     expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "panel-containers");
 
     await user.click(screen.getByRole("tab", { name: "Logs" }));
     await waitFor(() =>
       expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true"),
     );
-    expect(await screen.findByText("No events")).toBeInTheDocument();
+    expect(await screen.findByText("No log events at this level")).toBeInTheDocument();
   });
 
   it("supports arrow-key roving tabindex on the tablist", async () => {
