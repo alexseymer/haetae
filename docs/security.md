@@ -14,16 +14,16 @@ Everything below appears on the host page, **Security** tab (`?tab=security`), w
 
 The shipped `compose.yaml` (and so the installer) sets `HAETAE_VULN_DB_URL` to Anchore's official listing, `https://grype.anchore.io/databases/v6/latest.json`, so a self-hosted stack matches CVEs without extra setup. To use a mirror, set `HAETAE_VULN_DB_URL` in `haetae.env` ([install.md](install.md)); `off` disables downloads (the Security tab then says **Vulnerability database not configured**). The **server binary itself** still defaults to no download when the variable is unset (empty or `off`), for example when run outside the shipped compose file.
 
-The default is the listing used in the project's benchmark runs. The server checks it every 10 minutes (a small request), downloads and swaps in a newer database only when one exists, verifies the checksum, and keeps the old database if an update fails (the tab then shows **Vulnerability database update failed: <error>**). The database is stored in `HAETAE_VULN_DB_DIR` (default `<data dir>/vuln-db`). Per the design, a new advisory affecting a running container alerts within 15 minutes (target: 10 min listing check, re-match, 15 s rule evaluation); the `new_cve` rule works without the AI. It alerts for high and critical findings first seen after the container started; the backlog present at first evaluation is shown but not alerted.
+The default is the listing used in the project's benchmark runs. The server checks it every 10 minutes (a small request), downloads and swaps in a newer database only when one exists, verifies the checksum, and keeps the old database if an update fails (the tab then shows **Vulnerability database update failed: &lt;error&gt;**). The database is stored in `HAETAE_VULN_DB_DIR` (default `<data dir>/vuln-db`). Per the design, a new advisory affecting a running container alerts within 15 minutes (target: 10 min listing check, re-match, 15 s rule evaluation); the `new_cve` rule works without the AI. It alerts for high and critical findings first seen after the container started; the backlog present at first evaluation is shown but not alerted.
 
 ## Reading the statuses
 
-- **Scan failed: <reason>**: the inventory failed, timed out, ran out of memory, or the image is unsupported, or matching failed. Typical reasons: `inventory out of memory`, `inventory timed out`, `too many packages`, or the first line of the helper's error. The tab never shows a clean zero in this case, and the Hosts badge says `scan failed`.
+- **Scan failed: &lt;reason&gt;**: the inventory failed, timed out, ran out of memory, or the image is unsupported, or matching failed. Typical reasons: `inventory out of memory`, `inventory timed out`, `too many packages`, or the first line of the helper's error. The tab never shows a clean zero in this case, and the Hosts badge says `scan failed`.
 - **Not scanned yet**: no inventory has been taken for that image.
 - **Scan pending...**: an inventory is queued or running.
 - **Matching pending**: the package list is stored but not yet matched (database not ready or the match queue is full). It is not clean; a periodic pass retries.
-- **Scanned <when> (database <date>)**: success; counts show critical, high, medium and low.
-- **Conntrack degraded/unavailable: <reason>** (Outbound connections): the outbound watch lost events or cannot run. **Not monitored (host network)** lists containers using `network_mode: host`, whose connections cannot be attributed.
+- **Scanned &lt;when&gt; (database &lt;date&gt;)**: success; counts show critical, high, medium and low.
+- **Conntrack degraded/unavailable: &lt;reason&gt;** (Outbound connections): the outbound watch lost events or cannot run. **Not monitored (host network)** lists containers using `network_mode: host`, whose connections cannot be attributed.
 
 ## Outbound watch requirements
 

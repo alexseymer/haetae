@@ -17,18 +17,24 @@ Haetae is for solo developers and small teams (2 to 10 people, 2 to 20 Linux ser
 - **Free and self-hosted** under AGPL-3.0, every feature included, no data sent to us. A hosted service is planned, not built.
 
 <!-- screenshots:start -->
-<!--
-Screenshots are added later in docs/images/. When they exist, replace this
-comment block with an image gallery that links exactly these files:
+<p align="center">
+  <img src="docs/images/host-overview.png" alt="Host overview: CPU, load, memory, disk and network charts for one server" width="860">
+</p>
 
-  docs/images/hosts.png          Hosts list
-  docs/images/host-overview.png  Host overview with metrics
-  docs/images/incident.png       An incident with evidence
-  docs/images/chat.png           Web chat with the operator
-  docs/images/security.png       Security tab of a host
-  docs/images/ai-operator.png    Settings, AI operator
-  docs/images/add-host.png       Add host dialog with the enrollment command
--->
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/hosts.png" alt="Hosts list with status, security badge and container count"><br><sub>Every server at a glance: status, security badge, containers.</sub></td>
+    <td width="50%"><img src="docs/images/incident.png" alt="An incident with the alerts and the evidence behind each one"><br><sub>An incident groups related alerts, each with its evidence.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/chat.png" alt="Web chat: questions answered by the operator with links to the evidence"><br><sub>Ask in plain language; every statement links to its evidence.</sub></td>
+    <td width="50%"><img src="docs/images/security.png" alt="Security tab listing vulnerabilities with fixed versions and risky container settings"><br><sub>Vulnerabilities with the fixed version, and risky settings.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/ai-operator.png" alt="Settings, AI operator: enabled at the suggest level with usage today"><br><sub>The AI operator is optional: autonomy level and daily token cap.</sub></td>
+    <td width="50%"><img src="docs/images/add-host.png" alt="Add host dialog showing the one-time install command"><br><sub>Add a host with one command; the token works once.</sub></td>
+  </tr>
+</table>
 <!-- screenshots:end -->
 
 ## How it works

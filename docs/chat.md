@@ -18,7 +18,7 @@ Set variables in `/opt/haetae/haetae.env` (see "Configuring the server" in [inst
 
 ## Web chat
 
-**Chat** shows incident and briefing messages and lets you type questions to the operator. Messages can carry buttons. With the AI operator off, a question gets the fixed reply "The operator is not enabled yet; rule alerts are active." (or, when the AI is configured but unavailable, "The operator is unavailable (<reason>); rule alerts are active."). See [ai-operator.md](ai-operator.md).
+**Chat** shows incident and briefing messages and lets you type questions to the operator. Messages can carry buttons. With the AI operator off, a question gets the fixed reply "The operator is not enabled yet; rule alerts are active." (or, when the AI is configured but unavailable, "The operator is unavailable (&lt;reason&gt;); rule alerts are active."). See [ai-operator.md](ai-operator.md).
 
 ## Telegram
 

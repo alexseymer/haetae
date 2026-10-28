@@ -62,7 +62,7 @@ There is exactly one operator action: `restart_container`. The server only allow
 
 ## When the AI is unreachable
 
-Provider errors, timeouts, rate limits, a missing key, redaction failures and the cap all degrade the same way: chat answers "The operator is unavailable (<reason>); rule alerts are active." with a reason such as `not configured`, `turned off`, `daily usage cap reached` or `temporarily unavailable`; incident explanations are skipped; the briefing uses the rule text; the log judge keeps rule verdicts. Crash, metric and new-CVE alerts keep firing, because the rule path does not call the operator (a test runs it with a provider that blocks forever).
+Provider errors, timeouts, rate limits, a missing key, redaction failures and the cap all degrade the same way: chat answers "The operator is unavailable (&lt;reason&gt;); rule alerts are active." with a reason such as `not configured`, `turned off`, `daily usage cap reached` or `temporarily unavailable`; incident explanations are skipped; the briefing uses the rule text; the log judge keeps rule verdicts. Crash, metric and new-CVE alerts keep firing, because the rule path does not call the operator (a test runs it with a provider that blocks forever).
 
 ## Logs are untrusted
 

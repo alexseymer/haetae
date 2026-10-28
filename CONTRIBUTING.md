@@ -32,12 +32,17 @@ make test     # go test -race ./...
 | `make test-alerts` | Alerts and chat acceptance (fake Telegram) | Docker, busybox |
 | `make test-security` | Security acceptance (crafted Grype database) | Docker |
 | `make test-operator` | AI operator acceptance (scripted provider) | Docker |
+| `make screenshots` | Regenerates `docs/images/*.png` for the README | Docker, Chromium, Playwright, cached `nginx:alpine`, `busybox:1.37`, `postgres:17-alpine` |
 | `make test-load` | Agent memory with 20 noisy containers (`HAETAE_LOAD_DURATION`, default 2m) | Docker |
 | `make test-selfhost` | Self-hosted install; builds the image once | Docker |
 | `make bench-m7` | Scanner benchmarks, see `bench/m7/README.md` | Docker, about 4 GB free disk |
 | `make release release-image test-release bench-release-rss` | Release artifacts, image, verification, agent RSS | Docker; see [docs/release.md](docs/release.md) |
 
 CI (`.github/workflows/ci.yml`) runs formatting, `go vet`, `make test`, `make lint`, `make vuln`, `make build`, the integration, load and self-host suites, and the web typecheck, unit tests, build and `npm audit`. The Docker-heavy acceptance suites (`test-e2e`, `test-deploy`, `test-alerts`, `test-security`, `test-operator`) are run through the acceptance script below, not in CI.
+
+## Regenerate the README screenshots
+
+`make screenshots` starts a real server and agent with a small demo (a host named `hel1-prod` running `shop-web`, `shop-api`, `shop-db` and a crash-looping `worker`, a scripted AI provider and a crafted vulnerability database with synthetic CVEs), lets it collect metrics for a few minutes, and drives Chromium over it. It needs Docker, Chromium at `/usr/bin/chromium`, a global Playwright install (`npm root -g`) and the cached images above, takes about 5 minutes, and rewrites the seven PNGs in `docs/images/`. It removes the shared `haetae-test-postgres` container (the next integration test recreates it) and every demo container when it ends. Look at the images before committing them.
 
 ## Run the acceptance suite
 

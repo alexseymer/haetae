@@ -45,7 +45,7 @@ Open the project, select the deploy: the result panel shows the raw error and th
 
 ## The AI is unavailable
 
-**Settings**, **AI operator** shows the reason. Chat says "The operator is unavailable (<reason>); rule alerts are active."
+**Settings**, **AI operator** shows the reason. Chat says "The operator is unavailable (&lt;reason&gt;); rule alerts are active."
 
 - `not configured`: set `HAETAE_AI_PROVIDER`, `HAETAE_AI_MODEL` (and key or base URL); the server log has `AI operator configured` when it is read.
 - The server refuses to start with `HAETAE_AI_*: ...` for bad values (for example `provider: model is required`, `provider: base URL must use https unless kind is local and the host is local`).
@@ -69,4 +69,4 @@ See the status list in [security.md](security.md). Quick map: `inventory out of 
 ## Server will not start
 
 - `HAETAE_DATABASE_URL is required`; `HAETAE_WEB_TLS_CERT and HAETAE_WEB_TLS_KEY must be set together`; "HAETAE_TRUST_PROXY was replaced by HAETAE_TRUSTED_PROXIES"; `HAETAE_TRUSTED_PROXIES: "<x>" is not an address or CIDR`; `HAETAE_PUBLIC_URL must be an absolute URL`.
-- The installer reports "haetae: port <n> is already in use" or "haetae: timed out waiting for the server to become healthy" (it then prints the logs).
+- The installer reports "haetae: port &lt;n&gt; is already in use" or "haetae: timed out waiting for the server to become healthy" (it then prints the logs).
