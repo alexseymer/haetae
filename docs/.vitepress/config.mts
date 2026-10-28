@@ -22,8 +22,8 @@ export default withMermaid(
 
     head: [
       ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}favicon.svg` }],
-      ['meta', { name: 'theme-color', content: '#e9fbf2', media: '(prefers-color-scheme: light)' }],
-      ['meta', { name: 'theme-color', content: '#07120e', media: '(prefers-color-scheme: dark)' }],
+      ['meta', { name: 'theme-color', content: '#eef3ff', media: '(prefers-color-scheme: light)' }],
+      ['meta', { name: 'theme-color', content: '#071226', media: '(prefers-color-scheme: dark)' }],
       ['meta', { name: 'author', content: 'Haetae contributors' }],
       ['meta', { property: 'og:type', content: 'website' }],
       ['meta', { property: 'og:site_name', content: site.name }],
