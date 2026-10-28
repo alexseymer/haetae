@@ -24,8 +24,25 @@ func TestUnitMemoryMaxLeavesHeadroomForHelper(t *testing.T) {
 	if strings.EqualFold(string(m[2]), "G") {
 		n *= 1024
 	}
-	const helperCapMB, minHeadroomMB = 256, 768
+	helperCapMB := defaultHelperCapMB(t)
+	const minHeadroomMB = 768
 	if n < helperCapMB+minHeadroomMB {
-		t.Fatalf("MemoryMax=%dM leaves less than %dM above the helper cap", n, minHeadroomMB)
+		t.Fatalf("MemoryMax=%dM leaves less than %dM above the helper cap (%dM)", n, minHeadroomMB, helperCapMB)
 	}
+}
+
+// defaultHelperCapMB reads the helper's default cap from the launcher, so the
+// test follows the real value instead of a copy of it.
+func defaultHelperCapMB(t *testing.T) int {
+	t.Helper()
+	src, err := os.ReadFile("../agent/scan/launcher.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`defaultMemBytes\s*=\s*(\d+)\s*<<\s*20`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("defaultMemBytes in launcher.go is not of the form N << 20")
+	}
+	mb, _ := strconv.Atoi(string(m[1]))
+	return mb
 }

@@ -240,11 +240,11 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=$STATE_Q
-# The agent delegates its cgroup: it moves itself into a leaf (60M high /
-# 100M max, set by the agent) and runs the inventory helper in sibling leaves
-# capped at 256M. The unit limit is larger than the helper cap plus the page
-# cache that reading image layers charges to this cgroup; at 400M the kernel
-# OOM-killed the agent whenever a large image was scanned.
+# The agent delegates its cgroup. It moves itself into a leaf (100M max) and
+# runs the inventory helper in sibling leaves capped at 256M. Measured on a
+# host that scanned 1-2.5 GB images: the unit total sat at about 390-400 MB
+# after the helper was already killed, mostly page cache from reading image
+# layers, and the kernel killed the agent at that limit. Hence 1G here.
 Delegate=memory pids cpu
 MemoryMax=1G
 ProtectKernelModules=yes
