@@ -164,6 +164,12 @@ create_user_env() {
 # HAETAE_AI_BASE_URL=
 # HAETAE_AI_MODEL=
 # HAETAE_AI_API_KEY=
+# Example, OpenRouter (any OpenAI-compatible hosted service works the same way):
+#   HAETAE_AI_PROVIDER=openai
+#   HAETAE_AI_BASE_URL=https://openrouter.ai/api/v1
+#   HAETAE_AI_MODEL=vendor/model   (the id as OpenRouter lists it; it must support tool calling)
+#   HAETAE_AI_API_KEY=your-key
+# Then use Settings, AI operator, Test connection.
 
 # Web TLS: your own certificate and key (paths inside the container)
 # HAETAE_WEB_TLS_CERT=

@@ -1310,3 +1310,81 @@ table.data tbody tr.clickable:focus-within {
 .form-actions {
   margin-top: var(--space-2);
 }
+
+/* ---- Chat feed: day separators, incident cards, notes ---- */
+
+.chat-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-day {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 0.8rem;
+  color: var(--color-muted, inherit);
+}
+
+.chat-day::before,
+.chat-day::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--color-border);
+}
+
+.chat-kind {
+  font-weight: 600;
+}
+
+.chat-msg-mine {
+  background: var(--color-surface-2);
+}
+
+.chat-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.chat-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-card-title {
+  flex: 1;
+  min-width: 8rem;
+  word-break: break-word;
+}
+
+.chat-card-host {
+  margin: var(--space-2) 0 0;
+}
+
+.chat-card-summary {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  word-break: break-word;
+}
+
+.chat-evidence-inline {
+  list-style: none;
+  padding-left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.chat-card-resolved {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.chat-thinking {
+  margin: 0;
+}

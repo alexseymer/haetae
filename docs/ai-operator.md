@@ -36,6 +36,36 @@ A bad value stops the server at start with an error starting `HAETAE_AI_*:`. Exa
 
 2. In the UI, **Settings**, **AI operator** (admins): tick **Enable the AI operator**, choose **Autonomy**, set **Daily token cap**, **Save**. The page shows the provider status, whether the operator is available and today's token usage.
 
+### Example: OpenRouter
+
+```
+HAETAE_AI_PROVIDER=openai
+HAETAE_AI_BASE_URL=https://openrouter.ai/api/v1
+HAETAE_AI_MODEL=vendor/model
+HAETAE_AI_API_KEY=<your key>
+```
+
+Use the model id exactly as OpenRouter lists it (`vendor/model`). The operator works by asking the model to call tools, so the model must support tool calling. Free models often do not; with one the operator answers "cause not found".
+
+### Test connection
+
+Administrators can press **Test connection** in **Settings**, **AI operator**. It sends two fixed requests with no user data (a one-word reply, then a request offering a trivial `ping` tool), shows the latency and whether the model called the tool, and on failure shows the reason and a fix. It works even when the operator is not enabled for the organisation and is not blocked by the daily cap; its few tokens count toward today's usage. It is limited to one test per 5 seconds. The API is `POST /api/settings/operator/test` (admin only).
+
+## Troubleshooting
+
+The reply "The operator is unavailable (<reason>); rule alerts are active." names the cause. The server log has one warning per cause per minute (`operator: AI call failed`, with `class`, `status` and `detail`; never the question or the key).
+
+| Message (reason) | Cause | Fix |
+|---|---|---|
+| `the provider rejected the API key (HTTP 401)` (or 403) | Wrong, expired or revoked key, or a key for another provider. | Set a valid `HAETAE_AI_API_KEY`, restart the server. |
+| `the provider rejected the request: <detail>. Check HAETAE_AI_MODEL and HAETAE_AI_BASE_URL` (HTTP 400/404) | Unknown model id, a model that is not available to your account, or the wrong base URL. The detail is the provider's own message. | Use the exact model id from the provider (`vendor/model` on OpenRouter) and the provider's base URL including `/v1`. |
+| `the provider is rate limiting requests, try again in a minute` (HTTP 429) | Too many requests or a free-tier limit. | Wait, lower the usage, or use another model or plan. |
+| `provider unreachable: <detail>` (for example `no such host`, `connection refused`, `tls: ...`) | The server cannot reach the provider. | Check `HAETAE_AI_BASE_URL`, DNS, proxy and firewall of the server. |
+| `provider unreachable: the provider did not answer in time` | The model is slow or overloaded. | Try again or choose a faster model. |
+| `the provider had a server error (HTTP 503)` | Problem on the provider's side. | Try again later. |
+| Answers are always "cause not found" | The model does not call tools. Test connection shows "tool calling: not used by this model". | Choose a model with tool support. |
+| `daily usage cap reached` | The organisation's token cap is spent. | Raise the cap or wait for the next UTC day. |
+
 ## Local versus cloud, and what redaction guarantees
 
 A provider counts as **local** only when kind is `local` and the host in the base URL is `localhost` or a literal loopback or private (RFC 1918, unique-local) IP. Names other than `localhost` are never resolved, so a DNS name counts as cloud. Anthropic and `openai` are always cloud.

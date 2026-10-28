@@ -6,6 +6,20 @@ export interface OperatorProvider {
   configured: boolean;
   name: string;
   local: boolean;
+  /** Configured model id (never the key or the base URL). */
+  model?: string;
+}
+
+export interface OperatorTestResult {
+  ok: boolean;
+  latencyMs: number;
+  provider: string;
+  model: string;
+  local: boolean;
+  toolCalling: "supported" | "not used by this model" | "unknown";
+  class?: string;
+  reason?: string;
+  hint?: string;
 }
 
 export interface OperatorSettings {

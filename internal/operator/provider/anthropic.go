@@ -116,6 +116,9 @@ func (a *anthropic) Complete(ctx context.Context, req Request) (Response, error)
 	return resp, nil
 }
 
+// Model returns the configured model id.
+func (a *anthropic) Model() string { return a.model }
+
 func isToolResults(m anMessage) bool {
 	return len(m.Content) > 0 && m.Content[0].Type == "tool_result"
 }

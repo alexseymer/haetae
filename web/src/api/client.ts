@@ -1,4 +1,4 @@
-import type { OperatorSettings, PutOperatorSettings } from "./operatorTypes";
+import type { OperatorSettings, OperatorTestResult, PutOperatorSettings } from "./operatorTypes";
 import type {
   AlertSettings,
   ChatAccountsResponse,
@@ -267,6 +267,8 @@ export const api = {
 
   operatorSettings: () => request<OperatorSettings>("/api/settings/operator"),
 
+  testOperatorProvider: () =>
+    request<OperatorTestResult>("/api/settings/operator/test", { method: "POST", body: {} }),
   putOperatorSettings: (body: PutOperatorSettings) =>
     request<OperatorSettings>("/api/settings/operator", { method: "PUT", body }),
 

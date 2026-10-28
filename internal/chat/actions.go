@@ -120,7 +120,7 @@ func (s *Service) applyAction(ctx context.Context, channel, externalID string, m
 			Channel:    channel,
 			AccountID:  &acc.ID,
 			Kind:       store.KindAction,
-			Body:       "later",
+			Body:       s.actionEcho(ctx, "later", msg),
 			IncidentID: msg.IncidentID,
 		})
 		if err != nil {
@@ -141,7 +141,7 @@ func (s *Service) applyAction(ctx context.Context, channel, externalID string, m
 			Channel:    channel,
 			AccountID:  &acc.ID,
 			Kind:       store.KindAction,
-			Body:       "ack",
+			Body:       s.actionEcho(ctx, "ack", msg),
 			IncidentID: msg.IncidentID,
 		})
 		if err != nil {
@@ -191,7 +191,7 @@ func (s *Service) muteIncident(ctx context.Context, acc store.ChatAccount, msg s
 		Channel:    acc.Channel,
 		AccountID:  &acc.ID,
 		Kind:       store.KindAction,
-		Body:       "mute30d",
+		Body:       s.actionEcho(ctx, "mute30d", msg),
 		IncidentID: msg.IncidentID,
 	})
 	if err != nil {
@@ -283,4 +283,47 @@ func ShortRef(id uuid.UUID) string {
 // FormatSignalHint appends a short ref line for Signal (no buttons).
 func FormatSignalHint(body string, id uuid.UUID) string {
 	return fmt.Sprintf("%s\nRef: %s (reply: later|mute|ack %s)", body, ShortRef(id), ShortRef(id))
+}
+
+// actionEcho is the text stored for the inbound row a button press leaves,
+// e.g. "You acknowledged Strato offline". Plain text, rune-limited.
+func (s *Service) actionEcho(ctx context.Context, action string, msg store.ChatMessage) string {
+	title, host := "", ""
+	var rules []string
+	if msg.IncidentID != nil {
+		if inc, alerts, err := s.st.GetIncident(ctx, msg.OrgID, *msg.IncidentID); err == nil {
+			title = LimitRunes(stripControls(inc.Title), maxFieldRunes)
+			rules = uniqueRules(alerts)
+			if h, herr := s.st.GetHost(ctx, msg.OrgID, inc.HostID); herr == nil {
+				host = LimitRunes(stripControls(h.Name), maxFieldRunes)
+			}
+		}
+	}
+	var out string
+	switch action {
+	case "later":
+		out = "You postponed " + orDefault(title, "an alert")
+	case "mute30d":
+		target := host
+		if len(rules) > 0 {
+			if len(rules) > 3 {
+				rules = rules[:3]
+			}
+			target = strings.Join(rules, ", ")
+			if host != "" {
+				target += " on " + host
+			}
+		}
+		out = "You muted " + orDefault(target, "an alert") + " for 30 days"
+	default:
+		out = "You acknowledged " + orDefault(title, "an alert")
+	}
+	return LimitRunes(stripControls(out), maxFieldRunes*2)
+}
+
+func orDefault(s, d string) string {
+	if strings.TrimSpace(s) == "" {
+		return d
+	}
+	return s
 }

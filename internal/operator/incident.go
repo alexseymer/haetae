@@ -21,6 +21,12 @@ const incidentPrompt = "Explain what happened in this incident and the most like
 // rest is the same tool loop, validation and action gating as Ask. A resolved
 // incident is explained as a post-mortem and never leads to a proposal.
 func (s *Service) ExplainIncident(ctx context.Context, orgID, incidentID uuid.UUID) (Answer, error) {
+	ans, err := s.explainIncident(ctx, orgID, incidentID)
+	s.logFailure("explain_incident", err)
+	return ans, err
+}
+
+func (s *Service) explainIncident(ctx context.Context, orgID, incidentID uuid.UUID) (Answer, error) {
 	if err := s.gate(ctx, orgID); err != nil {
 		return Answer{}, err
 	}

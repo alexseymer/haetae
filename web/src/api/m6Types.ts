@@ -92,6 +92,15 @@ export interface ChatEvidence {
   path: string;
 }
 
+/** Structured fields of an incident message (web channel). Links are in `evidence`. */
+export interface ChatMeta {
+  severity: string;
+  title: string;
+  state: "open" | "resolved" | string;
+  host?: string;
+  summary?: string[];
+}
+
 export type ChatMessageKind = "incident" | "briefing" | "answer" | "text" | "action";
 
 export type ChatDirection = "in" | "out";
@@ -103,6 +112,7 @@ export interface ChatMessage {
   body: string;
   actions: ChatAction[];
   evidence: ChatEvidence[];
+  meta?: ChatMeta;
   incidentId: string | null;
   createdAt: string;
 }

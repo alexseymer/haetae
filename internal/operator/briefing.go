@@ -40,6 +40,12 @@ type briefingWire struct {
 // any failure (including a rewrite that lost a name or a number) it returns
 // an error and the caller uses ruleText.
 func (s *Service) RewriteBriefing(ctx context.Context, orgID uuid.UUID, facts BriefingFacts, ruleText string) (string, error) {
+	out, err := s.rewriteBriefing(ctx, orgID, facts, ruleText)
+	s.logFailure("rewrite_briefing", err)
+	return out, err
+}
+
+func (s *Service) rewriteBriefing(ctx context.Context, orgID uuid.UUID, facts BriefingFacts, ruleText string) (string, error) {
 	if err := s.gate(ctx, orgID); err != nil {
 		return "", err
 	}

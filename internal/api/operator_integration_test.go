@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -15,6 +16,9 @@ type fakeOperatorSettings struct {
 	mu  sync.Mutex
 	val OperatorSettingsValue
 	err error
+
+	tests      int
+	noProvider bool
 }
 
 func (f *fakeOperatorSettings) GetSettings(context.Context, uuid.UUID) (OperatorSettingsValue, error) {
@@ -33,6 +37,15 @@ func (f *fakeOperatorSettings) UsageToday(context.Context, uuid.UUID) (OperatorU
 }
 func (f *fakeOperatorSettings) ProviderInfo() OperatorProvider {
 	return OperatorProvider{Configured: true, Name: "anthropic", Local: false}
+}
+func (f *fakeOperatorSettings) TestProvider(context.Context, uuid.UUID) (OperatorTestResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tests++
+	if f.noProvider {
+		return OperatorTestResult{}, ErrOperatorNotConfigured
+	}
+	return OperatorTestResult{OK: true, LatencyMS: 12, Provider: "openai", Model: "vendor/m", ToolCalling: "supported"}, nil
 }
 func (f *fakeOperatorSettings) Available(context.Context, uuid.UUID) (bool, string) {
 	return false, "turned off"
@@ -143,4 +156,31 @@ func mustReq(t *testing.T, url string) *http.Request {
 		t.Fatal(err)
 	}
 	return r
+}
+
+func TestOperatorTestEndpoint(t *testing.T) {
+	fs := &fakeOperatorSettings{}
+	e := newEnv(t, func(c *Config) { c.OperatorSettings = fs })
+	_, admin := e.addOrgWithUser("op", "admin@op.test", "admin")
+	_, member := e.addOrgWithUser("op2", "member@op.test", "member")
+	anon := e.newClient()
+	if s, _, _ := anon.do(http.MethodPost, "/api/settings/operator/test", map[string]any{}); s != http.StatusUnauthorized {
+		t.Fatalf("anon = %d", s)
+	}
+	if s, _, _ := member.do(http.MethodPost, "/api/settings/operator/test", map[string]any{}); s != http.StatusForbidden {
+		t.Fatalf("member = %d", s)
+	}
+	var got OperatorTestResult
+	if s, _, raw := admin.do(http.MethodPost, "/api/settings/operator/test", map[string]any{}); s != http.StatusOK {
+		t.Fatalf("admin = %d", s)
+	} else if err := json.Unmarshal(raw, &got); err != nil || !got.OK || got.ToolCalling != "supported" || got.Model != "vendor/m" {
+		t.Fatalf("body = %s", raw)
+	}
+	// A second test within 5 s is refused without calling the provider.
+	if s, _, _ := admin.do(http.MethodPost, "/api/settings/operator/test", map[string]any{}); s != http.StatusTooManyRequests {
+		t.Fatalf("second = %d", s)
+	}
+	if fs.tests != 1 {
+		t.Fatalf("provider tests = %d", fs.tests)
+	}
 }

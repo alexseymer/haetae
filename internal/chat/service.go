@@ -153,6 +153,10 @@ func (s *Service) IncidentChanged(ctx context.Context, orgID uuid.UUID, inc stor
 		{Label: "Incident", Path: "/incidents/" + inc.ID.String()},
 	}
 	incID := inc.ID
+	hostName := ""
+	if h, err := s.st.GetHost(ctx, orgID, inc.HostID); err == nil {
+		hostName = h.Name
+	}
 
 	web := store.ChatMessage{
 		OrgID:      orgID,
@@ -162,6 +166,7 @@ func (s *Service) IncidentChanged(ctx context.Context, orgID uuid.UUID, inc stor
 		Body:       renderIncidentBody(store.ChannelWeb, inc, alerts),
 		Actions:    actions,
 		Evidence:   evidence,
+		Meta:       incidentMeta(inc, alerts, hostName),
 		IncidentID: &incID,
 	}
 	if _, err := s.st.EnqueueChatMessage(ctx, web); err != nil {
@@ -200,6 +205,54 @@ func (s *Service) IncidentChanged(ctx context.Context, orgID uuid.UUID, inc stor
 	return nil
 }
 
+// incidentLines returns the alert summary lines worth showing under the title:
+// at most five, skipping any that repeat the incident title (the title is
+// built from the top alert, so it usually equals its summary).
+func incidentLines(inc store.Incident, alerts []store.Alert, title string) []string {
+	var out []string
+	seen := map[string]bool{strings.ToLower(strings.TrimSpace(title)): true}
+	for _, a := range alerts {
+		if a.State != "firing" && inc.State != "resolved" {
+			continue
+		}
+		summary := LimitRunes(stripControls(a.Summary), maxSummaryRunes)
+		line := summary
+		if a.Container != "" {
+			line = fmt.Sprintf("%s (%s)", summary, stripControls(a.Container))
+		}
+		key := strings.ToLower(strings.TrimSpace(line))
+		if key == "" || seen[key] || seen[strings.ToLower(strings.TrimSpace(summary))] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, line)
+		if len(out) >= 5 {
+			break
+		}
+	}
+	return out
+}
+
+// incidentMeta builds the structured fields for the web card.
+func incidentMeta(inc store.Incident, alerts []store.Alert, hostName string) *store.ChatMeta {
+	title := LimitRunes(stripControls(inc.Title), maxTitleRunes)
+	state := "open"
+	if inc.State == "resolved" {
+		state = "resolved"
+	}
+	lines := incidentLines(inc, alerts, title)
+	for i, l := range lines {
+		lines[i] = LimitRunes(l, maxFieldRunes)
+	}
+	return &store.ChatMeta{
+		Severity: inc.Severity,
+		Title:    title,
+		State:    state,
+		Host:     LimitRunes(stripControls(hostName), maxFieldRunes),
+		Summary:  lines,
+	}
+}
+
 func renderIncidentBody(channel string, inc store.Incident, alerts []store.Alert) string {
 	title := LimitRunes(stripControls(inc.Title), maxTitleRunes)
 	var b strings.Builder
@@ -207,23 +260,14 @@ func renderIncidentBody(channel string, inc store.Incident, alerts []store.Alert
 	if inc.State == "resolved" {
 		b.WriteString("Resolved.\n")
 	}
-	n := 0
-	for _, a := range alerts {
-		if a.State != "firing" && inc.State != "resolved" {
-			continue
-		}
-		summary := LimitRunes(stripControls(a.Summary), maxSummaryRunes)
-		line := escapeFor(channel, summary)
-		if a.Container != "" {
-			line = fmt.Sprintf("%s (%s)", line, escapeFor(channel, a.Container))
-		}
+	for _, line := range incidentLines(inc, alerts, title) {
 		b.WriteString("• ")
-		b.WriteString(line)
+		b.WriteString(escapeFor(channel, line))
 		b.WriteByte('\n')
-		n++
-		if n >= 5 {
-			break
-		}
+	}
+	if channel == store.ChannelWeb {
+		// The web card shows links from evidence; the text stays a plain fallback.
+		return EscapeBody(channel, strings.TrimSpace(b.String()))
 	}
 	fmt.Fprintf(&b, "Host: /hosts/%s\nIncident: /incidents/%s", inc.HostID, inc.ID)
 	return EscapeBody(channel, b.String())
