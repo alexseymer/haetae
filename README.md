@@ -3,6 +3,7 @@
 **An AI operator for Docker Compose servers: deploy, monitor, scan and get answers in chat, from one self-hosted tool.**
 
 [![CI](https://github.com/alexseymer/haetae/actions/workflows/ci.yml/badge.svg)](https://github.com/alexseymer/haetae/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-alexseymer.github.io%2Fhaetae-1f6f4a)](https://alexseymer.github.io/haetae/)
 [![License: AGPL-3.0](https://img.shields.io/github/license/alexseymer/haetae)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/alexseymer/haetae)](go.mod)
 
@@ -133,20 +134,9 @@ Everything below comes from [docs/acceptance.md](docs/acceptance.md), run on one
 
 ## Documentation
 
-Start at the [documentation index](docs/README.md).
+**Read the documentation on the site: <https://alexseymer.github.io/haetae/>** (install, enroll, deploy, chat, AI operator, security, troubleshooting, architecture and the acceptance report, with search and a dark mode).
 
-| Document | Contents |
-|---|---|
-| [docs/install.md](docs/install.md) | Server install, ports, TLS, reverse proxy, backups, upgrade, uninstall |
-| [docs/enroll.md](docs/enroll.md) | Enrolling hosts, what the agent installs, flags, removing a host |
-| [docs/deploy.md](docs/deploy.md) | Deploys, push-to-deploy, domains and HTTPS, rollback |
-| [docs/chat.md](docs/chat.md) | Chat channels, linking, briefing, alerts, mutes |
-| [docs/ai-operator.md](docs/ai-operator.md) | Providers, redaction, autonomy, approvals, limits |
-| [docs/security.md](docs/security.md) | Scanning, CVE matching, outbound watch, image updates |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom to check lists |
-| [docs/acceptance.md](docs/acceptance.md) | Every spec criterion with its test and measured value |
-| [docs/architecture.md](docs/architecture.md) | Components, data flows, trust model |
-| [docs/spec.md](docs/spec.md), [docs/roadmap.md](docs/roadmap.md) | Scope and build plan |
+The same pages live in this repository under [`docs/`](docs/) and are what the site is built from, so you can also read them here: [install](docs/install.md), [enroll a host](docs/enroll.md), [deploy](docs/deploy.md), [chat and alerts](docs/chat.md), [AI operator](docs/ai-operator.md), [security scanning](docs/security.md), [troubleshooting](docs/troubleshooting.md), [architecture](docs/architecture.md), [acceptance report](docs/acceptance.md). To run the site locally: `cd docs && npm ci && npm run dev`.
 
 ## Status and roadmap
 

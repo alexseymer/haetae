@@ -11,8 +11,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
 
 	"github.com/alexseymer/haetae/internal/operator/provider"
+	"github.com/alexseymer/haetae/internal/store"
 )
 
 func mkConv(evs ...*evRec) *conv { return &conv{evs: evs} }
@@ -229,4 +233,27 @@ func TestAlertsAndOperatorDoNotImportEachOther(t *testing.T) {
 	}
 	check(".", alertsPath)
 	check("../alerts", opPath)
+}
+
+func TestEvidenceTitleUsesNamesNotIDs(t *testing.T) {
+	hostID := uuid.MustParse("b3825172-abd9-421b-bbf9-c8c828868297")
+	h := store.Host{ID: hostID, Name: "hel1-prod"}
+	title := "Containers of " + hostLabel(h)
+	if !strings.Contains(title, "hel1-prod") || strings.Contains(title, hostID.String()) {
+		t.Fatalf("host title %q must name the host and not carry its UUID", title)
+	}
+
+	cid := "1b60a1b5f36ea2ef2f22daccec57c58e01e397d1e7d796f1cea08a008c38293f"
+	if got := containerLabel(store.Container{ContainerID: cid, Name: "shop-api"}); got != "shop-api" {
+		t.Errorf("named container label %q", got)
+	}
+	if got := containerLabel(store.Container{ContainerID: cid}); got != cid[:12] {
+		t.Errorf("unnamed container label %q, want first 12 id characters", got)
+	}
+	if got := displayName("sh\x00op\n-api\x1b[31m"); got != "shop-api[31m" {
+		t.Errorf("control characters not stripped: %q", got)
+	}
+	if got := displayName(strings.Repeat("é", 100)); utf8.RuneCountInString(got) != 60 {
+		t.Errorf("name not limited to 60 runes: %d", utf8.RuneCountInString(got))
+	}
 }
