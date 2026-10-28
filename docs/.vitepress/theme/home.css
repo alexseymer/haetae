@@ -102,7 +102,7 @@
 :root:has(.hx-home) .VPNavBar:not(.top) .divider-line {
   background: var(--vp-c-divider) !important;
 }
-:root:has(.hx-home) .VPNavBarTitle .title,
+:root:has(.hx-home) .VPNavBar.top .VPNavBarTitle .title,
 :root:has(.hx-home) .VPNavBar.top .VPNavBarMenuLink,
 :root:has(.hx-home) .VPNavBar.top .VPNavBarMenuGroup .button {
   color: var(--hx-hero-text);
