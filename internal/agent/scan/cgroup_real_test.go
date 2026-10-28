@@ -18,7 +18,7 @@ import (
 // a delegated cgroup, as the agent's systemd unit provides; run it with
 //
 //	sudo systemd-run --wait --pipe -p User=$USER -p Delegate=yes \
-//	  -p MemoryMax=400M -E HAETAE_REAL_CGROUP=1 ./scan.test -test.run TestRealCgroup -test.v
+//	  -p MemoryMax=1G -E HAETAE_REAL_CGROUP=1 ./scan.test -test.run TestRealCgroup -test.v
 func TestRealCgroupDelegation(t *testing.T) {
 	if os.Getenv("HAETAE_REAL_CGROUP") != "1" {
 		t.Skip("set HAETAE_REAL_CGROUP=1 inside a delegated systemd unit")
