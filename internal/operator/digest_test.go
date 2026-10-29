@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func TestParseDigestWindow(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"2h", "7d", "1h; drop"} {
-		if _, err := ParseDigestWindow(bad); err != ErrBadWindow {
+		if _, err := ParseDigestWindow(bad); !errors.Is(err, ErrBadWindow) {
 			t.Errorf("ParseDigestWindow(%q) err = %v; want ErrBadWindow", bad, err)
 		}
 	}
