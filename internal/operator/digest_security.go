@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -284,7 +285,9 @@ func (s *Service) securityDigestInput(ctx context.Context, orgID uuid.UUID, scop
 		}
 	}
 
-	in.needsAttention = failedTotal > 0 || newTotal > 0
+	// Pending and never-scanned containers count too: their vulnerabilities
+	// are unknown, so the scheduled digest must say so.
+	in.needsAttention = problemTotal > 0 || newTotal > 0
 	if critTotal+hiTotal == 0 && problemTotal == 0 && len(mhosts) == 0 {
 		in.quiet = true
 		if len(health) == 0 {
@@ -519,9 +522,16 @@ func oneNonEmpty(a, b string) string {
 	return b
 }
 
-// safeVulnID returns id when it looks like a CVE or advisory id, else "other".
+// Strict vulnerability id shapes: a CVE id or a GitHub advisory id.
+var (
+	cveIDRe  = regexp.MustCompile(`^CVE-\d{4}-\d{4,}$`)
+	ghsaIDRe = regexp.MustCompile(`^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$`)
+)
+
+// safeVulnID returns id when it is a strict CVE or GHSA id, else "other". The
+// original text stays under the untrusted key of the record.
 func safeVulnID(id string) string {
-	if len(id) > 0 && len(id) <= 64 && containerIDRe.MatchString(id) {
+	if cveIDRe.MatchString(id) || ghsaIDRe.MatchString(id) {
 		return id
 	}
 	return "other"

@@ -185,7 +185,7 @@ func (s *Scheduler) sendOrg(ctx context.Context, o store.DigestOrg, now time.Tim
 }
 
 // run builds both digests, posts one message when either needs attention and
-// moves the security watermark. It reports whether a message was enqueued.
+// then moves the security watermark. It reports whether a message was enqueued.
 func (s *Scheduler) run(ctx context.Context, o store.DigestOrg, localDate time.Time) (bool, error) {
 	logD, err := s.Digests.SummarizeLogs(ctx, o.OrgID, operator.LogScope{Window: LogWindow})
 	if err != nil {
@@ -226,7 +226,11 @@ func (s *Scheduler) run(ctx context.Context, o store.DigestOrg, localDate time.T
 		posted = true
 	}
 	// Findings first seen after the watermark are new in the next digest. The
-	// watermark moves on quiet days too, so nothing is reported twice.
+	// watermark moves only when a message was posted: a silent run has told
+	// nobody, so its findings must still count as new on the next posted day.
+	if !posted {
+		return false, nil
+	}
 	if err := s.Store.SetSecurityDigestWatermark(ctx, o.OrgID, secD.WindowTo); err != nil {
 		return posted, err
 	}

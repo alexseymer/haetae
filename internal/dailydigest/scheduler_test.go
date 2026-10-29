@@ -231,9 +231,32 @@ func TestDailyDigestStaysSilentOnQuietDay(t *testing.T) {
 	if r == nil || !r.done || r.posted {
 		t.Fatalf("run %+v: want done and not posted", r)
 	}
-	// The watermark still moves on a quiet day, so findings are not reported twice.
-	if st.watermarks != 1 || st.watermark.IsZero() {
-		t.Fatalf("watermark moves %d, value %v", st.watermarks, st.watermark)
+	// A silent run posted nothing, so the watermark must not move: its findings
+	// stay new for the next day that does post.
+	if st.watermarks != 0 || !st.watermark.IsZero() {
+		t.Fatalf("watermark moves %d, value %v; want none on a silent run", st.watermarks, st.watermark)
+	}
+}
+
+func TestDailyDigestPendingOnlyDayPostsOneMessage(t *testing.T) {
+	org := uuid.New()
+	st := &memStore{orgs: []store.DigestOrg{{OrgID: org, TimeZone: "Europe/Helsinki", BriefingHour: 8, Enabled: true}}, runs: map[string]*run{}}
+	enq := &memEnq{}
+	// Only the security digest needs attention: a pending scan, no log finding.
+	dg := &fakeDigester{secAttention: true, secWindowTo: at(8, 5)}
+	clk := &fixedClock{now: at(8, 30)}
+	s := newScheduler(st, enq, dg, clk)
+
+	s.Check(context.Background())
+	s.Check(context.Background())
+	if len(enq.msgs) != 1 {
+		t.Fatalf("pending-only day posted %d messages, want 1", len(enq.msgs))
+	}
+	if strings.Contains(enq.msgs[0].Body, "Log summary") || !strings.Contains(enq.msgs[0].Body, "Security digest") {
+		t.Fatalf("body %q: want the security digest only", enq.msgs[0].Body)
+	}
+	if st.watermarks != 1 || !st.watermark.Equal(at(8, 5)) {
+		t.Fatalf("watermark moves %d, value %v; want one move to %v", st.watermarks, st.watermark, at(8, 5))
 	}
 }
 

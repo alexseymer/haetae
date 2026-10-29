@@ -311,40 +311,31 @@ func (s *Service) aiDigest(ctx context.Context, orgID uuid.UUID, in digestInput,
 	if len(kept) == 0 {
 		return Digest{}, errNoStatements
 	}
-	// Must lines the model did not cover are added by the server, first.
-	covered := map[string]bool{}
 	citedByID := map[string]Evidence{}
 	for _, st := range kept {
 		for _, id := range st.Evidence {
-			covered[id] = true
 			if r := c.find(id); r != nil {
 				citedByID[id] = r.Evidence
 			}
 		}
 	}
+	// Every must line is stated, first, as its own statement whatever the
+	// model wrote: a model statement that cites the same evidence must not
+	// hide a failed or pending scan, nor a critical finding.
 	var extra []Statement
 	for _, l := range in.lines {
 		if !l.must {
 			continue
 		}
-		hit := false
 		ids := make([]string, 0, len(l.ev))
 		for _, i := range l.ev {
 			id := fmt.Sprintf("ev_%d", i+1)
 			ids = append(ids, id)
-			hit = hit || covered[id]
-		}
-		if hit {
-			continue
-		}
-		extra = append(extra, Statement{Text: l.text, Evidence: ids})
-		for _, i := range l.ev {
-			id := fmt.Sprintf("ev_%d", i+1)
-			covered[id] = true
 			if _, ok := citedByID[id]; !ok {
 				citedByID[id] = evidenceRecord(i, in.outs[i])
 			}
 		}
+		extra = append(extra, Statement{Text: l.text, Evidence: ids})
 	}
 	d := base
 	d.UsedAI = true
