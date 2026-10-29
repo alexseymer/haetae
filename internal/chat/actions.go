@@ -257,6 +257,12 @@ func (s *Service) HandleInboundText(ctx context.Context, channel, externalID, te
 	}); err != nil {
 		return "", err
 	}
+	if cmd, ok, err := parseDigestCommand(text); ok {
+		if err != nil {
+			return replyDigestWindow, nil
+		}
+		return s.digestShortcut(ctx, acc, channel, cmd), nil
+	}
 	return s.askOperator(ctx, acc, channel, text), nil
 }
 
