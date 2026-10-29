@@ -12,6 +12,7 @@ import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PhaseStepper } from "../components/PhaseStepper";
 import { ProjectForm } from "../components/ProjectForm";
+import { Loading } from "../components/Skeleton";
 import {
   domainHref,
   isTerminalStatus,
@@ -319,7 +320,7 @@ export function ProjectPage() {
           )}
         </>
       ) : !error ? (
-        <p className="muted">Loading…</p>
+        <Loading label="Loading…" variant="lines" />
       ) : null}
 
       <Modal title="Remove project" open={removeOpen} onClose={() => setRemoveOpen(false)}>

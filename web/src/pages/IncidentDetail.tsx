@@ -7,6 +7,7 @@ import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
+import { Loading } from "../components/Skeleton";
 import { evidenceToText } from "../lib/evidenceText";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
@@ -187,7 +188,7 @@ export function IncidentDetailPage() {
           )}
         </>
       ) : !error ? (
-        <p className="muted">Loading…</p>
+        <Loading label="Loading…" variant="page" rows={2} />
       ) : null}
     </div>
   );

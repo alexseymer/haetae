@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { ApiError, api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
+import { Loading } from "../components/Skeleton";
 import type { OperatorAutonomy, OperatorSettings, OperatorTestResult } from "../api/operatorTypes";
 import {
   AUTONOMY_OPTIONS,
@@ -108,7 +109,7 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
           {error}
         </div>
       ) : null}
-      {!data && !error ? <p className="muted">Loading…</p> : null}
+      {!data && !error ? <Loading label="Loading…" variant="lines" /> : null}
       {data ? (
         <>
           {!data.provider.configured ? (

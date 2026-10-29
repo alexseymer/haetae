@@ -1,3 +1,5 @@
+import { Icon } from "./icons";
+
 interface StepperProps<T extends string> {
   steps: ReadonlyArray<{ id: T; label: string }>;
   current: T;
@@ -18,7 +20,7 @@ export function Stepper<T extends string>({ steps, current, label }: StepperProp
             aria-current={state === "current" ? "step" : undefined}
           >
             <span className="stepper-num" aria-hidden="true">
-              {state === "done" ? "✓" : i + 1}
+              {state === "done" ? <Icon name="check" size={13} /> : i + 1}
             </span>
             <span className="stepper-label">
               {s.label}

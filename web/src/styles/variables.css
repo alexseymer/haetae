@@ -1,69 +1,171 @@
+/*
+ * Design tokens. The palette follows the documentation site: deep navy ink,
+ * cobalt accent, soft blue tints. Light is the default; dark follows
+ * prefers-color-scheme unless the user picked a theme (data-theme on <html>).
+ * Colour pairs used for text were checked for >= 4.5:1.
+ */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  --color-bg: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-surface-2: #eef1f5;
-  --color-border: #d0d7e2;
-  --color-text: #1a2332;
-  --color-text-muted: #5a6578;
-  --color-primary: #1f6b4a;
-  --color-primary-hover: #18553b;
+  --navy-ink: #0b1d3a;
+  --cobalt: #2350e6;
+  --cobalt-deep: #1a3fb8;
+  --cobalt-bright: #2f5cf0;
+  --sky: #8fb0ff;
+
+  --color-bg: #f2f6ff;
+  --color-surface: #fbfcff;
+  --color-surface-2: #eef3ff;
+  --color-surface-3: #e3ebff;
+  --color-border: #d3def8;
+  --color-border-strong: #7186b5;
+  --color-text: #0b1d3a;
+  --color-text-muted: #485a7f;
+  --color-primary: #2350e6;
+  --color-primary-hover: #1a3fb8;
   --color-primary-contrast: #ffffff;
+  --color-link: #1a3fb8;
+  --color-accent: #2350e6;
+  --color-accent-soft: #c7d6ff;
+  --color-tint: #e3ebff;
   --color-danger: #b42318;
   --color-danger-bg: #fef3f2;
   --color-success: #067647;
   --color-success-bg: #ecfdf3;
   --color-warning: #b54708;
   --color-warning-bg: #fffaeb;
-  --color-offline: #667085;
-  --color-offline-bg: #f2f4f7;
-  --color-focus: #2e90fa;
-  --color-chart-1: #1f6b4a;
-  --color-chart-2: #175cd3;
+  --color-offline: #566587;
+  --color-offline-bg: #eef1f8;
+  --color-focus: #2350e6;
+  --color-chart-1: #2350e6;
+  --color-chart-2: #0a7ea4;
   --color-chart-3: #b54708;
   --color-chart-4: #7a35c7;
-  --color-chart-grid: #d0d7e2;
-  --color-chart-crosshair: #667085;
-  --font-sans: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --color-chart-grid: #dbe4fa;
+  --color-chart-crosshair: #566587;
+  --color-skeleton: #e3ebff;
+  --color-skeleton-shine: #f4f7ff;
+  --color-backdrop: rgba(7, 18, 38, 0.55);
+
+  /* Sidebar stays navy in both themes: it is the brand anchor. */
+  --side-bg: #0b1d3a;
+  --side-bg-2: #0e2650;
+  --side-text: #c9d7f7;
+  --side-text-strong: #ffffff;
+  --side-hover: rgba(143, 176, 255, 0.12);
+  --side-active: rgba(143, 176, 255, 0.18);
+  --side-accent: #8fb0ff;
+  --side-border: rgba(143, 176, 255, 0.16);
+
+  --font-sans: "Inter", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: "SF Mono", "Cascadia Code", "Consolas", "Liberation Mono", monospace;
-  --radius: 6px;
-  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06);
+  --radius: 10px;
+  --radius-sm: 7px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(11, 29, 58, 0.06);
+  --shadow: 0 1px 2px rgba(11, 29, 58, 0.05), 0 4px 14px rgba(35, 80, 230, 0.07);
+  --shadow-lg: 0 2px 4px rgba(11, 29, 58, 0.06), 0 14px 34px rgba(11, 29, 58, 0.14);
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
-  --topbar-h: 3.25rem;
+  --topbar-h: 3.5rem;
+  --sidebar-w: 15rem;
+  --ease: cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #071226;
+  --color-surface: #0c1b36;
+  --color-surface-2: #112347;
+  --color-surface-3: #172d57;
+  --color-border: #1f3865;
+  --color-border-strong: #6580b8;
+  --color-text: #e8eefc;
+  --color-text-muted: #9fb2da;
+  --color-primary: #2350e6;
+  --color-primary-hover: #3560f0;
+  --color-primary-contrast: #ffffff;
+  --color-link: #8fb0ff;
+  --color-accent: #8fb0ff;
+  --color-accent-soft: #29477f;
+  --color-tint: #172d57;
+  --color-danger: #ff8a80;
+  --color-danger-bg: #3a1420;
+  --color-success: #47cd89;
+  --color-success-bg: #0a2e22;
+  --color-warning: #fdb022;
+  --color-warning-bg: #2e1f08;
+  --color-offline: #9fb2da;
+  --color-offline-bg: #172d57;
+  --color-focus: #8fb0ff;
+  --color-chart-1: #8fb0ff;
+  --color-chart-2: #5fd0f0;
+  --color-chart-3: #fdb022;
+  --color-chart-4: #bdb4fe;
+  --color-chart-grid: #1b3159;
+  --color-chart-crosshair: #9fb2da;
+  --color-skeleton: #132647;
+  --color-skeleton-shine: #1b3563;
+  --color-backdrop: rgba(2, 8, 20, 0.7);
+
+  --side-bg: #050e1f;
+  --side-bg-2: #08183a;
+  --side-border: rgba(143, 176, 255, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.55);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0f1419;
-    --color-surface: #1a222d;
-    --color-surface-2: #243041;
-    --color-border: #344054;
-    --color-text: #f2f4f7;
-    --color-text-muted: #98a2b3;
-    --color-primary: #3dbf8a;
-    --color-primary-hover: #56d4a0;
-    --color-primary-contrast: #0b1a12;
-    --color-danger: #f97066;
-    --color-danger-bg: #3b1219;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --color-bg: #071226;
+    --color-surface: #0c1b36;
+    --color-surface-2: #112347;
+    --color-surface-3: #172d57;
+    --color-border: #1f3865;
+    --color-border-strong: #6580b8;
+    --color-text: #e8eefc;
+    --color-text-muted: #9fb2da;
+    --color-primary: #2350e6;
+    --color-primary-hover: #3560f0;
+    --color-primary-contrast: #ffffff;
+    --color-link: #8fb0ff;
+    --color-accent: #8fb0ff;
+    --color-accent-soft: #29477f;
+    --color-tint: #172d57;
+    --color-danger: #ff8a80;
+    --color-danger-bg: #3a1420;
     --color-success: #47cd89;
-    --color-success-bg: #0a2e1c;
+    --color-success-bg: #0a2e22;
     --color-warning: #fdb022;
-    --color-warning-bg: #2e1c05;
-    --color-offline: #98a2b3;
-    --color-offline-bg: #243041;
-    --color-focus: #53b1fd;
-    --color-chart-1: #3dbf8a;
-    --color-chart-2: #53b1fd;
+    --color-warning-bg: #2e1f08;
+    --color-offline: #9fb2da;
+    --color-offline-bg: #172d57;
+    --color-focus: #8fb0ff;
+    --color-chart-1: #8fb0ff;
+    --color-chart-2: #5fd0f0;
     --color-chart-3: #fdb022;
     --color-chart-4: #bdb4fe;
-    --color-chart-grid: #344054;
-    --color-chart-crosshair: #98a2b3;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --color-chart-grid: #1b3159;
+    --color-chart-crosshair: #9fb2da;
+    --color-skeleton: #132647;
+    --color-skeleton-shine: #1b3563;
+    --color-backdrop: rgba(2, 8, 20, 0.7);
+
+    --side-bg: #050e1f;
+    --side-bg-2: #08183a;
+    --side-border: rgba(143, 176, 255, 0.12);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.55);
   }
 }

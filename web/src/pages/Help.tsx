@@ -41,7 +41,7 @@ const OVERVIEW: Array<{ title: string; text: string; link?: ReactNode }> = [
 export function HelpPage() {
   return (
     <div className="page">
-      <PageHeader title="Help" intro={INTROS.help} />
+      <PageHeader title="Help" icon="help" intro={INTROS.help} />
 
       <section className="stack help-section" aria-labelledby="help-how">
         <h2 id="help-how">How Haetae works</h2>

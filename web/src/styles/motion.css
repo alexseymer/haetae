@@ -1,0 +1,317 @@
+/*
+ * Motion. Everything here is CSS only and is switched off (or reduced to a
+ * plain state change) under prefers-reduced-motion.
+ */
+
+@keyframes route-in {
+  from {
+    opacity: 0;
+    top: 10px;
+  }
+  to {
+    opacity: 1;
+    top: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes modal-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  70% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.route-view {
+  position: relative;
+  animation: route-in 0.28s var(--ease) both;
+}
+
+/* Staggered entrance: data-stagger="n" on the child (see staggerIndex() in lib/motion). */
+.stagger-item {
+  animation: rise-in 0.4s var(--ease) both;
+}
+.stagger-item[data-stagger="0"] { animation-delay: 0ms; }
+.stagger-item[data-stagger="1"] { animation-delay: 45ms; }
+.stagger-item[data-stagger="2"] { animation-delay: 90ms; }
+.stagger-item[data-stagger="3"] { animation-delay: 135ms; }
+.stagger-item[data-stagger="4"] { animation-delay: 180ms; }
+.stagger-item[data-stagger="5"] { animation-delay: 225ms; }
+.stagger-item[data-stagger="6"] { animation-delay: 270ms; }
+.stagger-item[data-stagger="7"] { animation-delay: 315ms; }
+.stagger-item[data-stagger="8"] { animation-delay: 360ms; }
+.stagger-item[data-stagger="9"] { animation-delay: 405ms; }
+.stagger-item[data-stagger="10"] { animation-delay: 450ms; }
+.stagger-item[data-stagger="11"] { animation-delay: 495ms; }
+.stagger-item[data-stagger="12"] { animation-delay: 540ms; }
+
+.skeleton {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-skeleton) 30%,
+    var(--color-skeleton-shine) 50%,
+    var(--color-skeleton) 70%
+  );
+  background-size: 250% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Live dot: Online hosts and connected states. */
+.pulse-dot::after,
+.connect-dot::after,
+.pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+.connect-dot::after {
+  background: var(--color-accent);
+}
+
+.pulse-ring {
+  position: relative;
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.side-count .pulse-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -0.275rem 0 0 -0.275rem;
+  z-index: -1;
+  background: transparent;
+  color: #ffb4ab;
+}
+
+.side-count {
+  isolation: isolate;
+}
+
+.side-count::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #ffb4ab;
+  z-index: -1;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+.chart-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: draw-line 1s var(--ease) both;
+}
+
+.chart-area {
+  animation: fade-in 1.2s ease-out both;
+}
+
+.modal-backdrop {
+  animation: fade-in 0.18s ease-out both;
+}
+
+.modal {
+  animation: modal-in 0.2s var(--ease) both;
+}
+
+.modal-backdrop.closing {
+  animation: fade-in 0.15s ease-in reverse both;
+  pointer-events: none;
+}
+
+.modal-backdrop.closing .modal {
+  animation: modal-out 0.15s ease-in both;
+}
+
+.toast {
+  animation: toast-in 0.28s var(--ease) both;
+}
+
+.toast.leaving {
+  animation: toast-out 0.22s ease-in both;
+}
+
+.dialog-form {
+  animation: step-in 0.3s var(--ease) both;
+}
+
+.thinking-dots span {
+  animation: blink 1.2s infinite;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.checklist-done .checklist-mark {
+  animation: check-pop 0.4s var(--ease);
+}
+
+.chat-day-group .chat-msg {
+  animation: rise-in 0.3s var(--ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .skeleton {
+    background-image: none;
+  }
+
+  .pulse-dot::after,
+  .connect-dot::after,
+  .pulse-ring::after,
+  .side-count::before {
+    display: none;
+  }
+
+  .btn,
+  .host-card,
+  .help-card,
+  .summary-tile {
+    transform: none !important;
+  }
+}

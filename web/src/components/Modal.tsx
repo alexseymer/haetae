@@ -2,9 +2,15 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+
+import { prefersReducedMotion } from "../lib/motion";
+
+/** Length of the exit animation; keep in sync with .modal-backdrop.closing. */
+const EXIT_MS = 150;
 
 interface ModalProps {
   title: string;
@@ -27,6 +33,23 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  // Keep rendering for the exit animation. While closing the dialog is hidden
+  // from assistive tech and a reopening starts a fresh instance (new key), so
+  // one-time content such as an install token never reappears.
+  const [visible, setVisible] = useState(open);
+  const session = useRef(0);
+  const wasOpen = useRef(false);
+  if (open && !wasOpen.current) session.current += 1;
+  wasOpen.current = open;
+  if (open && !visible) setVisible(true);
+  if (!open && visible && prefersReducedMotion()) setVisible(false);
+
+  useEffect(() => {
+    if (open || !visible) return;
+    const t = window.setTimeout(() => setVisible(false), EXIT_MS);
+    return () => window.clearTimeout(t);
+  }, [open, visible]);
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +93,7 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!open && !visible) return null;
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "Tab" || !panelRef.current) return;
@@ -94,8 +117,10 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
 
   return (
     <div
+      key={session.current}
       ref={backdropRef}
-      className="modal-backdrop"
+      className={`modal-backdrop${open ? "" : " closing"}`}
+      aria-hidden={open ? undefined : true}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

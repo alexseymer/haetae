@@ -6,6 +6,7 @@ import { PageHeader } from "../components/PageHeader";
 import { DeployLogViewer } from "../components/DeployLogViewer";
 import { DeployResult } from "../components/DeployResult";
 import { PhaseStepper } from "../components/PhaseStepper";
+import { Loading } from "../components/Skeleton";
 import { isTerminalStatus } from "../lib/deploy";
 import { INTROS } from "../lib/help";
 import { usePolling } from "../hooks/usePolling";
@@ -70,7 +71,7 @@ export function DeployPage() {
           />
         </div>
       ) : !error ? (
-        <p className="muted">Loading…</p>
+        <Loading label="Loading…" variant="lines" />
       ) : null}
     </div>
   );

@@ -3,6 +3,7 @@ import { ApiError, api } from "../api/client";
 import type { DeployLogLine, DeployStatus } from "../api/types";
 import { usePolling } from "../hooks/usePolling";
 import { stripAnsi } from "../lib/ansi";
+import { useToast } from "./Toast";
 
 const MAX_VISIBLE = 5000;
 const POLL_MS = 1500;
@@ -29,6 +30,7 @@ export function DeployLogViewer({ deployId, forceDone = false }: DeployLogViewer
   const [showAll, setShowAll] = useState(false);
   const [stickBottom, setStickBottom] = useState(true);
   const [copied, setCopied] = useState(false);
+  const toast = useToast();
 
   const afterRef = useRef(0);
   const genRef = useRef(0);
@@ -106,6 +108,7 @@ export function DeployLogViewer({ deployId, forceDone = false }: DeployLogViewer
     try {
       await navigator.clipboard?.writeText(text);
       setCopied(true);
+      toast.notify("Build log copied to clipboard");
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       // ignore

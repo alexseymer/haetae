@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useToast } from "./Toast";
 
 interface CopyBlockProps {
   text: string;
@@ -32,11 +33,13 @@ async function copyText(text: string, pre: HTMLPreElement | null): Promise<boole
 export function CopyBlock({ text, label = "Command" }: CopyBlockProps) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
+  const toast = useToast();
 
   const onCopy = async () => {
     const ok = await copyText(text, preRef.current);
     if (ok) {
       setCopied(true);
+      toast.notify("Command copied to clipboard");
       window.setTimeout(() => setCopied(false), 2000);
     }
   };
