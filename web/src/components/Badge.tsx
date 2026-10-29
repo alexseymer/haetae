@@ -11,7 +11,9 @@ interface BadgeProps {
 export function Badge({ variant, children, withDot = false }: BadgeProps) {
   return (
     <span className={`badge badge-${variant}`}>
-      {withDot ? <span className="badge-dot" aria-hidden="true" /> : null}
+      {withDot ? (
+        <span className={`badge-dot${variant === "online" ? " pulse-dot" : ""}`} aria-hidden="true" />
+      ) : null}
       {children}
     </span>
   );

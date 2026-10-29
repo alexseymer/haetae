@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Icon, type IconName } from "./icons";
 
 interface PageHeaderProps {
   title: string;
@@ -8,14 +9,21 @@ interface PageHeaderProps {
   meta?: ReactNode;
   /** The primary action(s), right aligned. */
   actions?: ReactNode;
+  /** Decorative icon tile before the title. */
+  icon?: IconName;
 }
 
 /** Title, intro and primary action, the same on every page. */
-export function PageHeader({ title, intro, meta, actions }: PageHeaderProps) {
+export function PageHeader({ title, intro, meta, actions, icon }: PageHeaderProps) {
   return (
     <div className="row page-header">
       <div className="page-header-main">
         <div className="row page-header-title">
+          {icon ? (
+            <span className="page-header-icon">
+              <Icon name={icon} size={20} />
+            </span>
+          ) : null}
           <h1>{title}</h1>
           {meta}
         </div>

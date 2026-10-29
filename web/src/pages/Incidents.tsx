@@ -2,13 +2,17 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { IncidentState, IncidentSummary } from "../api/m6Types";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 import { EmptyState } from "../components/EmptyState";
+import { Icon } from "../components/icons";
 import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
+import { Loading } from "../components/Skeleton";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
+import { staggerIndex } from "../lib/motion";
 
 type ListTab = IncidentState;
 
@@ -70,7 +74,7 @@ export function IncidentsPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Incidents" intro={INTROS.incidents} />
+      <PageHeader title="Incidents" icon="incidents" intro={INTROS.incidents} />
 
       <div
         className="tabs"
@@ -108,14 +112,54 @@ export function IncidentsPage() {
       >
         {incidents && incidents.length === 0 ? (
           tab === "open" ? (
-            <EmptyState title="All quiet.">
+            <EmptyState art="calm" title="All quiet.">
               Incidents appear here when something needs attention.
             </EmptyState>
           ) : (
-            <EmptyState title="No resolved incidents yet.">
+            <EmptyState art="calm" title="No resolved incidents yet.">
               Resolved incidents stay here as history.
             </EmptyState>
           )
+        ) : null}
+
+        {incidents && incidents.length > 0 ? (
+          <div className="summary-grid">
+            <div className={`summary-tile stagger-item${tab === "open" ? " summary-tile-alert" : ""}`} data-stagger={staggerIndex(0)}>
+              <span className="summary-icon">
+                {tab === "open" ? <span className="pulse-ring" aria-hidden="true" /> : <Icon name="check" size={20} />}
+              </span>
+              <div>
+                <div className="summary-value">
+                  <AnimatedNumber value={incidents.length} />
+                </div>
+                <div className="summary-label">{tab === "open" ? "Open now" : "Resolved"}</div>
+              </div>
+            </div>
+            <div className="summary-tile stagger-item" data-stagger={staggerIndex(1)}>
+              <span className="summary-icon">
+                <Icon name="alert" size={20} />
+              </span>
+              <div>
+                <div className="summary-value">
+                  <AnimatedNumber
+                    value={incidents.filter((i) => i.severity === "critical" || i.severity === "high").length}
+                  />
+                </div>
+                <div className="summary-label">Critical or high</div>
+              </div>
+            </div>
+            <div className="summary-tile stagger-item" data-stagger={staggerIndex(2)}>
+              <span className="summary-icon">
+                <Icon name="hosts" size={20} />
+              </span>
+              <div>
+                <div className="summary-value">
+                  <AnimatedNumber value={new Set(incidents.map((i) => i.hostId)).size} />
+                </div>
+                <div className="summary-label">Hosts affected</div>
+              </div>
+            </div>
+          </div>
         ) : null}
 
         {incidents && incidents.length > 0 ? (
@@ -135,8 +179,8 @@ export function IncidentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {incidents.map((inc) => (
-                  <tr key={inc.id}>
+                {incidents.map((inc, i) => (
+                  <tr key={inc.id} className="stagger-item" data-stagger={staggerIndex(i)}>
                     <td>
                       <SeverityBadge severity={inc.severity} />
                     </td>
@@ -157,7 +201,7 @@ export function IncidentsPage() {
           </div>
         ) : null}
 
-        {!incidents && !error ? <p className="muted">Loading incidents…</p> : null}
+        {!incidents && !error ? <Loading label="Loading incidents…" variant="table" /> : null}
       </div>
     </div>
   );

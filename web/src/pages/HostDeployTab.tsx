@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { Badge } from "../components/Badge";
 import { EmptyState } from "../components/EmptyState";
 import { ProjectForm } from "../components/ProjectForm";
+import { Loading } from "../components/Skeleton";
 import {
   deployStatusLabel,
   deployStatusVariant,
@@ -209,7 +210,7 @@ export function HostDeployTab({ hostId, active }: HostDeployTabProps) {
         </div>
       ) : null}
 
-      {!projects && !error ? <p className="muted">Loading…</p> : null}
+      {!projects && !error ? <Loading label="Loading…" variant="table" rows={3} /> : null}
 
     </div>
   );

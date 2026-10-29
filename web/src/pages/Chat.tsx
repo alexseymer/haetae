@@ -7,10 +7,11 @@ import {
 } from "react";
 import { ApiError, api } from "../api/client";
 import type { ChatEvidence, ChatMessage } from "../api/m6Types";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
+import { Loading } from "../components/Skeleton";
 import { usePolling } from "../hooks/usePolling";
 import { Badge } from "../components/Badge";
 import { actionNoteText, groupByDay, isActionNote, kindLabel } from "../lib/chatFeed";
@@ -42,6 +43,8 @@ export function ChatPage() {
   const genRef = useRef(0);
   const cursorRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const location = useLocation();
   const initialLoadDone = useRef(false);
 
   useEffect(() => {
@@ -110,6 +113,12 @@ export function ChatPage() {
   }, []);
 
   usePolling(load, 3_000, true);
+
+  // "Ask the operator" in the top bar lands here with the composer focused.
+  useEffect(() => {
+    const st = location.state as { ask?: boolean } | null;
+    if (st?.ask) composerRef.current?.focus();
+  }, [location.key, location.state]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -307,7 +316,7 @@ export function ChatPage() {
 
   return (
     <div className="page chat-page">
-      <PageHeader title="Chat" intro={INTROS.chat} />
+      <PageHeader title="Chat" icon="chat" intro={INTROS.chat} />
 
       {noChannel ? (
         <p className="muted" role="note">
@@ -325,12 +334,10 @@ export function ChatPage() {
 
       <div className="chat-log card" role="log" aria-live="polite" aria-label="Chat feed" ref={listRef}>
         {!loaded && !error ? (
-          <p className="muted" role="status">
-            Loading messages…
-          </p>
+          <Loading label="Loading messages…" variant="table" rows={3} />
         ) : null}
         {loaded && messages.length === 0 && !error ? (
-          <EmptyState title="Nothing here yet">
+          <EmptyState art="chat" title="Nothing here yet">
             Alerts, the daily briefing and your questions show up here. Ask something below, for
             example "why was shop-api slow this morning?".
           </EmptyState>
@@ -346,6 +353,11 @@ export function ChatPage() {
         {awaiting || sending ? (
           <p className="chat-thinking muted" role="status">
             Thinking...
+            <span className="thinking-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </p>
         ) : null}
       </div>
@@ -361,6 +373,7 @@ export function ChatPage() {
           <label htmlFor="chat-body">Ask the operator</label>
           <textarea
             id="chat-body"
+            ref={composerRef}
             name="body"
             rows={3}
             value={body}

@@ -13,6 +13,7 @@ import { Badge } from "../components/Badge";
 import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
 import { SeverityBadge } from "../components/SeverityBadge";
+import { Loading } from "../components/Skeleton";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
@@ -148,7 +149,7 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
           </p>
         ) : null}
         {!vulns ? (
-          <p className="muted">Loading…</p>
+          <Loading label="Loading…" variant="table" rows={3} />
         ) : vulns.containers.length === 0 ? (
           <EmptyState title="No running containers to scan">
             Haetae scans the software in running containers. Start a container or deploy an
@@ -178,7 +179,7 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
       <section className="stack" aria-labelledby="sec-mis-heading">
         <h2 id="sec-mis-heading">Misconfigurations</h2>
         {!security ? (
-          <p className="muted">Loading…</p>
+          <Loading label="Loading…" variant="table" rows={3} />
         ) : Object.keys(misByContainer).length === 0 ? (
           <EmptyState title="No misconfigurations found">
             Haetae checks for risky settings such as published ports, a mounted Docker socket,
@@ -219,7 +220,7 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
           </p>
         ) : null}
         {!outbound ? (
-          <p className="muted">Loading…</p>
+          <Loading label="Loading…" variant="table" rows={3} />
         ) : outbound.conns.length === 0 ? (
           <EmptyState title="No outbound connections recorded yet">
             Connections made by your containers to other servers are listed here as they happen.
@@ -280,7 +281,7 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
           </p>
         )}
         {!updates ? (
-          <p className="muted">Loading…</p>
+          <Loading label="Loading…" variant="table" rows={3} />
         ) : updates.updates.length === 0 ? (
           <EmptyState title="No image update decisions yet">
             Once a running image has been checked against its registry, the decision appears here.

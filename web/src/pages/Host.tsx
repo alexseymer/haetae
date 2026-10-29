@@ -22,6 +22,7 @@ import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
+import { Loading } from "../components/Skeleton";
 import { useAuth } from "../auth";
 import { usePolling } from "../hooks/usePolling";
 import { INTROS } from "../lib/help";
@@ -332,6 +333,7 @@ export function HostPage() {
         <>
           <PageHeader
             title={host.name}
+            icon="hosts"
             intro="One server: its health, containers, logs, deploys and security."
             meta={
               <>
@@ -365,7 +367,7 @@ export function HostPage() {
           </p>
         </>
       ) : (
-        <p className="muted">Loading…</p>
+        <Loading label="Loading…" variant="page" rows={2} />
       )}
 
       <Modal title="Remove host" open={removeOpen} onClose={() => setRemoveOpen(false)}>
@@ -594,7 +596,7 @@ export function HostPage() {
             ))}
           </div>
           {byStack.length === 0 ? (
-            <EmptyState title="No containers yet">
+            <EmptyState art="boxes" title="No containers yet">
               Containers appear here once they run on this host. Start a Compose app on the
               server, or deploy one from the Deploy tab.
             </EmptyState>

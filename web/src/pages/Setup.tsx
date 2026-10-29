@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import { useAuth } from "../auth";
+import { LogoMark } from "../components/Logo";
 
 export function SetupPage() {
   const navigate = useNavigate();
@@ -32,6 +33,10 @@ export function SetupPage() {
 
   return (
     <div className="page-narrow">
+      <div className="auth-brand">
+        <LogoMark size={44} />
+        <span className="brand-name">Haetae</span>
+      </div>
       <h1>Set up Haetae</h1>
       <p className="muted">
         The setup code is printed in the server log and in the file{" "}

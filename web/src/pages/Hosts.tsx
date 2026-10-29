@@ -4,15 +4,19 @@ import { ApiError, api } from "../api/client";
 import type { SeveritySummary } from "../api/securityTypes";
 import type { HostSummary } from "../api/types";
 import { useAuth } from "../auth";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 import { Badge, OnlineBadge } from "../components/Badge";
 import { AddHostDialog } from "../components/AddHostDialog";
 import { EmptyState } from "../components/EmptyState";
 import { GettingStarted } from "../components/GettingStarted";
+import { Icon, type IconName } from "../components/icons";
 import { InfoTip } from "../components/InfoTip";
+import { Loading } from "../components/Skeleton";
 import { PageHeader } from "../components/PageHeader";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
+import { staggerIndex } from "../lib/motion";
 import { hostSecurityBadgeText } from "../lib/security";
 
 type HostSecBadge = { scanFailed: boolean; matchPending: number; summary: SeveritySummary };
@@ -21,6 +25,34 @@ function SecurityStateTip({ text }: { text: string }) {
   if (text === "scan failed") return <InfoTip term="scanFailed" />;
   if (text === "matching pending") return <InfoTip term="matchingPending" />;
   return null;
+}
+
+function SummaryTile({
+  icon,
+  label,
+  value,
+  index,
+  alert = false,
+}: {
+  icon: IconName;
+  label: string;
+  value: number;
+  index: number;
+  alert?: boolean;
+}) {
+  return (
+    <div className={`summary-tile stagger-item${alert ? " summary-tile-alert" : ""}`} data-stagger={staggerIndex(index)}>
+      <span className="summary-icon">
+        <Icon name={icon} size={20} />
+      </span>
+      <div>
+        <div className="summary-value">
+          <AnimatedNumber value={value} />
+        </div>
+        <div className="summary-label">{label}</div>
+      </div>
+    </div>
+  );
 }
 
 export function HostsPage() {
@@ -98,18 +130,23 @@ export function HostsPage() {
     <div className="page">
       <PageHeader
         title="Hosts"
+        icon="hosts"
         intro={INTROS.hosts}
         meta={
           openIncidentCount > 0 ? (
             <Link to="/incidents" className="incident-count-badge">
-              {openIncidentCount} open{" "}
-              {openIncidentCount === 1 ? "incident" : "incidents"}
+              <span className="pulse-ring" aria-hidden="true" />
+              <span>
+                <AnimatedNumber value={openIncidentCount} /> open{" "}
+                {openIncidentCount === 1 ? "incident" : "incidents"}
+              </span>
             </Link>
           ) : null
         }
         actions={
           isAdmin ? (
             <button type="button" className="btn" onClick={openDialog}>
+              <Icon name="plus" size={16} />
               Add host
             </button>
           ) : null
@@ -126,6 +163,7 @@ export function HostsPage() {
 
       {hosts && hosts.length === 0 ? (
         <EmptyState
+          art="hosts"
           title="No hosts yet"
           action={
             isAdmin ? (
@@ -144,6 +182,28 @@ export function HostsPage() {
 
       {hosts && hosts.length > 0 ? (
         <>
+          <div className="summary-grid">
+            <SummaryTile icon="hosts" label="Hosts" value={hosts.length} index={0} />
+            <SummaryTile
+              icon="activity"
+              label="Connected"
+              value={hosts.filter((h) => h.connected).length}
+              index={1}
+            />
+            <SummaryTile
+              icon="box"
+              label="Containers running"
+              value={hosts.reduce((n, h) => n + h.containers.running, 0)}
+              index={2}
+            />
+            <SummaryTile
+              icon="incidents"
+              label="Open incidents"
+              value={openIncidentCount}
+              index={3}
+              alert={openIncidentCount > 0}
+            />
+          </div>
           <div className="hosts-table table-wrap">
             <table className="data">
               <thead>
@@ -160,7 +220,7 @@ export function HostsPage() {
                 </tr>
               </thead>
               <tbody>
-                {hosts.map((h) => {
+                {hosts.map((h, i) => {
                   const badge = secBadges[h.id];
                   const badgeText = hostSecurityBadgeText(
                     badge?.scanFailed,
@@ -168,7 +228,7 @@ export function HostsPage() {
                     badge?.matchPending,
                   );
                   return (
-                  <tr key={h.id}>
+                  <tr key={h.id} className="stagger-item" data-stagger={staggerIndex(i)}>
                     <td>
                       <Link to={`/hosts/${h.id}`}>{h.name}</Link>
                     </td>
@@ -202,7 +262,7 @@ export function HostsPage() {
             </table>
           </div>
           <div className="host-cards">
-            {hosts.map((h) => {
+            {hosts.map((h, i) => {
               const badge = secBadges[h.id];
               const badgeText = hostSecurityBadgeText(
                 badge?.scanFailed,
@@ -210,7 +270,7 @@ export function HostsPage() {
                 badge?.matchPending,
               );
               return (
-                <div key={h.id} className="host-card">
+                <div key={h.id} className="host-card stagger-item" data-stagger={staggerIndex(i)}>
                   <Link to={`/hosts/${h.id}`}>
                     <div className="row" style={{ justifyContent: "space-between" }}>
                       <strong>{h.name}</strong>
@@ -238,7 +298,7 @@ export function HostsPage() {
         </>
       ) : null}
 
-      {!hosts && !error ? <p className="muted">Loading hosts…</p> : null}
+      {!hosts && !error ? <Loading label="Loading hosts…" variant="page" /> : null}
 
       <AddHostDialog open={dialogOpen} onClose={closeDialog} />
     </div>

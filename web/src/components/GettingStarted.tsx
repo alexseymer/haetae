@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { HostSummary } from "../api/types";
 import { usePolling } from "../hooks/usePolling";
+import { Icon } from "./icons";
 
 const STORAGE_KEY = "haetae.getting-started.collapsed";
 
@@ -41,6 +42,8 @@ interface GettingStartedProps {
 export function GettingStarted({ hosts, onAddHost }: GettingStartedProps) {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  // The bar grows from empty on first paint (CSS transition on width).
+  const [grown, setGrown] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -65,6 +68,13 @@ export function GettingStarted({ hosts, onAddHost }: GettingStartedProps) {
   }, []);
 
   usePolling(load, 15_000, true);
+
+  const ready = progress !== null;
+  useEffect(() => {
+    if (!ready) return;
+    const id = window.requestAnimationFrame(() => setGrown(true));
+    return () => window.cancelAnimationFrame(id);
+  }, [ready]);
 
   if (!progress) return null;
 
@@ -160,14 +170,14 @@ export function GettingStarted({ hosts, onAddHost }: GettingStartedProps) {
         aria-valuemax={3}
         aria-valuenow={doneCount}
       >
-        <span className="progress-fill" style={{ width: `${Math.round((doneCount / 3) * 100)}%` }} />
+        <span className="progress-fill" style={{ width: `${grown ? Math.round((doneCount / 3) * 100) : 0}%` }} />
       </div>
       {!collapsed ? (
         <ol className="checklist" id="getting-started-steps">
           {steps.map((s) => (
             <li key={s.id} className={`checklist-item${s.done ? " checklist-done" : ""}`}>
               <span className="checklist-mark" aria-hidden="true">
-                {s.done ? "✓" : "○"}
+                {s.done ? <Icon name="check" size={14} /> : null}
               </span>
               <div className="checklist-text">
                 <strong>{s.title}</strong>

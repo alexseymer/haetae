@@ -22,6 +22,7 @@ import { Badge } from "../components/Badge";
 import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
+import { Loading } from "../components/Skeleton";
 import { channelEnvHint } from "../lib/chatChannels";
 import {
   hasAlertSettingsErrors,
@@ -358,7 +359,7 @@ export function SettingsPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Settings" intro={INTROS.settings} />
+      <PageHeader title="Settings" icon="settings" intro={INTROS.settings} />
 
       <div
         className="tabs"
@@ -534,7 +535,7 @@ export function SettingsPage() {
               <InfoTip term="alert" />
             </div>
             {!settingsLoaded && !settingsError ? (
-              <p className="muted">Loading…</p>
+              <Loading label="Loading…" variant="lines" />
             ) : (
               <form onSubmit={(e) => void onSaveSettings(e)}>
                 <fieldset disabled={!isAdmin} className="settings-fieldset">
@@ -781,7 +782,7 @@ export function SettingsPage() {
               Each channel is off until the server is configured for it. Web chat needs no setup.
             </p>
             {channels.length === 0 ? (
-              <p className="muted">Loading channels…</p>
+              <Loading label="Loading channels…" variant="lines" />
             ) : (
               <ul className="channel-list">
                 {channels.map((ch) => {

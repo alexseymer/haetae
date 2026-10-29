@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { isApiError, api } from "../api/client";
 import { useAuth } from "../auth";
+import { LogoMark } from "../components/Logo";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -43,6 +44,10 @@ export function LoginPage() {
 
   return (
     <div className="page-narrow">
+      <div className="auth-brand">
+        <LogoMark size={44} />
+        <span className="brand-name">Haetae</span>
+      </div>
       <h1>Sign in</h1>
       <form onSubmit={(e) => void onSubmit(e)} className="card">
         <div className="field">

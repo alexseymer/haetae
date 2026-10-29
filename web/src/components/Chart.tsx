@@ -9,6 +9,7 @@ import {
   type Point,
 } from "../lib/chartMath";
 import { formatByUnit, type UnitKind } from "../lib/format";
+import { Loading } from "./Skeleton";
 
 /** Max rows in the accessible fallback table; large series are truncated with a note. */
 export const CHART_TABLE_MAX_ROWS = 200;
@@ -53,6 +54,7 @@ export function Chart({
   height = 200,
 }: ChartProps) {
   const gid = useId();
+  const areaId = gid.replace(/[^a-zA-Z0-9_-]/g, "");
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -91,8 +93,8 @@ export function Chart({
     return (
       <div className="chart">
         <div className="chart-title">{title}</div>
-        <div className="chart-state" role="status">
-          Loading…
+        <div className="chart-state">
+          <Loading label="Loading…" variant="block" />
         </div>
       </div>
     );
@@ -205,6 +207,12 @@ export function Chart({
           if (t) onMove(t.clientX);
         }}
       >
+        <defs>
+          <linearGradient id={`area-${areaId}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={series[0]?.color} stopOpacity={0.22} />
+            <stop offset="100%" stopColor={series[0]?.color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
         {yScale.ticks.map((tick) => {
           const y = yOf(tick);
           return (
@@ -245,6 +253,24 @@ export function Chart({
             </text>
           );
         })}
+        {segments[0]?.segments.map((seg, segi) => {
+          const pts = seg.filter(isFinitePoint);
+          if (pts.length < 2) return null;
+          const base = padT + plotH;
+          const poly = [
+            `${xOf(pts[0]!.t).toFixed(2)},${base}`,
+            ...pts.map((p) => `${xOf(p.t).toFixed(2)},${yOf(p.v).toFixed(2)}`),
+            `${xOf(pts[pts.length - 1]!.t).toFixed(2)},${base}`,
+          ].join(" ");
+          return (
+            <polygon
+              key={`area-${gid}-${segi}`}
+              points={poly}
+              className="chart-area"
+              fill={`url(#area-${areaId})`}
+            />
+          );
+        })}
         {segments.map((s, si) =>
           s.segments.map((seg, segi) => {
             if (seg.length === 0) return null;
@@ -262,6 +288,8 @@ export function Chart({
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
+                pathLength={1}
+                className="chart-line"
               />
             );
           }),
