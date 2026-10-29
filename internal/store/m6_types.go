@@ -42,6 +42,7 @@ const (
 	KindBriefing = "briefing"
 	KindAnswer   = "answer"
 	KindText     = "text"
+	KindDigest   = "digest"
 	KindAction   = "action"
 )
 
@@ -124,14 +125,25 @@ type ChatEvidence struct {
 	Path  string `json:"path"` // app-relative, e.g. /hosts/<id>?tab=logs
 }
 
-// ChatMeta is the structured form of an incident message for the web client.
-// Links are carried in ChatMessage.Evidence. Absent for other kinds.
+// ChatMeta is the structured form of an incident or digest message for the
+// web client. Links are carried in ChatMessage.Evidence. Absent for other kinds.
 type ChatMeta struct {
 	Severity string   `json:"severity"`
 	Title    string   `json:"title"`
 	State    string   `json:"state"` // open | resolved
 	Host     string   `json:"host,omitempty"`
 	Summary  []string `json:"summary,omitempty"`
+	// Sections is set on digest messages (kind "digest"): one entry per digest
+	// (log summary, security digest). Their links are the message Evidence.
+	Sections []ChatDigestSection `json:"sections,omitempty"`
+}
+
+// ChatDigestSection is one digest inside a digest message.
+type ChatDigestSection struct {
+	Title  string   `json:"title"`
+	UsedAI bool     `json:"usedAI"`
+	Reason string   `json:"reason,omitempty"` // why the AI was not used
+	Lines  []string `json:"lines"`            // the statements, as plain text
 }
 
 // ChatMessage is one chat message, in either direction.

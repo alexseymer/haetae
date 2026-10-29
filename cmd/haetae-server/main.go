@@ -261,6 +261,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 	chatSvc.SetOperator(op)
 	go server.RunBriefing(ctx, st, chatSvc, op, log.With("component", "briefing"))
+	go server.RunDailyDigest(ctx, st, chatSvc, op, log.With("component", "digest"))
 	matchWorker := gateway.NewMatchWorker(ctx, vulnMgr, log.With("component", "sbom-match"), 2)
 	gw.SetSbomHandlers(st, matchWorker)
 	gw.SetFindingsLookup(updates.StoreFindings{Store: st})
@@ -351,6 +352,7 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		RefreshWatch:     gw.RefreshWatch,
 		Chat:             chatSvc,
 		OperatorSettings: opSettings,
+		Digests:          opSettings.op,
 		PolicyPusher:     gw,
 		HostDisconnecter: gw,
 		OnSetupDone: func() {

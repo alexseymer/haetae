@@ -50,16 +50,32 @@ func (s *Service) explainIncident(ctx context.Context, orgID, incidentID uuid.UU
 		return Answer{ConversationID: c.id}, errors.New("operator: could not store incident evidence")
 	}
 
+	// A new_cve incident also gets the finding details of its host: fixed
+	// versions and image-update availability, so the report says what to
+	// upgrade. Trusted numbers, third-party names under "untrusted".
+	var cveResults []string
+	var cveCalls []provider.ToolCall
+	for i, o := range s.incidentFindingEvidence(ctx, orgID, inc, alerts) {
+		res, ok := s.addEvidence(ctx, c, o)
+		if !ok {
+			continue
+		}
+		cveCalls = append(cveCalls, provider.ToolCall{ID: fmt.Sprintf("seed_%d", i+1), Name: "list_findings",
+			Args: json.RawMessage(fmt.Sprintf(`{"container_id":%q}`, o.subjectID))})
+		cveResults = append(cveResults, res)
+	}
+
 	// The seed looks to the model like the result of a list_events call, so
 	// the usual rule applies: third-party text only as "untrusted" values.
 	user, err := s.egressMessage(ctx, provider.Message{Role: provider.RoleUser, Text: incidentPrompt})
 	if err != nil {
 		return Answer{ConversationID: c.id}, err
 	}
-	call, err := s.egressMessage(ctx, provider.Message{Role: provider.RoleAssistant, ToolCalls: []provider.ToolCall{
+	calls := append([]provider.ToolCall{
 		{ID: "seed_0", Name: "list_events", Args: json.RawMessage(fmt.Sprintf(`{"from":%q,"to":%q}`,
 			inc.OpenedAt.UTC().Format(time.RFC3339), s.cfg.Now().UTC().Format(time.RFC3339)))},
-	}})
+	}, cveCalls...)
+	call, err := s.egressMessage(ctx, provider.Message{Role: provider.RoleAssistant, ToolCalls: calls})
 	if err != nil {
 		return Answer{ConversationID: c.id}, err
 	}
@@ -67,7 +83,44 @@ func (s *Service) explainIncident(ctx context.Context, orgID, incidentID uuid.UU
 	if err != nil {
 		return Answer{ConversationID: c.id}, err
 	}
-	return s.runConv(ctx, c, []provider.Message{user, call, res}, inc.State == "open")
+	msgs := []provider.Message{user, call, res}
+	for i, r := range cveResults {
+		m, err := s.egressMessage(ctx, provider.Message{Role: provider.RoleTool, ToolCallID: cveCalls[i].ID, Text: r})
+		if err != nil {
+			return Answer{ConversationID: c.id}, err
+		}
+		msgs = append(msgs, m)
+	}
+	return s.runConv(ctx, c, msgs, inc.State == "open")
+}
+
+// maxIncidentFindingRecords bounds the finding records added to a new_cve
+// incident report.
+const maxIncidentFindingRecords = 3
+
+// incidentFindingEvidence returns the per-container finding records of the
+// incident's host when one of its alerts is a new_cve alert. Failures are not
+// fatal: the report then simply lacks the details.
+func (s *Service) incidentFindingEvidence(ctx context.Context, org uuid.UUID, inc store.Incident, alerts []store.Alert) []*toolOut {
+	isCVE := false
+	for _, a := range alerts {
+		isCVE = isCVE || a.Rule == store.RuleNewCVE
+	}
+	if !isCVE {
+		return nil
+	}
+	in, err := s.securityDigestInput(ctx, org, SecurityScope{HostID: inc.HostID})
+	if err != nil {
+		s.cfg.Log.Warn("operator: incident finding details failed", "err", err)
+		return nil
+	}
+	var out []*toolOut
+	for _, o := range in.outs {
+		if o.subjectType == "container" && o.kind == EvidenceFindings && len(out) < maxIncidentFindingRecords {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // incidentEvidence builds the events evidence of one incident.
