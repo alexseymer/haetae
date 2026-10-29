@@ -47,6 +47,8 @@ type Service struct {
 
 	failMu   sync.Mutex
 	failLast map[string]time.Time // class -> last logged failure
+
+	dcache digestCache // log and security digests, 5 minutes
 }
 
 var _ Operator = (*Service)(nil)

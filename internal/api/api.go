@@ -88,6 +88,8 @@ type Config struct {
 
 	// OperatorSettings backs /api/settings/operator. Nil answers 503.
 	OperatorSettings OperatorSettings
+	// Digests backs the log summary and security digest endpoints. Nil answers 503.
+	Digests Digester
 	// PolicyPusher is told when an organisation's autonomy level changes.
 	PolicyPusher PolicyPusher
 	// HostDisconnecter closes the live agent session of a removed host. Nil
@@ -181,6 +183,7 @@ func (a *API) Handler() http.Handler {
 	a.registerChat(mux)
 	a.registerSecurity(mux)
 	a.registerOperator(mux)
+	a.registerDigest(mux)
 
 	// Anything else under /api is a 404 in JSON, never the web app.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

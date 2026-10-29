@@ -22,6 +22,10 @@ type OperatorSettings struct {
 	AIEnabled     bool
 	Autonomy      string // report | suggest | act
 	DailyTokenCap int64
+	// AIDigestEnabled lets the scheduled daily digest be posted to chat. It is
+	// stored apart (SetAIDigestEnabled) so older callers of SetOperatorSettings
+	// never switch it off by leaving it unset.
+	AIDigestEnabled bool
 }
 
 // GetOperatorSettings returns the AI settings, or the safe defaults (off,
@@ -29,10 +33,10 @@ type OperatorSettings struct {
 func (s *Store) GetOperatorSettings(ctx context.Context, orgID uuid.UUID) (OperatorSettings, error) {
 	var o OperatorSettings
 	err := s.pool.QueryRow(ctx, `
-		SELECT ai_enabled, autonomy, ai_daily_token_cap FROM org_settings WHERE org_id = $1`, orgID,
-	).Scan(&o.AIEnabled, &o.Autonomy, &o.DailyTokenCap)
+		SELECT ai_enabled, autonomy, ai_daily_token_cap, ai_digest_enabled FROM org_settings WHERE org_id = $1`, orgID,
+	).Scan(&o.AIEnabled, &o.Autonomy, &o.DailyTokenCap, &o.AIDigestEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return OperatorSettings{Autonomy: DefaultAutonomy, DailyTokenCap: DefaultAIDailyTokenCap}, nil
+		return OperatorSettings{Autonomy: DefaultAutonomy, DailyTokenCap: DefaultAIDailyTokenCap, AIDigestEnabled: true}, nil
 	}
 	if err != nil {
 		return OperatorSettings{}, fmt.Errorf("store: GetOperatorSettings: %w", err)
@@ -61,6 +65,19 @@ func (s *Store) SetOperatorSettings(ctx context.Context, orgID uuid.UUID, o Oper
 		orgID, o.AIEnabled, o.Autonomy, o.DailyTokenCap)
 	if err != nil {
 		return fmt.Errorf("store: SetOperatorSettings: %w", err)
+	}
+	return nil
+}
+
+// SetAIDigestEnabled stores whether the scheduled daily digest is posted
+// (creating the settings row).
+func (s *Store) SetAIDigestEnabled(ctx context.Context, orgID uuid.UUID, enabled bool) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO org_settings (org_id, ai_digest_enabled) VALUES ($1, $2)
+		ON CONFLICT (org_id) DO UPDATE SET ai_digest_enabled = EXCLUDED.ai_digest_enabled, updated_at = now()`,
+		orgID, enabled)
+	if err != nil {
+		return fmt.Errorf("store: SetAIDigestEnabled: %w", err)
 	}
 	return nil
 }

@@ -351,6 +351,7 @@ func startWeb(ctx context.Context, cfg config, st *store.Store, ca *pki.CA, log 
 		RefreshWatch:     gw.RefreshWatch,
 		Chat:             chatSvc,
 		OperatorSettings: opSettings,
+		Digests:          opSettings.op,
 		PolicyPusher:     gw,
 		HostDisconnecter: gw,
 		OnSetupDone: func() {
