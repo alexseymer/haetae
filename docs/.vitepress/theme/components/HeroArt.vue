@@ -76,6 +76,17 @@ const [cx, cy] = proj([2, 2, 1.9])
 
         <!-- outbound connectors -->
         <path v-for="(l, i) in lines" :key="'c' + i" :d="l.path" class="hx-art__flow" />
+        <!-- small "agent connected" dots travelling host -> control plane (hidden under reduced motion) -->
+        <g v-for="(l, i) in lines" :key="'d' + i" class="hx-art__dot">
+          <circle r="9" class="hx-art__halo">
+            <animateMotion :path="l.path" dur="3.2s" :begin="`${i * 0.9}s`" repeatCount="indefinite" calcMode="linear" />
+            <animate attributeName="r" values="4;11;4" dur="1.6s" :begin="`${i * 0.9}s`" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.55;0;0.55" dur="1.6s" :begin="`${i * 0.9}s`" repeatCount="indefinite" />
+          </circle>
+          <circle r="4" class="hx-art__core">
+            <animateMotion :path="l.path" dur="3.2s" :begin="`${i * 0.9}s`" repeatCount="indefinite" calcMode="linear" />
+          </circle>
+        </g>
 
         <!-- hosts -->
         <g v-for="h in hosts" :key="h.name" class="hx-art__block">
@@ -93,17 +104,17 @@ const [cx, cy] = proj([2, 2, 1.9])
       <!-- labels -->
       <g class="hx-art__labels" font-family="JetBrains Mono, ui-monospace, monospace" font-size="18" font-weight="700">
         <g :transform="`translate(${cx - 75} ${cy - 60})`">
-          <rect width="150" height="30" fill="#0b1d3a" />
-          <text x="75" y="21" text-anchor="middle" fill="#fff">control plane</text>
+          <rect class="hx-art__lbl" width="150" height="30" />
+          <text x="75" y="21" text-anchor="middle" class="hx-art__txt">control plane</text>
         </g>
         <g v-for="h in hosts" :key="'t' + h.name" :transform="`translate(${h.lx - 66} ${h.ly + 8})`">
-          <rect width="132" height="28" fill="#0b1d3a" />
-          <text x="66" y="20" text-anchor="middle" fill="#fff" font-size="16">{{ h.name }}</text>
+          <rect class="hx-art__lbl" width="132" height="28" />
+          <text x="66" y="20" text-anchor="middle" class="hx-art__txt" font-size="16">{{ h.name }}</text>
         </g>
         <g transform="translate(24 484)">
-          <rect width="236" height="28" fill="#0b1d3a" />
-          <path d="M10 13h34" stroke="#8fb0ff" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 6" />
-          <text x="54" y="20" fill="#fff" font-size="15" font-weight="500">outbound only, mTLS</text>
+          <rect class="hx-art__lbl" width="236" height="28" />
+          <path d="M10 13h34" class="hx-art__key" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 6" />
+          <text x="54" y="20" class="hx-art__txt" font-size="15" font-weight="500">outbound only, mTLS</text>
         </g>
       </g>
     </svg>

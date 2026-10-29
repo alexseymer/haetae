@@ -18,20 +18,20 @@ const notYet = [
 <template>
   <section class="hx-section hx-section--alt" aria-labelledby="hx-trust-title">
     <div class="hx-wrap">
-      <p class="hx-kicker">Trust</p>
-      <h2 id="hx-trust-title" class="hx-h2">What is verified, and what is not</h2>
+      <p v-reveal class="hx-kicker">Trust</p>
+      <h2 id="hx-trust-title" v-reveal="1" class="hx-h2">What is verified, and what is not</h2>
       <p class="hx-lede">
         We would rather you know the limits before you install. The numbers above come from one scripted run,
         and the report lists every narrowing next to them.
       </p>
       <div class="hx-trust">
-        <div class="hx-trust__col">
+        <div v-reveal="0" class="hx-trust__col">
           <h3><span class="hx-dot hx-dot--ok" aria-hidden="true" />Verified</h3>
           <ul>
             <li v-for="v in verified" :key="v">{{ v }}</li>
           </ul>
         </div>
-        <div class="hx-trust__col">
+        <div v-reveal="1" class="hx-trust__col">
           <h3><span class="hx-dot hx-dot--warn" aria-hidden="true" />Verified only against fakes, or not at all</h3>
           <ul>
             <li v-for="v in notYet" :key="v">{{ v }}</li>

@@ -13,10 +13,15 @@ import '@fontsource/jetbrains-mono/latin-800.css'
 
 import './style.css'
 import './home.css'
+import './motion.css'
 
 import Layout from './Layout.vue'
+import { vReveal } from './composables/motion'
 
 export default {
   extends: DefaultTheme,
-  Layout
+  Layout,
+  enhanceApp({ app }) {
+    app.directive('reveal', vReveal)
+  }
 } satisfies Theme

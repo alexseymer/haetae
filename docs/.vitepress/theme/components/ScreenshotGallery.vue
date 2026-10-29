@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { rafThrottle } from '../composables/motion'
 
 // Screenshots live in docs/images/. The site builds with or without them.
 const found = import.meta.glob('../../../images/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
@@ -37,6 +38,22 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'ArrowRight') step(1)
   else if (e.key === 'ArrowLeft') step(-1)
 }
+// Soft tilt and parallax on hover: sets --rx/--ry/--px/--py on the frame (rAF throttled).
+const tilt = rafThrottle((e) => {
+  const el = (e.currentTarget as HTMLElement) || null
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const x = (e.clientX - r.left) / r.width - 0.5
+  const y = (e.clientY - r.top) / r.height - 0.5
+  el.style.setProperty('--rx', `${(-y * 5).toFixed(2)}deg`)
+  el.style.setProperty('--ry', `${(x * 6).toFixed(2)}deg`)
+  el.style.setProperty('--px', `${(-x * 10).toFixed(1)}px`)
+  el.style.setProperty('--py', `${(-y * 8).toFixed(1)}px`)
+})
+function tiltReset(e: PointerEvent) {
+  const el = e.currentTarget as HTMLElement
+  for (const k of ['--rx', '--ry', '--px', '--py']) el.style.removeProperty(k)
+}
 function onBackdrop(e: MouseEvent) {
   if (e.target === dialog.value) close()
 }
@@ -45,13 +62,13 @@ function onBackdrop(e: MouseEvent) {
 <template>
   <section class="hx-section" aria-labelledby="hx-shots-title">
     <div class="hx-wrap">
-      <p class="hx-kicker">The interface</p>
-      <h2 id="hx-shots-title" class="hx-h2">See what it shows you</h2>
+      <p v-reveal class="hx-kicker">The interface</p>
+      <h2 id="hx-shots-title" v-reveal="1" class="hx-h2">See what it shows you</h2>
       <p v-if="!hasAny" class="hx-lede">Screenshots of the web interface will appear here.</p>
       <ul class="hx-shots">
-        <li v-for="(s, i) in shots" :key="s.file">
+        <li v-for="(s, i) in shots" :key="s.file" v-reveal="i % 2">
           <figure>
-            <button v-if="s.src" type="button" class="hx-shot" :aria-label="`Enlarge screenshot: ${s.title}`" @click="open(i)">
+            <button v-if="s.src" type="button" class="hx-shot" :aria-label="`Enlarge screenshot: ${s.title}`" @click="open(i)" @pointermove="tilt" @pointerleave="tiltReset">
               <img :src="s.src" :alt="s.alt" loading="lazy" decoding="async" />
               <span class="hx-shot__zoom" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
