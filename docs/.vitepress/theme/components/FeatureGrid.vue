@@ -1,5 +1,17 @@
 <script setup lang="ts">
 import { withBase } from 'vitepress'
+import BrandRow from './BrandRow.vue'
+import { rafThrottle } from '../composables/motion'
+import type { IconName } from '../icons'
+
+// Glow edge that follows the pointer: sets --mx/--my on the hovered card (one throttled listener).
+const onMove = rafThrottle((e) => {
+  const card = (e.target as HTMLElement).closest<HTMLElement>('.hx-card')
+  if (!card) return
+  const r = card.getBoundingClientRect()
+  card.style.setProperty('--mx', `${e.clientX - r.left}px`)
+  card.style.setProperty('--my', `${e.clientY - r.top}px`)
+})
 
 const features = [
   {
@@ -7,6 +19,7 @@ const features = [
     text: 'Push to deploy by polling the branch, build log, HTTPS through a managed Caddy and one-click rollback. A failed deploy keeps the previous version running.',
     link: '/deploy',
     cta: 'Deploying apps',
+    brands: ['github', 'docker', 'compose', 'caddy'] as IconName[],
     paths: ['M12 3v12', 'm7 8 5-5 5 5', 'M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4']
   },
   {
@@ -28,6 +41,7 @@ const features = [
     text: 'Web, Telegram, Slack, email and Signal. Incident alerts and one short daily briefing, working even when the AI is down.',
     link: '/chat',
     cta: 'Chat and alerts',
+    brands: ['web', 'telegram', 'slack', 'signal', 'email'] as IconName[],
     paths: ['M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z']
   },
   {
@@ -35,6 +49,7 @@ const features = [
     text: 'Plain-language questions about your own data. Each statement links to its evidence, and without a cause in the data the answer is "cause not found".',
     link: '/ai-operator',
     cta: 'The AI operator',
+    brands: ['ai'] as IconName[],
     paths: ['m4 7 5 5-5 5', 'M12 18h8']
   },
   {
@@ -50,20 +65,21 @@ const features = [
 <template>
   <section class="hx-section" aria-labelledby="hx-features-title">
     <div class="hx-wrap">
-      <p class="hx-kicker">What you get</p>
-      <h2 id="hx-features-title" class="hx-h2">One tool where you had a stack</h2>
+      <p v-reveal class="hx-kicker">What you get</p>
+      <h2 id="hx-features-title" v-reveal="1" class="hx-h2">One tool where you had a stack</h2>
       <p class="hx-lede">
         A deploy tool, a monitoring stack and a scanner, replaced by a small agent on each server and one
         control plane you run with Docker Compose.
       </p>
-      <ul class="hx-grid">
-        <li v-for="f in features" :key="f.title">
+      <ul class="hx-grid" @pointermove="onMove">
+        <li v-for="(f, i) in features" :key="f.title" v-reveal="i % 3">
           <a class="hx-card" :href="withBase(f.link)">
             <svg class="hx-card__icon" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
               <path v-for="d in f.paths" :key="d" :d="d" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <h3>{{ f.title }}</h3>
             <p>{{ f.text }}</p>
+            <BrandRow v-if="f.brands" class="hx-card__brands" :items="f.brands" :size="20" :tabbable="false" />
             <span class="hx-card__cta">{{ f.cta }} <span aria-hidden="true">&rarr;</span></span>
           </a>
         </li>

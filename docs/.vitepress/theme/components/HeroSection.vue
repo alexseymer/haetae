@@ -3,6 +3,7 @@ import { withBase } from 'vitepress'
 import CommandBox from './CommandBox.vue'
 import HeroArt from './HeroArt.vue'
 import StatsStrip from './StatsStrip.vue'
+import BrandRow from './BrandRow.vue'
 
 // Decorative texture: real strings from the product, faint, bottom of the hero.
 const lines = [
@@ -21,6 +22,7 @@ const texture = Array.from({ length: 28 }, (_, i) => lines[i % lines.length]).jo
 
 <template>
   <section class="hx-hero" aria-labelledby="hx-hero-title">
+    <div class="hx-hero__bg" aria-hidden="true"><i class="hx-hero__mesh hx-hero__mesh--a" /><i class="hx-hero__mesh hx-hero__mesh--b" /><i class="hx-hero__grid" /></div>
     <pre class="hx-hero__texture" aria-hidden="true">{{ texture }}</pre>
     <div class="hx-hero__inner">
       <div class="hx-hero__copy">
@@ -37,22 +39,16 @@ const texture = Array.from({ length: 28 }, (_, i) => lines[i % lines.length]).jo
         <div class="hx-actions">
           <a class="hx-btn hx-btn--primary" :href="withBase('/install')">
             Get started
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h9M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <svg class="hx-arrow" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h9M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </a>
           <a class="hx-btn hx-btn--soft" :href="withBase('/architecture')">Read the architecture</a>
         </div>
         <p class="hx-note">No published image yet: you build the server from source in a few minutes.</p>
         <CommandBox />
-        <p class="hx-works">
-          <span class="hx-works__label">Works with</span>
-          <span class="hx-works__item">Docker Compose</span>
-          <span class="hx-works__item">Caddy</span>
-          <span class="hx-works__item">PostgreSQL</span>
-          <span class="hx-works__item">Telegram</span>
-          <span class="hx-works__item">Slack</span>
-          <span class="hx-works__item">Signal</span>
-          <span class="hx-works__item">email</span>
-        </p>
+        <div class="hx-works">
+          <span class="hx-works__label" id="hx-works-label">Works with</span>
+          <BrandRow :items="['docker', 'compose', 'caddy', 'postgres', 'github', 'telegram', 'slack', 'signal', 'email']" :size="22" label="Works with" />
+        </div>
       </div>
       <HeroArt class="hx-hero__art" />
     </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { withBase } from 'vitepress'
+import BrandIcon from './BrandIcon.vue'
 const repo = 'https://github.com/alexseymer/haetae'
 </script>
 
@@ -23,7 +24,7 @@ const repo = 'https://github.com/alexseymer/haetae'
       <nav aria-label="Project">
         <h2>Project</h2>
         <ul>
-          <li><a :href="repo">GitHub</a></li>
+          <li><a :href="repo" class="hx-footer__gh"><BrandIcon name="github" :size="16" decorative />GitHub</a></li>
           <li><a :href="`${repo}/blob/main/SECURITY.md`">Security policy</a></li>
           <li><a :href="`${repo}/blob/main/CONTRIBUTING.md`">Contributing</a></li>
           <li><a :href="`${repo}/blob/main/LICENSE`">License (AGPL-3.0)</a></li>
