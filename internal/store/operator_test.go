@@ -27,12 +27,20 @@ func TestOperatorSettingsDefaultsAndRoundTrip(t *testing.T) {
 	if got.AIEnabled || got.Autonomy != "report" || got.DailyTokenCap != 200000 {
 		t.Fatalf("defaults = %+v", got)
 	}
-	want := store.OperatorSettings{AIEnabled: true, Autonomy: "act", DailyTokenCap: 5}
+	// The digest flag is stored apart (SetAIDigestEnabled), so the round trip
+	// of SetOperatorSettings keeps it at its default, on.
+	want := store.OperatorSettings{AIEnabled: true, Autonomy: "act", DailyTokenCap: 5, AIDigestEnabled: true}
 	if err := o.s.SetOperatorSettings(ctx, org.ID, want); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ = o.s.GetOperatorSettings(ctx, org.ID); got != want {
 		t.Fatalf("got %+v want %+v", got, want)
+	}
+	if err := o.s.SetAIDigestEnabled(ctx, org.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = o.s.GetOperatorSettings(ctx, org.ID); got.AIDigestEnabled {
+		t.Fatalf("digest flag not stored: %+v", got)
 	}
 	if err := o.s.SetOperatorSettings(ctx, org.ID, store.OperatorSettings{Autonomy: "root"}); err == nil {
 		t.Fatal("bad autonomy accepted")
