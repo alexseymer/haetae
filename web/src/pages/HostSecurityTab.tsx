@@ -10,6 +10,7 @@ import type {
 } from "../api/securityTypes";
 import { useAuth } from "../auth";
 import { Badge } from "../components/Badge";
+import { DigestPanel } from "../components/DigestPanel";
 import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
 import { SeverityBadge } from "../components/SeverityBadge";
@@ -126,6 +127,12 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
       aria-labelledby="tab-security"
     >
       <p className="tab-intro">{INTROS.hostSecurity}</p>
+      <DigestPanel
+        heading="Security digest"
+        buttonLabel="Create security digest"
+        showAttention
+        run={() => api.securityDigest(hostId)}
+      />
       {error ? (
         <div className="app-error" role="alert" aria-live="assertive">
           {error}

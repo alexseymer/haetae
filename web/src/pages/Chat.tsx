@@ -289,6 +289,45 @@ export function ChatPage() {
         </article>
       );
     }
+    if (m.kind === "digest") {
+      const sections = m.meta?.sections ?? [];
+      const firstLine = m.body.split("\n")[0] ?? "";
+      return (
+        <article
+          key={m.id}
+          className="chat-msg chat-card chat-card-digest"
+          data-direction={m.direction}
+        >
+          <header className="chat-card-head">
+            <Badge variant="info">Digest</Badge>
+            {sections.length === 0 ? (
+              <strong className="chat-card-title">{firstLine}</strong>
+            ) : null}
+            <span className="chat-msg-meta-time muted">{renderTime(m)}</span>
+          </header>
+          {sections.length > 0 ? (
+            sections.map((sec, si) => (
+              <section key={`${m.id}-sec-${si}`} className="chat-digest-section">
+                <strong className="chat-card-title">{sec.title}</strong>
+                {!sec.usedAI && sec.reason ? (
+                  <p className="digest-note" role="note">
+                    {sec.reason}
+                  </p>
+                ) : null}
+                <ul className="chat-card-summary">
+                  {sec.lines.map((line, i) => (
+                    <li key={`${m.id}-sec-${si}-${i}`}>{line}</li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          ) : (
+            <div className="chat-msg-body">{m.body.split("\n").slice(1).join("\n")}</div>
+          )}
+          {renderEvidence(m, true)}
+        </article>
+      );
+    }
     const kindClass =
       m.kind === "incident"
         ? "chat-msg chat-msg-incident"

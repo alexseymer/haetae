@@ -1,3 +1,4 @@
+import type { DigestResponse, DigestWindow } from "./digestTypes";
 import type { OperatorSettings, OperatorTestResult, PutOperatorSettings } from "./operatorTypes";
 import type {
   AlertSettings,
@@ -190,6 +191,18 @@ export const api = {
     request<LogsResponse>(
       `/api/hosts/${encodeURIComponent(id)}/logs?minLevel=${encodeURIComponent(minLevel)}&limit=${limit}`,
     ),
+
+  summarizeLogs: (id: string, window: DigestWindow, containerId?: string) =>
+    request<DigestResponse>(`/api/hosts/${encodeURIComponent(id)}/logs/summary`, {
+      method: "POST",
+      body: containerId ? { window, containerId } : { window },
+    }),
+
+  securityDigest: (hostId?: string) =>
+    request<DigestResponse>("/api/security/digest", {
+      method: "POST",
+      body: hostId ? { hostId } : {},
+    }),
 
   enroll: (body: EnrollmentRequest) =>
     request<EnrollmentResponse>("/api/hosts/enrollment", { method: "POST", body }),
