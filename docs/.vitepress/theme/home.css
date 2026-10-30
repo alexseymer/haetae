@@ -1353,3 +1353,22 @@ button.hx-shot:focus-visible .hx-shot__zoom {
 :root:has(.hx-home) .VPNavBar.top .VPNavBarMenuLink.active {
   color: var(--hx-hero-text);
 }
+
+/* The channel icons inside a diagram card are a row, not a bulleted list:
+   the generic list rules above must not apply to them. */
+.hx-node .hx-brands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.hx-node .hx-brands li {
+  padding: 0;
+  line-height: 0;
+}
+.hx-node .hx-brands li::before {
+  content: none;
+}
