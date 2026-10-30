@@ -565,3 +565,15 @@ html.hx-scrolled .VPNavBarTitle .logo {
     transform: none !important;
   }
 }
+
+/* Reduced motion: no movement and no loops, but content still fades in, so the
+   page does not look frozen for people who asked the system for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .hx-reveal {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .hx-reveal.is-in {
+    opacity: 1;
+  }
+}
