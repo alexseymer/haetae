@@ -37,11 +37,11 @@ const texture = Array.from({ length: 28 }, (_, i) => lines[i % lines.length]).jo
           yourself. Every statement links to its evidence; when the data shows no cause, it says so.
         </p>
         <div class="hx-actions">
-          <a class="hx-btn hx-btn--primary" :href="withBase('/install')">
+          <a class="hx-btn hx-btn--primary" :href="withBase('/getting-started/')">
             Get started
             <svg class="hx-arrow" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h9M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </a>
-          <a class="hx-btn hx-btn--soft" :href="withBase('/architecture')">Read the architecture</a>
+          <a class="hx-btn hx-btn--soft" :href="withBase('/concepts/')">Concepts in plain words</a>
         </div>
         <p class="hx-note">No published image yet: you build the server from source in a few minutes.</p>
         <CommandBox />

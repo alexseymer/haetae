@@ -15,10 +15,11 @@ const repo = 'https://github.com/alexseymer/haetae'
       <nav aria-label="Documentation">
         <h2>Docs</h2>
         <ul>
-          <li><a :href="withBase('/install')">Install the server</a></li>
-          <li><a :href="withBase('/enroll')">Enroll a host</a></li>
-          <li><a :href="withBase('/deploy')">Deploy an app</a></li>
-          <li><a :href="withBase('/acceptance')">Acceptance report</a></li>
+          <li><a :href="withBase('/getting-started/install-the-server')">Install the server</a></li>
+          <li><a :href="withBase('/getting-started/enroll-a-host')">Enroll a host</a></li>
+          <li><a :href="withBase('/getting-started/deploy-an-app')">Deploy an app</a></li>
+          <li><a :href="withBase('/problems/')">Problems and what to do</a></li>
+          <li><a :href="withBase('/tested')">What is tested</a></li>
         </ul>
       </nav>
       <nav aria-label="Project">
@@ -27,6 +28,7 @@ const repo = 'https://github.com/alexseymer/haetae'
           <li><a :href="repo" class="hx-footer__gh"><BrandIcon name="github" :size="16" decorative />GitHub</a></li>
           <li><a :href="`${repo}/blob/main/SECURITY.md`">Security policy</a></li>
           <li><a :href="`${repo}/blob/main/CONTRIBUTING.md`">Contributing</a></li>
+          <li><a :href="`${repo}/tree/main/docs/contributors`">Contributor docs</a></li>
           <li><a :href="`${repo}/blob/main/LICENSE`">License (AGPL-3.0)</a></li>
         </ul>
       </nav>

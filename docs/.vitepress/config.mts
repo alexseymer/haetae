@@ -4,8 +4,6 @@ import { githubLinks } from './links'
 import { pageMeta, site } from './meta'
 
 const base = '/haetae/'
-// Pages with wide tables get a wider content column.
-const wideDocs = new Set(['acceptance.md', 'benchmarks-m7.md', 'roadmap.md', 'architecture.md'])
 
 export default withMermaid(
   defineConfig({
@@ -16,7 +14,8 @@ export default withMermaid(
     base,
     cleanUrls: true,
     lastUpdated: true,
-    srcExclude: ['**/node_modules/**'],
+    // Contributor material stays in the repository, readable on GitHub, but is not part of the site.
+    srcExclude: ['**/node_modules/**', 'README.md', 'contributors/**'],
 
     sitemap: { hostname: site.url },
 
@@ -42,7 +41,6 @@ export default withMermaid(
         pageData.frontmatter.description ??= m.description
         pageData.description = m.description
       }
-      if (wideDocs.has(pageData.relativePath)) pageData.frontmatter.pageClass ??= 'hx-wide'
     },
 
     transformHead({ pageData, assets }) {
@@ -78,79 +76,53 @@ export default withMermaid(
 
       nav: [
         { text: 'Home', link: '/' },
-        {
-          text: 'Get started',
-          items: [
-            { text: 'Install the server', link: '/install' },
-            { text: 'Enroll a host', link: '/enroll' },
-            { text: 'Deploy an app', link: '/deploy' }
-          ]
-        },
-        {
-          text: 'Guides',
-          items: [
-            { text: 'Chat and alerts', link: '/chat' },
-            { text: 'AI operator', link: '/ai-operator' },
-            { text: 'Security scanning', link: '/security' },
-            { text: 'Troubleshooting', link: '/troubleshooting' }
-          ]
-        },
-        {
-          text: 'Reference',
-          items: [
-            { text: 'Architecture', link: '/architecture' },
-            { text: 'Specification', link: '/spec' },
-            { text: 'Roadmap', link: '/roadmap' },
-            { text: 'Acceptance report', link: '/acceptance' },
-            { text: 'Benchmarks', link: '/benchmarks-m7' },
-            { text: 'Release', link: '/release' },
-            { text: 'Security UI notes', link: '/security-ui' },
-            { text: 'ADR 0001: Stack', link: '/adr/0001-stack' }
-          ]
-        }
+        { text: 'Getting started', link: '/getting-started/', activeMatch: '^/getting-started/' },
+        { text: 'Guides', link: '/guides/', activeMatch: '^/guides/' },
+        { text: 'Concepts', link: '/concepts/', activeMatch: '^/concepts/' },
+        { text: 'Problems', link: '/problems/', activeMatch: '^/problems/' },
+        { text: 'What is tested', link: '/tested' }
       ],
 
       sidebar: [
         {
-          text: 'Get started',
+          text: 'Getting started',
           items: [
-            { text: 'Install the server', link: '/install' },
-            { text: 'Enroll a host', link: '/enroll' },
-            { text: 'Deploy an app', link: '/deploy' }
+            { text: 'Overview', link: '/getting-started/' },
+            { text: 'Install the server', link: '/getting-started/install-the-server' },
+            { text: 'First login', link: '/getting-started/first-login' },
+            { text: 'Enroll a host', link: '/getting-started/enroll-a-host' },
+            { text: 'Deploy an app', link: '/getting-started/deploy-an-app' },
+            { text: 'Connect a chat channel', link: '/getting-started/connect-chat' },
+            { text: 'Turn on the AI operator', link: '/getting-started/turn-on-the-operator' }
           ]
         },
         {
           text: 'Guides',
           items: [
-            { text: 'Chat and alerts', link: '/chat' },
-            { text: 'AI operator', link: '/ai-operator' },
-            { text: 'Security scanning', link: '/security' },
-            { text: 'Troubleshooting', link: '/troubleshooting' }
+            { text: 'Overview', link: '/guides/' },
+            { text: 'Deploy from Git', link: '/guides/deploy-from-git' },
+            { text: 'A domain with HTTPS', link: '/guides/domain-and-https' },
+            { text: 'Rolling back', link: '/guides/rolling-back' },
+            { text: 'Alerts and incidents', link: '/guides/alerts-and-incidents' },
+            { text: 'Asking the operator', link: '/guides/asking-the-operator' },
+            { text: 'Summarising logs', link: '/guides/summarising-logs' },
+            { text: 'Watching vulnerabilities', link: '/guides/watching-vulnerabilities' },
+            { text: 'Chat commands', link: '/guides/chat-commands' }
           ]
         },
         {
-          text: 'Reference',
-          items: [
-            { text: 'Documentation index', link: '/README' },
-            { text: 'Architecture', link: '/architecture' },
-            { text: 'Specification', link: '/spec' },
-            { text: 'Roadmap', link: '/roadmap' },
-            { text: 'Acceptance report', link: '/acceptance' },
-            { text: 'Benchmarks', link: '/benchmarks-m7' },
-            { text: 'Release', link: '/release' },
-            { text: 'Security UI notes', link: '/security-ui' },
-            { text: 'Self-hosting (moved)', link: '/self-hosting' }
-          ]
+          text: 'Concepts',
+          items: [{ text: 'Concepts in plain words', link: '/concepts/' }]
         },
         {
-          text: 'Decisions and design',
-          collapsed: false,
+          text: 'Problems',
+          items: [{ text: 'Problems and what to do', link: '/problems/' }]
+        },
+        {
+          text: 'More',
           items: [
-            { text: 'ADR 0001: Stack', link: '/adr/0001-stack' },
-            { text: 'M5 deploys', link: '/design/m5-deploys' },
-            { text: 'M6 alerts and chat', link: '/design/m6-alerts-chat' },
-            { text: 'M7 security scanning', link: '/design/m7-security' },
-            { text: 'M8 AI operator', link: '/design/m8-operator' }
+            { text: 'What is tested and what is not', link: '/tested' },
+            { text: 'Environment variables', link: '/reference/environment-variables' }
           ]
         }
       ],

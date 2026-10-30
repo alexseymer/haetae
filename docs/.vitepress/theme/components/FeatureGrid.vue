@@ -17,46 +17,46 @@ const features = [
   {
     title: 'Deploy from Git or compose.yaml',
     text: 'Push to deploy by polling the branch, build log, HTTPS through a managed Caddy and one-click rollback. A failed deploy keeps the previous version running.',
-    link: '/deploy',
-    cta: 'Deploying apps',
+    link: '/guides/deploy-from-git',
+    cta: 'Deploy from Git',
     brands: ['github', 'docker', 'compose', 'caddy'] as IconName[],
     paths: ['M12 3v12', 'm7 8 5-5 5 5', 'M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4']
   },
   {
     title: 'Metrics and logs',
     text: 'CPU, memory, disk and network on by default. Logs are filtered and redacted on the host, so routine lines are never sent.',
-    link: '/architecture',
-    cta: 'How data flows',
+    link: '/concepts/',
+    cta: 'Concepts in plain words',
     paths: ['M4 20V10', 'M10 20V4', 'M16 20v-8', 'M22 20H2']
   },
   {
     title: 'Security scanning',
     text: 'Per container: CVEs with the fixed version, misconfigurations and an outbound connection watch. A failed scan says "scan failed", never "no vulnerabilities".',
-    link: '/security',
-    cta: 'Security scanning',
+    link: '/guides/watching-vulnerabilities',
+    cta: 'Watching vulnerabilities',
     paths: ['M12 3 4 6v6c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V6l-8-3Z', 'm9 12 2 2 4-4']
   },
   {
     title: 'Chat where you already are',
     text: 'Web, Telegram, Slack, email and Signal. Incident alerts and one short daily briefing, working even when the AI is down.',
-    link: '/chat',
-    cta: 'Chat and alerts',
+    link: '/guides/alerts-and-incidents',
+    cta: 'Alerts and incidents',
     brands: ['web', 'telegram', 'slack', 'signal', 'email'] as IconName[],
     paths: ['M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z']
   },
   {
     title: 'An operator that cites evidence',
     text: 'Plain-language questions about your own data. Each statement links to its evidence, and without a cause in the data the answer is "cause not found".',
-    link: '/ai-operator',
-    cta: 'The AI operator',
+    link: '/guides/asking-the-operator',
+    cta: 'Asking the operator',
     brands: ['ai'] as IconName[],
     paths: ['m4 7 5 5-5 5', 'M12 18h8']
   },
   {
     title: 'Safe by design',
     text: 'Outbound-only agent with mutual TLS, no listening port, redaction on the host with a fail-closed rule, and autonomy levels that default to report only.',
-    link: '/architecture',
-    cta: 'Trust model',
+    link: '/concepts/#redaction-and-what-leaves-your-server',
+    cta: 'What leaves your server',
     paths: ['M6 11V8a6 6 0 0 1 12 0v3', 'M5 11h14v10H5z', 'M12 15v2']
   }
 ]

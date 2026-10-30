@@ -1,6 +1,6 @@
 # M7 benchmarks (ADR risks 2–3, agent RSS)
 
-Measured on **2026-10-25** for evidence item 8 in `docs/design/m7-security.md` and ADR 0001 risks 2 (inventory memory), 3 (Grype vs Trivy), plus agent resident RSS with scan + security active. Scripts: `bench/m7/` (see `bench/m7/README.md`). Go helpers: `test/bench` (`//go:build bench`). Makefile: `make bench-m7`.
+Measured on **2026-10-25** for evidence item 8 in `docs/contributors/design/m7-security.md` and ADR 0001 risks 2 (inventory memory), 3 (Grype vs Trivy), plus agent resident RSS with scan + security active. Scripts: `bench/m7/` (see `bench/m7/README.md`). Go helpers: `test/bench` (`//go:build bench`). Makefile: `make bench-m7`.
 
 ## Environment
 

@@ -1,14 +1,14 @@
 # M7 ADR risk benchmarks
 
-Reproducible measurements for ADR 0001 risks **2** (Syft / inventory peak memory), **3** (Grype vs Trivy agreement), and agent resident RSS with scan + security active (evidence item 8 in `docs/design/m7-security.md`).
+Reproducible measurements for ADR 0001 risks **2** (Syft / inventory peak memory), **3** (Grype vs Trivy agreement), and agent resident RSS with scan + security active (evidence item 8 in `docs/contributors/design/m7-security.md`).
 
-Results are summarized in [`docs/benchmarks-m7.md`](../../docs/benchmarks-m7.md). Raw artifacts land in `.cache/` and `results/` (gitignored).
+Results are summarized in [`docs/contributors/benchmarks-m7.md`](../../docs/contributors/benchmarks-m7.md). Raw artifacts land in `.cache/` and `results/` (gitignored).
 
 ## Constraints
 
 - Host is a **4 GB** VM with limited free disk. Scripts pull **one heavy image at a time** and remove non-keep images afterwards.
 - Do **not** run these in parallel with other heavy Docker/Go jobs on the same machine.
-- Do **not** edit product code from this harness; only `bench/m7/`, `docs/benchmarks-m7.md`, `test/bench` (`//go:build bench`), and the `bench-m7` Makefile target.
+- Do **not** edit product code from this harness; only `bench/m7/`, `docs/contributors/benchmarks-m7.md`, `test/bench` (`//go:build bench`), and the `bench-m7` Makefile target.
 
 ## Prerequisites
 

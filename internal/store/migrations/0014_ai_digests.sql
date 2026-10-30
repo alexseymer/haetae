@@ -1,4 +1,4 @@
--- AI digests: log summaries and the security digest. See docs/design/m8-operator.md.
+-- AI digests: log summaries and the security digest. See docs/contributors/design/m8-operator.md.
 
 -- Whether the scheduled daily digest may be posted to chat. On by default; a
 -- quiet day posts nothing either way.

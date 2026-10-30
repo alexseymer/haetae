@@ -2,7 +2,7 @@
 import { withBase } from 'vitepress'
 
 const verified = [
-  'Every spec criterion (S1 to S11) has a test and a measured value in the acceptance report.',
+  'Each promise on this site has a test behind it, run on a single test machine.',
   'The agent opens no listening socket and reconnects by itself after a restart or a network cut.',
   'Redaction recall on the labelled corpus: secrets 1.000, personal data 1.000.',
   'A failed scan reports "scan failed", never "no vulnerabilities".'
@@ -39,7 +39,7 @@ const notYet = [
         </div>
       </div>
       <p class="hx-trust__link">
-        <a class="hx-btn hx-btn--outline" :href="withBase('/acceptance#what-these-results-do-not-show')">Read the full acceptance report <span aria-hidden="true">&rarr;</span></a>
+        <a class="hx-btn hx-btn--outline" :href="withBase('/tested')">Read what is tested and what is not <span aria-hidden="true">&rarr;</span></a>
       </p>
     </div>
   </section>

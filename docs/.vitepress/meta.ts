@@ -2,89 +2,85 @@
 // Kept here (not in front matter) so the Markdown stays unchanged on GitHub,
 // where YAML front matter would render as a table at the top of each file.
 export const pageMeta: Record<string, { title: string; description: string }> = {
-  'README.md': {
-    title: 'Documentation index',
-    description: 'Where to start with Haetae: reading order for users and contributors, and a map of every document.'
+  'getting-started/index.md': {
+    title: 'Getting started',
+    description: 'From nothing to a working Haetae in six steps: install, sign in, enroll a host, deploy, chat and the optional AI operator.'
   },
-  'install.md': {
+  'getting-started/install-the-server.md': {
     title: 'Install the server',
-    description: 'Install the Haetae control plane with Docker Compose: requirements, installer options, first login, TLS, backups, upgrade and uninstall.'
+    description: 'Install the Haetae server with Docker Compose: what you need, the installer, settings, certificates, backups, upgrades and removal.'
   },
-  'enroll.md': {
+  'getting-started/first-login.md': {
+    title: 'First login',
+    description: 'Sign in for the first time with the setup code, create the first administrator and add more people.'
+  },
+  'getting-started/enroll-a-host.md': {
     title: 'Enroll a host',
-    description: 'Connect a Linux server to Haetae with one command and a single-use token; what the agent installs, its flags and how to remove a host.'
+    description: 'Connect a Linux server to Haetae with one command; what the installer does and how to remove a host.'
   },
-  'deploy.md': {
+  'getting-started/deploy-an-app.md': {
     title: 'Deploy an app',
-    description: 'Deploy from a Git repository or a pasted compose.yaml with HTTPS, push to deploy and one-click rollback.'
+    description: 'Deploy a Docker Compose app from a Git repository or a pasted compose file, starting with a tiny example.'
   },
-  'chat.md': {
-    title: 'Chat, alerts and briefing',
-    description: 'Connect web, Telegram, Slack, email or Signal; how incident alerts, the daily briefing and mutes work.'
+  'getting-started/connect-chat.md': {
+    title: 'Connect a chat channel',
+    description: 'Get alerts and the daily briefing in Telegram, Slack, email or Signal by linking your account.'
   },
-  'ai-operator.md': {
-    title: 'The AI operator',
-    description: 'How the optional AI operator answers from your own data, cites evidence, redacts before sending and acts only at the autonomy level you allow.'
+  'getting-started/turn-on-the-operator.md': {
+    title: 'Turn on the AI operator',
+    description: 'Choose an AI provider, switch the operator on, pick an autonomy level and test the connection.'
   },
-  'security.md': {
-    title: 'Security scanning',
-    description: 'Per-container CVE scanning, misconfigurations, outbound connection watch and image update policy, with the known limits.'
+  'guides/index.md': {
+    title: 'Guides',
+    description: 'Task-by-task guides: deploys, domains, rollbacks, alerts, questions, log summaries, vulnerabilities and chat commands.'
   },
-  'troubleshooting.md': {
-    title: 'Troubleshooting',
-    description: 'Symptom to check lists for install, enrollment, deploys, chat, the AI operator and scanning.'
+  'guides/deploy-from-git.md': {
+    title: 'Deploy from Git',
+    description: 'What happens during a deploy and how to redeploy automatically on every push.'
   },
-  'architecture.md': {
-    title: 'Architecture',
-    description: 'Components, packages, data flows and the trust model of Haetae: server, agent, inventory helper, PostgreSQL and Caddy.'
+  'guides/domain-and-https.md': {
+    title: 'A domain with HTTPS',
+    description: 'Serve a deployed app on your own domain with a certificate.'
   },
-  'spec.md': {
-    title: 'Specification',
-    description: 'The one-page Haetae spec: who it is for, exact input and output, the Done correctly criteria S1 to S11 and what is out of scope.'
+  'guides/rolling-back.md': {
+    title: 'Rolling back',
+    description: 'What happens when a deploy fails, and how to go back to an earlier version by hand.'
   },
-  'roadmap.md': {
-    title: 'Roadmap',
-    description: 'The build plan from M0 to M9 with the acceptance criteria of each step.'
+  'guides/alerts-and-incidents.md': {
+    title: 'Understanding alerts and incidents',
+    description: 'What alerts, incidents and severities mean, what the daily briefing says and how to mute noise.'
   },
-  'acceptance.md': {
-    title: 'Acceptance report',
-    description: 'Every spec criterion with the test that checks it, the measured value, the result and what the measurements do not show.'
+  'guides/asking-the-operator.md': {
+    title: 'Asking the operator questions',
+    description: 'How to ask questions in plain language and how to read an answer and its evidence.'
   },
-  'benchmarks-m7.md': {
-    title: 'Benchmarks',
-    description: 'Scanner memory and a Grype versus Trivy comparison, measured to check the ADR risks and the agent memory budget.'
+  'guides/summarising-logs.md': {
+    title: 'Summarising logs',
+    description: 'A short summary of new error patterns and spikes, on request or once a day.'
   },
-  'release.md': {
-    title: 'Release builds',
-    description: 'How release binaries and the server image are built and verified.'
+  'guides/watching-vulnerabilities.md': {
+    title: 'Watching vulnerabilities',
+    description: 'How container scans work, how to read the results and how image updates are handled.'
   },
-  'security-ui.md': {
-    title: 'Security UI notes',
-    description: 'The host Security tab and its API: what the interface must always tell the truth about.'
+  'guides/chat-commands.md': {
+    title: 'Chat commands',
+    description: 'What you can type to the Haetae bot: linking, log and security summaries, replies and questions.'
   },
-  'self-hosting.md': {
-    title: 'Self-hosting',
-    description: 'The self-hosting guide moved to the install page; this page keeps old links working.'
+  'concepts/index.md': {
+    title: 'Concepts in plain words',
+    description: 'Host, agent, container, incident, autonomy levels, evidence, redaction and untrusted log text explained simply.'
   },
-  'adr/0001-stack.md': {
-    title: 'ADR 0001: Technology stack',
-    description: 'The accepted decision on the technology stack: Go agent and control plane, React web UI, PostgreSQL only.'
+  'problems/index.md': {
+    title: 'Problems and what to do',
+    description: 'What to check when a host is offline, a deploy or scan fails, the operator is silent, chat is quiet or memory is high.'
   },
-  'design/m5-deploys.md': {
-    title: 'Design: deploys',
-    description: 'Design notes for M5: how deploys, health checks, rollback and push to deploy work.'
+  'tested.md': {
+    title: 'What is tested and what is not',
+    description: 'An honest account of what has been verified, on what, and what has not been tried yet.'
   },
-  'design/m6-alerts-chat.md': {
-    title: 'Design: alerts and chat',
-    description: 'Design notes for M6: rule alerts, incidents, chat bridges and the daily briefing.'
-  },
-  'design/m7-security.md': {
-    title: 'Design: security scanning',
-    description: 'Design notes for M7: inventory, vulnerability matching, misconfigurations and the outbound watch.'
-  },
-  'design/m8-operator.md': {
-    title: 'Design: AI operator',
-    description: 'Design notes for M8: operator tools, evidence, answer validation, action gating and the usage cap.'
+  'reference/environment-variables.md': {
+    title: 'Environment variables',
+    description: 'The settings of the server, the installer and the agent, one sentence each.'
   }
 }
 

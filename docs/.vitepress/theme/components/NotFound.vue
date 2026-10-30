@@ -11,8 +11,8 @@ import { withBase } from 'vitepress'
     </p>
     <div class="hx-actions hx-actions--center">
       <a class="hx-btn hx-btn--primary" :href="withBase('/')">Back to home</a>
-      <a class="hx-btn hx-btn--soft" :href="withBase('/README')">Documentation index</a>
-      <a class="hx-btn hx-btn--soft" :href="withBase('/install')">Install</a>
+      <a class="hx-btn hx-btn--soft" :href="withBase('/getting-started/')">Getting started</a>
+      <a class="hx-btn hx-btn--soft" :href="withBase('/problems/')">Problems</a>
     </div>
   </main>
 </template>

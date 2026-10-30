@@ -47,5 +47,5 @@ internal/webui/app/*
 /data/
 selfhost-full.log
 
-# Raw acceptance run output (summary and measures are quoted in docs/acceptance.md)
+# Raw acceptance run output (summary and measures are quoted in docs/contributors/acceptance.md)
 acceptance-results/

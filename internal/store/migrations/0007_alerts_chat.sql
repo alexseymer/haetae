@@ -1,4 +1,4 @@
--- M6: alerts, incidents, chat channels, briefings. See docs/design/m6-alerts-chat.md.
+-- M6: alerts, incidents, chat channels, briefings. See docs/contributors/design/m6-alerts-chat.md.
 
 CREATE TABLE org_settings (
   org_id uuid PRIMARY KEY REFERENCES orgs(id),

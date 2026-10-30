@@ -1,5 +1,5 @@
 -- M7: inventory, vulnerability findings, misconfigurations, outbound
--- connections and image update decisions. See docs/design/m7-security.md.
+-- connections and image update decisions. See docs/contributors/design/m7-security.md.
 
 CREATE TABLE scans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

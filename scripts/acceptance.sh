@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every acceptance suite in sequence (they share Docker and 2 cores, so never in parallel)
 # and writes acceptance-results/: one log per step, summary.txt (PASS/FAIL per step) and
-# measures.txt (every MEASURE line). docs/acceptance.md cites these numbers.
+# measures.txt (every MEASURE line). docs/contributors/acceptance.md cites these numbers.
 # Needs Docker, Chromium/Playwright, cached busybox/caddy/alpine/nginx images and no other load.
 set -u
 cd "$(dirname "$0")/.."

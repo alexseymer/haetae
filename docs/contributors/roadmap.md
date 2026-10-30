@@ -1,6 +1,6 @@
 # Roadmap to v1
 
-`docs/spec.md` defines the outcome; `docs/adr/0001-stack.md` defines the stack. This file splits the work into steps. Each step is one GitHub issue and one or more pull requests. A PR is merged only when:
+`docs/contributors/spec.md` defines the outcome; `docs/contributors/adr/0001-stack.md` defines the stack. This file splits the work into steps. Each step is one GitHub issue and one or more pull requests. A PR is merged only when:
 
 1. its acceptance criteria are met and shown in the PR description (test names, commands, measurements),
 2. CI is green,
@@ -85,9 +85,9 @@ Spec criteria are referred to as **S1** to **S11** ("Done correctly", in order).
 
 ### M9 Acceptance and release
 - End-to-end acceptance suite covering S1 to S11 with measured numbers, release builds for linux/amd64 and linux/arm64, container images, user documentation (install, enroll, deploy, chat setup).
-- **Accept:** the acceptance report `docs/acceptance.md` lists every spec criterion with its test, the measured value and pass/fail, states every narrowing (for example S2's 30 s applies to cached builds) and every part verified only against fakes; agent RSS re-measured on the release build.
+- **Accept:** the acceptance report `docs/contributors/acceptance.md` lists every spec criterion with its test, the measured value and pass/fail, states every narrowing (for example S2's 30 s applies to cached builds) and every part verified only against fakes; agent RSS re-measured on the release build.
 
 ## Known limits of the build environment
 
 - Hosts are simulated with Docker-in-Docker containers on one machine (2 cores, 4 GB RAM). Timing results are recorded as measured there.
-- Live Telegram, Slack, Signal, email, a real AI provider, public certificates and the hosted service need credentials or accounts; without them those parts are verified against fakes and marked as such in `docs/acceptance.md`.
+- Live Telegram, Slack, Signal, email, a real AI provider, public certificates and the hosted service need credentials or accounts; without them those parts are verified against fakes and marked as such in `docs/contributors/acceptance.md`.

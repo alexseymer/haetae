@@ -18,8 +18,8 @@ Choose **Git repository** instead: **Repository URL** `https://github.com/alexse
 
 ## Add HTTPS
 
-Fill all three ingress fields together: **Domain** (a name whose DNS points at the host; ports 80 and 443 must be free there), **Service** `web`, **Port** `80`. The result becomes `https://<domain>`. Public certificate issuance has not been tested in this project; see [docs/deploy.md](../../docs/deploy.md) and [docs/troubleshooting.md](../../docs/troubleshooting.md).
+Fill all three ingress fields together: **Domain** (a name whose DNS points at the host; ports 80 and 443 must be free there), **Service** `web`, **Port** `80`. The result becomes `https://<domain>`. Public certificate issuance has not been tested in this project; see [A domain with HTTPS](../../docs/guides/domain-and-https.md) and [Problems and what to do](../../docs/problems/index.md).
 
 ## Roll back and remove
 
-Deploy history on the project page has **Rollback**. **Remove** stops the container and keeps volumes (this example has none). Full details: [docs/deploy.md](../../docs/deploy.md).
+Deploy history on the project page has **Rollback**. **Remove** stops the container and keeps volumes (this example has none). Full details: [Deploy an app](../../docs/getting-started/deploy-an-app.md).
