@@ -1678,3 +1678,61 @@ table.data tbody tr.clickable:focus-within {
 .page-narrow .card {
   box-shadow: var(--shadow-lg);
 }
+
+/* AI digests: log summary, security digest */
+.digest-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.digest-heading,
+.digest-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.digest-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.digest-meta {
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: 0.85rem;
+}
+
+.digest-note {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.digest-statements {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.digest-statements > li + li {
+  margin-top: var(--space-2);
+}
+
+.digest-evidence {
+  margin: var(--space-1) 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
+}
+
+.digest-panel button:focus-visible,
+.digest-card a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.chat-digest-section + .chat-digest-section {
+  margin-top: var(--space-3);
+}

@@ -20,6 +20,7 @@ import { Badge, OnlineBadge } from "../components/Badge";
 import { Chart } from "../components/Chart";
 import { EmptyState } from "../components/EmptyState";
 import { InfoTip } from "../components/InfoTip";
+import { LogSummary } from "../components/LogSummary";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { Loading } from "../components/Skeleton";
@@ -754,6 +755,7 @@ export function HostPage() {
           <p className="tab-intro">
             {INTROS.hostLogs} <InfoTip term="logTemplates" />
           </p>
+          {id ? <LogSummary hostId={id} /> : null}
           <div className="field" style={{ maxWidth: 240 }}>
             <label htmlFor="log-level">Minimum level</label>
             <select

@@ -99,9 +99,18 @@ export interface ChatMeta {
   state: "open" | "resolved" | string;
   host?: string;
   summary?: string[];
+  /** Digest messages (kind "digest"): one entry per digest. */
+  sections?: ChatDigestSection[];
 }
 
-export type ChatMessageKind = "incident" | "briefing" | "answer" | "text" | "action";
+export interface ChatDigestSection {
+  title: string;
+  usedAI: boolean;
+  reason?: string;
+  lines: string[];
+}
+
+export type ChatMessageKind = "incident" | "briefing" | "answer" | "text" | "action" | "digest";
 
 export type ChatDirection = "in" | "out";
 

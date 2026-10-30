@@ -142,3 +142,48 @@ describe("composer", () => {
     expect(screen.getByText(/The operator is off or not configured/)).toBeInTheDocument();
   });
 });
+
+describe("digest card", () => {
+  it("renders sections, the reason note and evidence links", async () => {
+    setup([
+      {
+        id: "d1",
+        kind: "digest",
+        direction: "out",
+        body: "Daily digest\n- api logged errors",
+        actions: [],
+        evidence: [
+          { label: "Logs", path: `/hosts/${hostId}?tab=logs` },
+          { label: "Evil", path: "https://evil.example" },
+        ],
+        meta: {
+          severity: "",
+          title: "Daily digest",
+          state: "",
+          sections: [
+            { title: "Log summary", usedAI: true, lines: ["api logged errors"] },
+            { title: "Security digest", usedAI: false, reason: "Nothing notable, so the AI was not used", lines: ["No new findings"] },
+          ],
+        },
+        incidentId: null,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    expect(await screen.findByText("Log summary")).toBeInTheDocument();
+    expect(screen.getByText("api logged errors")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("AI was not used");
+    expect(screen.getByRole("link", { name: "Logs" })).toHaveAttribute("href", `/hosts/${hostId}?tab=logs`);
+    expect(screen.queryByRole("link", { name: /Evil/ })).not.toBeInTheDocument();
+  });
+
+  it("falls back to the body when there are no sections", async () => {
+    setup([
+      {
+        id: "d2", kind: "digest", direction: "out", body: "Digest title\nline one",
+        actions: [], evidence: [], incidentId: null, createdAt: new Date().toISOString(),
+      },
+    ]);
+    expect(await screen.findByText("Digest title")).toBeInTheDocument();
+    expect(screen.getByText("line one")).toBeInTheDocument();
+  });
+});

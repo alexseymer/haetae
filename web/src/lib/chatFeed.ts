@@ -5,6 +5,8 @@ export function kindLabel(m: Pick<ChatMessage, "kind" | "direction">): string {
   switch (m.kind) {
     case "incident":
       return "Incident";
+    case "digest":
+      return "Digest";
     case "briefing":
       return "Briefing";
     case "action":
