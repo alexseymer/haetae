@@ -256,6 +256,9 @@ func TestRedactTable(t *testing.T) {
 				"card 4111111111111112",
 				"digits 1234567890123",
 				"order-id 4111",
+				// Digit-only or all-zero UUIDs are identifiers, not cards.
+				"host 00000000-0000-0000-0000-000000000000",
+				"host 12345678-1234-4123-8123-123456789012",
 			},
 		},
 	}

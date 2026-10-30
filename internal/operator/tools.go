@@ -155,7 +155,13 @@ func (s *Service) addEvidence(ctx context.Context, c *conv, out *toolOut) (strin
 		return `{"error":"internal error"}`, false
 	}
 	c.evs = append(c.evs, &evRec{Evidence: ev, Row: row.ID})
-	payload := map[string]any{"evidence_id": ev.ID}
+	return modelPayload(ev.ID, out), true
+}
+
+// modelPayload is the JSON a tool result hands to the model (before egress
+// redaction): the evidence id, the trusted data and the untrusted values.
+func modelPayload(evidenceID string, out *toolOut) string {
+	payload := map[string]any{"evidence_id": evidenceID}
 	if len(out.data) > 0 {
 		payload["data"] = out.data
 	}
@@ -163,7 +169,7 @@ func (s *Service) addEvidence(ctx context.Context, c *conv, out *toolOut) (strin
 		payload["untrusted"] = out.untrusted
 	}
 	b, _ := json.Marshal(payload)
-	return string(b), true
+	return string(b)
 }
 
 // runTool validates the arguments and runs the handler.

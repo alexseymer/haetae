@@ -23,7 +23,10 @@ func TestClassifyReasons(t *testing.T) {
 		reason string
 	}{
 		{"auth", perr(provider.ErrAuth, 401, "bad key"), operator.ClassAuth, "the provider rejected the API key (HTTP 401)"},
-		{"forbidden", perr(provider.ErrAuth, 403, ""), operator.ClassAuth, "the provider rejected the API key (HTTP 403)"},
+		{"forbidden is not a key problem", perr(provider.ErrBadResponse, 403, "nope"), operator.ClassBadRequest,
+			"the provider rejected the request: nope. Check HAETAE_AI_MODEL and HAETAE_AI_BASE_URL"},
+		{"pii block", perr(provider.ErrBlocked, 403, "Request blocked: PII detected (redaction_context_lost)"), operator.ClassBlocked,
+			"the provider's safety filter blocked this question; try rephrasing or check the provider settings"},
 		{"model not found", perr(provider.ErrBadResponse, 404, "No endpoints found for x/y"), operator.ClassBadRequest,
 			"the provider rejected the request: No endpoints found for x/y. Check HAETAE_AI_MODEL and HAETAE_AI_BASE_URL"},
 		{"bad request without detail", perr(provider.ErrBadResponse, 400, ""), operator.ClassBadRequest,

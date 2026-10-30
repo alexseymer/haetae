@@ -14,6 +14,7 @@ import (
 // Failure classes, used in logs, the connection test and user-facing reasons.
 const (
 	ClassAuth        = "auth"
+	ClassBlocked     = "blocked"
 	ClassRateLimit   = "rate_limit"
 	ClassBadRequest  = "bad_request"
 	ClassUnavailable = "unavailable"
@@ -60,6 +61,10 @@ func Classify(err error) Failure {
 	case (hasPE && pe.Timeout) || (!hasPE && errors.Is(err, context.DeadlineExceeded)):
 		f.Class, f.Reason = ClassTimeout, "provider unreachable: the provider did not answer in time"
 		f.Hint = "The model may be slow or overloaded. Try again, or choose a faster model."
+	case errors.Is(err, provider.ErrBlocked):
+		f.Class = ClassBlocked
+		f.Reason = "the provider's safety filter blocked this question; try rephrasing or check the provider settings"
+		f.Hint = "The provider refused the request content, not the key. Rephrase the question, or review the provider's privacy and guardrail settings."
 	case errors.Is(err, provider.ErrAuth):
 		f.Class = ClassAuth
 		f.Reason = "the provider rejected the API key"

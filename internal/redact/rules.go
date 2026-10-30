@@ -454,6 +454,10 @@ func countDigits(s string) int {
 func creditCardRule() rule {
 	// 13–19 digits with optional spaces/dashes between digit groups.
 	re := regexp.MustCompile(`(?:\d[ -]*){12,18}\d`)
+	// A UUID-shaped span (8-4-4-4-12 hex) is an identifier, not a card number.
+	// Without this, an all-zero or digit-only UUID is Luhn-valid and every
+	// host or container id made of digits is replaced by credit-card tokens.
+	uuidRe := regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
 	token := "[REDACTED:credit-card]" //nolint:gosec // G101: a placeholder, not a credential
 	return rule{
 		name: "credit-card",
@@ -463,11 +467,12 @@ func creditCardRule() rule {
 			if len(idxs) == 0 {
 				return s, 0
 			}
+			uuids := uuidRe.FindAllStringIndex(s, -1)
 			var b strings.Builder
 			b.Grow(len(s))
 			last, n := 0, 0
 			for _, loc := range idxs {
-				if loc[0] < last {
+				if loc[0] < last || insideAny(loc, uuids) {
 					continue
 				}
 				m := s[loc[0]:loc[1]]
@@ -490,6 +495,16 @@ func creditCardRule() rule {
 			return b.String(), n
 		},
 	}
+}
+
+// insideAny reports whether the span loc overlaps one of the spans in spans.
+func insideAny(loc []int, spans [][]int) bool {
+	for _, sp := range spans {
+		if loc[0] < sp[1] && sp[0] < loc[1] {
+			return true
+		}
+	}
+	return false
 }
 
 func digitsOnly(s string) string {
