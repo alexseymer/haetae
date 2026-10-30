@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Troubleshooting guide
-    url: https://github.com/alexseymer/haetae/blob/main/docs/troubleshooting.md
+    url: https://github.com/alexseymer/haetae/blob/main/docs/problems/index.md
     about: Symptom-to-check lists for hosts that stay offline, failed deploys, HTTPS and chat problems.
   - name: Report a security vulnerability (private)
     url: https://github.com/alexseymer/haetae/security/advisories/new

@@ -4,7 +4,7 @@ Status: Accepted · 2026-10-24 · revised after a second-opinion review (see "Re
 
 ## Context
 
-The spec (`docs/spec.md`) implies two very different programs:
+The spec (`docs/contributors/spec.md`) implies two very different programs:
 
 1. **Host agent**, one per server. Resident memory under 50 MB, outbound connection only, reconnects by itself. It reads Docker state and metrics, tails logs, filters and deduplicates them (target: 95% of lines never sent), removes personal data and secrets *before* anything leaves the host, inventories container software, watches outbound connections, and runs deploys and rollbacks. In hosted mode raw logs never leave the host, so the agent must also answer log queries on demand.
 2. **Control plane**. Enrollment, auth, deploy orchestration, metrics storage, a rule-based alert engine that works without the AI, vulnerability matching, chat adapters (Telegram, Signal, Slack, email, web), the AI operator, and the web UI. Self-hosted: a working login within 5 minutes of one command. Hosted: multi-tenant.

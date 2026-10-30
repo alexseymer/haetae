@@ -1,6 +1,6 @@
 # Contributing to Haetae
 
-Thanks for helping. Haetae is a small project with strict hard constraints, so please read this page and [docs/spec.md](docs/spec.md) (the source of truth for scope) before a larger change. By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go to [SECURITY.md](SECURITY.md), not to public issues.
+Thanks for helping. Haetae is a small project with strict hard constraints, so please read this page and [docs/contributors/spec.md](docs/contributors/spec.md) (the source of truth for scope) before a larger change. By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go to [SECURITY.md](SECURITY.md), not to public issues.
 
 ## Set up
 
@@ -36,7 +36,7 @@ make test     # go test -race ./...
 | `make test-load` | Agent memory with 20 noisy containers (`HAETAE_LOAD_DURATION`, default 2m) | Docker |
 | `make test-selfhost` | Self-hosted install; builds the image once | Docker |
 | `make bench-m7` | Scanner benchmarks, see `bench/m7/README.md` | Docker, about 4 GB free disk |
-| `make release release-image test-release bench-release-rss` | Release artifacts, image, verification, agent RSS | Docker; see [docs/release.md](docs/release.md) |
+| `make release release-image test-release bench-release-rss` | Release artifacts, image, verification, agent RSS | Docker; see [docs/contributors/release.md](docs/contributors/release.md) |
 
 CI (`.github/workflows/ci.yml`) runs formatting, `go vet`, `make test`, `make lint`, `make vuln`, `make build`, the integration, load and self-host suites, and the web typecheck, unit tests, build and `npm audit`. The Docker-heavy acceptance suites (`test-e2e`, `test-deploy`, `test-alerts`, `test-security`, `test-operator`) are run through the acceptance script below, not in CI.
 
@@ -51,19 +51,19 @@ scripts/acceptance.sh        # about 40 minutes
 cat acceptance-results/summary.txt acceptance-results/measures.txt
 ```
 
-It runs every suite in sequence (they share Docker and two cores, so never in parallel) and needs Docker, Chromium/Playwright, cached busybox, caddy, alpine and nginx images, and no other load. `acceptance-results/` is not committed. Results and caveats: [docs/acceptance.md](docs/acceptance.md).
+It runs every suite in sequence (they share Docker and two cores, so never in parallel) and needs Docker, Chromium/Playwright, cached busybox, caddy, alpine and nginx images, and no other load. `acceptance-results/` is not committed. Results and caveats: [docs/contributors/acceptance.md](docs/contributors/acceptance.md).
 
 ## Code layout
 
 | Path | Contents |
 |---|---|
 | `cmd/` | Entry points: `haetae-agent`, `haetae-server`, `haetae-inventory` |
-| `internal/` | Everything else, one package per concern ([docs/architecture.md](docs/architecture.md)) |
+| `internal/` | Everything else, one package per concern ([docs/contributors/architecture.md](docs/contributors/architecture.md)) |
 | `proto/` | Protobuf schemas, the agent contract (generated code in `internal/gen`) |
 | `web/` | React + Vite + TypeScript UI, embedded in the server binary |
 | `test/` | Acceptance harnesses and corpora, one directory per suite |
 | `deploy/` | Server `compose.yaml` and `install-server.sh` |
-| `docs/` | User and contributor docs, `design/` per milestone, `adr/` decisions |
+| `docs/` | User documentation (the published site); `docs/contributors/` holds the spec, roadmap, `design/` per milestone and `adr/` decisions |
 | `bench/`, `scripts/` | Benchmarks, acceptance and release scripts |
 
 ## Conventions
@@ -71,14 +71,14 @@ It runs every suite in sequence (they share Docker and two cores, so never in pa
 - Go standard `regexp` (RE2) only; no backtracking regex engines, especially in the redaction path.
 - Tests sit next to the code (`_test.go`). Tests that need Docker or PostgreSQL use the `integration` build tag.
 - Commit messages: imperative subject under 72 characters; the body explains why.
-- Work follows [docs/roadmap.md](docs/roadmap.md): one GitHub issue per step. A change is done when it meets the relevant "Done correctly" criteria in the spec and stays inside "Out of scope for v1".
+- Work follows [docs/contributors/roadmap.md](docs/contributors/roadmap.md): one GitHub issue per step. A change is done when it meets the relevant "Done correctly" criteria in the spec and stays inside "Out of scope for v1".
 - Do not weaken a hard constraint to make a test pass; fix the code or record the miss. The constraints:
   - the agent uses under 50 MB RAM, needs no inbound port and reconnects by itself;
   - with a non-local AI, personal data and secrets are removed on the host first, and if that fails nothing is sent;
   - the operator never deletes data, acts only at the configured autonomy level, and treats logs as untrusted text;
   - a failed scan reports "scan failed", never "no vulnerabilities";
   - rule-based alerts keep working when the AI is unreachable.
-- Structural changes start from [docs/adr/0001-stack.md](docs/adr/0001-stack.md).
+- Structural changes start from [docs/contributors/adr/0001-stack.md](docs/contributors/adr/0001-stack.md).
 
 ## Pull requests
 
@@ -88,4 +88,4 @@ It runs every suite in sequence (they share Docker and two cores, so never in pa
 4. An independent review is expected: a reviewer who did not write the code, with every blocking finding fixed or answered in the PR.
 5. PRs are squash-merged.
 
-Be honest in evidence: say what was verified against a fake and what against the real thing, as [docs/acceptance.md](docs/acceptance.md) does.
+Be honest in evidence: say what was verified against a fake and what against the real thing, as [docs/contributors/acceptance.md](docs/contributors/acceptance.md) does.

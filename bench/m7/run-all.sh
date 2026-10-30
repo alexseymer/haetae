@@ -41,4 +41,4 @@ if ! diff -u "$BEFORE" "$AFTER"; then
   snapshot_images >"$AFTER"
 fi
 
-log "all M7 benches finished; fill docs/benchmarks-m7.md from $RESULTS"
+log "all M7 benches finished; fill docs/contributors/benchmarks-m7.md from $RESULTS"

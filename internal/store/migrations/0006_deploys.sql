@@ -1,4 +1,4 @@
--- Projects, deploy history and redacted deploy logs (see docs/design/m5-deploys.md).
+-- Projects, deploy history and redacted deploy logs (see docs/contributors/design/m5-deploys.md).
 --
 -- Git tokens are stored sealed (AES-GCM) in git_token_sealed. The restricted
 -- role haetae_app may not SELECT that column; has_git_token is a generated

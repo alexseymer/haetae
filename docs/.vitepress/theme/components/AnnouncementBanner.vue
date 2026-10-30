@@ -22,7 +22,7 @@ onUnmounted(() => {
   <aside class="hx-banner" aria-label="Announcement">
     <span class="hx-banner__tag">v1</span>
     <p>
-      v1 is built. <a :href="withBase('/acceptance')">Read the acceptance report</a>
+      v1 is built. <a :href="withBase('/tested')">Read what is tested and what is not</a>
       <span class="hx-banner__arrow" aria-hidden="true">&rarr;</span>
     </p>
   </aside>

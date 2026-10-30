@@ -14,7 +14,7 @@ Do not open a public issue or pull request for a vulnerability.
 
 In scope: the Haetae server, agent and inventory helper, the installers (`deploy/install-server.sh`, the agent `install.sh`), the web UI and API, and the docs where they would lead users to an unsafe setup. Areas where reports are especially valuable: agent identity and mutual TLS, tenant isolation, redaction of secrets and personal data before data leaves a host, autonomy enforcement, and handling of untrusted log text.
 
-Out of scope: vulnerabilities in third-party software that Haetae only reports on or runs (Docker, Caddy, PostgreSQL, Syft, Grype) which should go to those projects; problems that need an already-compromised administrator or host; denial of service by volume alone; and the documented limits in [docs/security.md](docs/security.md) and [docs/acceptance.md](docs/acceptance.md).
+Out of scope: vulnerabilities in third-party software that Haetae only reports on or runs (Docker, Caddy, PostgreSQL, Syft, Grype) which should go to those projects; problems that need an already-compromised administrator or host; denial of service by volume alone; and the documented limits in [docs/security.md](docs/security.md) and [docs/contributors/acceptance.md](docs/contributors/acceptance.md).
 
 ## What to expect
 

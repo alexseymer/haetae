@@ -286,7 +286,7 @@ message GreenSet {
   repeated string template_ids = 1;
 }
 
-// ---- Deploys (see docs/design/m5-deploys.md) ----
+// ---- Deploys (see docs/contributors/design/m5-deploys.md) ----
 
 // Deploy asks the agent to make a project run a version. The command result
 // only acknowledges that the deploy was accepted; progress arrives as

@@ -77,7 +77,7 @@ onUnmounted(() => {
         </div>
         <figcaption>
           Local models and non-local providers are both supported; with a non-local one, if redaction fails nothing is sent.
-          <a :href="withBase('/architecture')">Full architecture and data flows</a>.
+          <a :href="withBase('/concepts/')">The ideas in plain words</a>.
         </figcaption>
       </figure>
 

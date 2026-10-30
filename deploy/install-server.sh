@@ -333,14 +333,14 @@ if [ -n "$SETUP_CODE" ]; then
 Open the URL in a browser and enter the setup code to create the first
 administrator. The browser will warn about the certificate because it is
 issued by the server's own CA (unless you supply your own; see
-docs/self-hosting.md).
+docs/getting-started/install-the-server.md).
 EOF
 else
 	cat <<EOF
 
 Setup is already done. Open the URL to sign in.
 The browser will warn about the certificate because it is issued by the
-server's own CA (unless you supply your own; see docs/self-hosting.md).
+server's own CA (unless you supply your own; see docs/getting-started/install-the-server.md).
 EOF
 fi
 

@@ -1,7 +1,7 @@
 // Package operator is the AI operator: it answers questions, explains
 // incidents, rewrites the briefing and judges log templates, always with the
 // rule-based behaviour as the fallback. It never reaches hosts by itself; see
-// docs/design/m8-operator.md.
+// docs/contributors/design/m8-operator.md.
 package operator
 
 import (

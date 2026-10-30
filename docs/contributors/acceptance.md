@@ -1,6 +1,6 @@
 # Acceptance report
 
-Every "Done correctly" criterion of `docs/spec.md` (S1 to S11) with the test that checks it, the value measured, and the result. Run on one VM (2 cores, 8 GB, Docker 29, kernel 7.0) on 2026-10-26 with `scripts/acceptance.sh`, which runs every suite in sequence and writes `acceptance-results/` (logs, `summary.txt`, `measures.txt`; not committed). Hosts are Docker containers on the same machine, so all timings are loopback timings: they show the system is not the bottleneck, not what a WAN link will do.
+Every "Done correctly" criterion of `docs/contributors/spec.md` (S1 to S11) with the test that checks it, the value measured, and the result. Run on one VM (2 cores, 8 GB, Docker 29, kernel 7.0) on 2026-10-26 with `scripts/acceptance.sh`, which runs every suite in sequence and writes `acceptance-results/` (logs, `summary.txt`, `measures.txt`; not committed). Hosts are Docker containers on the same machine, so all timings are loopback timings: they show the system is not the bottleneck, not what a WAN link will do.
 
 Run result: 16 steps; 14 passed in the full run. Two steps failed and were fixed, then passed on re-run:
 
@@ -33,11 +33,11 @@ These narrowings apply to the numbers above. None of them is hidden in a test.
 - **S3**: Telegram runs against a fake Bot API server; Slack, Signal and email are covered by unit tests of the bridges and the delivery code only. No live chat service was used.
 - **S4, S6, S7, S9**: the AI is a scripted provider (including a scripted OpenAI-compatible HTTP server in the real-stack test). The Anthropic and OpenAI-compatible wire formats are tested against `httptest` servers. **No run with a live provider was made** (no API key). Answer quality with a real model is therefore unmeasured.
 - **S5**: measured on the recorded corpus and on synthetic noisy containers, not on production workloads.
-- **S8**: new advisories are tested with a crafted database; the real Grype database was used for the benchmarks only (`docs/benchmarks-m7.md`). Real conntrack attribution was verified as root on this VM; without `CAP_NET_ADMIN` the state is "unavailable" with the reason. Syft exceeds the default 256 MiB inventory cap on large images (`node:22-bookworm`, `python:3.12`): those report "scan failed: oom" unless `HAETAE_INVENTORY_MEM` is raised. Grype versus Trivy agreement on four reference images is recorded in the benchmarks (0.35 to 1.0 Jaccard; Ubuntu differs because Grype includes unfixed entries).
+- **S8**: new advisories are tested with a crafted database; the real Grype database was used for the benchmarks only (`docs/contributors/benchmarks-m7.md`). Real conntrack attribution was verified as root on this VM; without `CAP_NET_ADMIN` the state is "unavailable" with the reason. Syft exceeds the default 256 MiB inventory cap on large images (`node:22-bookworm`, `python:3.12`): those report "scan failed: oom" unless `HAETAE_INVENTORY_MEM` is raised. Grype versus Trivy agreement on four reference images is recorded in the benchmarks (0.35 to 1.0 Jaccard; Ubuntu differs because Grype includes unfixed entries).
 - **S10**: arm64 binaries are verified by ELF header only (no qemu here); only amd64 was executed. "Reconnects after a reboot" is covered by restart and network-cut tests, not by rebooting a machine.
 - **S11**: the install-to-login time excludes building or pulling the server image (5 min 45 s to build locally in the test; a published image was not available to pull). The **hosted** service is not built; "raw logs stay on the customer's server" holds by design (logs live in the agent's ring buffer, are sent only after on-host redaction and only on request) and is tested at the agent and redaction level.
 - **Containers on one machine**: all hosts share one kernel and one Docker daemon.
-- **Release**: no multi-arch image (no `buildx` here), no registry push, no signing (`docs/release.md`).
+- **Release**: no multi-arch image (no `buildx` here), no registry push, no signing (`docs/contributors/release.md`).
 
 ## Known limits and follow-ups
 

@@ -1,6 +1,6 @@
 # Architecture
 
-For contributors. Users should start at [README.md](../README.md) and [docs/README.md](README.md). The authoritative decisions are in [adr/0001-stack.md](adr/0001-stack.md) and the per-milestone designs in [design/](design/); this page is a map.
+For contributors. Users should start at [README.md](../../README.md) and [docs/README.md](../README.md). The authoritative decisions are in [adr/0001-stack.md](adr/0001-stack.md) and the per-milestone designs in [design/](design/); this page is a map.
 
 ## Components
 
@@ -74,7 +74,7 @@ flowchart LR
     Q[QueryLogs command] -.->|"on demand, redacted on host"| R
 ```
 
-Metrics are rolled up with retention of 48 h at 10 s, 30 days at 1 min and 395 days at 1 h ([install.md](install.md)). The agent summarises routine log lines on the host; full raw logs stay in the agent's ring buffer and are fetched only on request, after redaction.
+Metrics are rolled up with retention of 48 h at 10 s, 30 days at 1 min and 395 days at 1 h ([install.md](../getting-started/install-the-server.md)). The agent summarises routine log lines on the host; full raw logs stay in the agent's ring buffer and are fetched only on request, after redaction.
 
 ### Deploy
 
@@ -145,11 +145,11 @@ A scan that does not finish is stored as "scan failed" with the reason, never as
 
 ## Trust model
 
-- **Agent identity.** The server runs its own CA ([pki](../internal/pki/pki.go)). Enrollment tokens are single use and time limited; the agent pins the CA fingerprint. Each agent gets a client certificate whose common name is the host id; the gateway port needs that certificate (mutual TLS) and must not sit behind a TLS-terminating proxy. Removing a host revokes it. Certificates last one year and cannot yet be renewed.
+- **Agent identity.** The server runs its own CA ([pki](../../internal/pki/pki.go)). Enrollment tokens are single use and time limited; the agent pins the CA fingerprint. Each agent gets a client certificate whose common name is the host id; the gateway port needs that certificate (mutual TLS) and must not sit behind a TLS-terminating proxy. Removing a host revokes it. Certificates last one year and cannot yet be renewed.
 - **Tenant isolation.** Tenant tables are scoped by organisation and protected by PostgreSQL Row-Level Security. Application code runs in scoped transactions that set `app.org_id` for the transaction (`internal/store/scoped.go`, `store/migrations/0005_row_level_security.sql`); a test covers every tenant table ([acceptance.md](acceptance.md)).
 - **Redaction fails closed.** Redaction runs on the host with RE2 patterns under a time budget. If a chunk cannot be redacted, it is replaced by a withheld marker; with a non-local AI the server also sends nothing when redaction fails.
 - **Autonomy is enforced twice.** The server decides what the operator may propose or perform from the organisation setting; each agent applies its own cap (`--max-autonomy`) and a fixed command allowlist. The operator's only action is `restart_container`; no command deletes data. Log text is treated as untrusted. Chat approvals are accepted only from linked, verified accounts.
-- **Secrets at rest.** Git tokens are encrypted with a key in the server data directory ([secrets](../internal/secrets/box.go)).
+- **Secrets at rest.** Git tokens are encrypted with a key in the server data directory ([secrets](../../internal/secrets/box.go)).
 
 ## Where to read next
 

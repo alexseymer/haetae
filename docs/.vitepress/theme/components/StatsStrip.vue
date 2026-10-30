@@ -3,13 +3,13 @@ import { withBase } from 'vitepress'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { prefersReducedMotion, onceVisible } from '../composables/motion'
 
-// Measured values from docs/acceptance.md (one VM, 2 cores, 8 GB, loopback).
+// Measured values from docs/contributors/acceptance.md (one VM, 2 cores, 8 GB, loopback).
 const stats = [
-  { value: '116 ms', caption: 'from enrollment to an online agent', ref: 'S1' },
-  { value: '18.6 MiB', caption: 'agent memory peak on the release build (limit 50 MiB)', ref: 'S10' },
-  { value: '96%', caption: 'of routine log lines never sent, after warm-up', ref: 'S5' },
-  { value: '~1 s', caption: 'from a new advisory to an alert, on a crafted test database', ref: 'S8' },
-  { value: '6.1 s', caption: 'from a cached push to a healthy deploy', ref: 'S2' }
+  { value: '116 ms', caption: 'from enrollment to an online agent', ref: 'Enrollment' },
+  { value: '18.6 MiB', caption: 'agent memory peak on the release build (limit 50 MiB)', ref: 'Agent memory' },
+  { value: '96%', caption: 'of routine log lines never sent, after warm-up', ref: 'Logs' },
+  { value: '~1 s', caption: 'from a new advisory to an alert, on a crafted test database', ref: 'Vulnerabilities' },
+  { value: '6.1 s', caption: 'from a cached push to a healthy deploy', ref: 'Deploys' }
 ]
 
 // Count-up when scrolled into view. The real value is always in the DOM (and sizes the box);
@@ -54,10 +54,10 @@ onUnmounted(() => {
     <i class="hx-stats__corner hx-stats__corner--br" aria-hidden="true" />
     <ul class="hx-stats__list">
       <li v-for="(s, i) in stats" :key="s.ref">
-        <a :href="withBase('/acceptance#criteria')" class="hx-stat">
+        <a :href="withBase('/tested')" class="hx-stat">
           <span class="hx-stat__value"><span :class="{ 'is-ghost': counting }">{{ s.value }}</span><span v-if="counting" class="hx-stat__live" aria-hidden="true">{{ shown[i] }}</span></span>
           <span class="hx-stat__caption">{{ s.caption }}</span>
-          <span class="hx-stat__ref">{{ s.ref }} in the acceptance report</span>
+          <span class="hx-stat__ref">{{ s.ref }}</span>
         </a>
       </li>
     </ul>
