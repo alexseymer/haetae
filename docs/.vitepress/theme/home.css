@@ -1372,3 +1372,34 @@ button.hx-shot:focus-visible .hx-shot__zoom {
 .hx-node .hx-brands li::before {
   content: none;
 }
+
+/* The channel icons in the 'You' card drift loosely instead of standing in a
+   line: each one sits a little higher or lower and floats gently on its own
+   rhythm. The float is off under reduced motion. */
+.hx-node--you .hx-brands {
+  justify-content: center;
+  gap: 10px 12px;
+  padding: 6px 0;
+}
+.hx-node--you .hx-brands li {
+  transform: translateY(var(--hx-lift, 0px));
+}
+.hx-node--you .hx-brands li:nth-child(1) { --hx-lift: -10px; }
+.hx-node--you .hx-brands li:nth-child(2) { --hx-lift: 8px; }
+.hx-node--you .hx-brands li:nth-child(3) { --hx-lift: -4px; }
+.hx-node--you .hx-brands li:nth-child(4) { --hx-lift: 12px; }
+.hx-node--you .hx-brands li:nth-child(5) { --hx-lift: -2px; }
+.hx-node--you .hx-brands li:nth-child(n+6) { --hx-lift: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .hx-node--you .hx-brands li {
+    animation: hx-float 5s ease-in-out infinite alternate;
+    animation-delay: calc(var(--i, 0) * -1.2s);
+  }
+  .hx-node--you .hx-brands li:nth-child(2) { --i: 1; }
+  .hx-node--you .hx-brands li:nth-child(3) { --i: 2; }
+  .hx-node--you .hx-brands li:nth-child(4) { --i: 3; }
+  .hx-node--you .hx-brands li:nth-child(5) { --i: 4; }
+}
+@keyframes hx-float {
+  to { transform: translateY(calc(var(--hx-lift, 0px) - 6px)) rotate(-4deg); }
+}
