@@ -79,6 +79,9 @@ var (
 	ErrRateLimited = errors.New("provider rate limited")
 	ErrAuth        = errors.New("provider rejected the credentials")
 	ErrBadResponse = errors.New("provider returned an unusable response")
+	// ErrBlocked is a 403 whose body says the provider's own safety filter
+	// (PII, guard or moderation) refused the request content. The key is fine.
+	ErrBlocked = errors.New("provider blocked the request content")
 )
 
 // Error is the typed failure of one provider call. Kind is one of the Err*

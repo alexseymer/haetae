@@ -205,7 +205,8 @@ func TestErrorMapping(t *testing.T) {
 		want   error
 	}{
 		{"401", 401, "bad key " + secretKey, ErrAuth},
-		{"403", 403, "", ErrAuth},
+		{"403", 403, "", ErrBadResponse},
+		{"403 pii", 403, "Request blocked: PII detected (redaction_context_lost)", ErrBlocked},
 		{"429", 429, "slow down", ErrRateLimited},
 		{"500", 500, "boom " + secretKey, ErrUnavailable},
 		{"503", 503, "", ErrUnavailable},
@@ -324,7 +325,8 @@ func TestTypedErrors(t *testing.T) {
 		{"model not found", 404, body("No endpoints found for foo/bar"), ErrBadResponse, "No endpoints found for foo/bar"},
 		{"bad request", 400, body("bad model id"), ErrBadResponse, "bad model id"},
 		{"auth", 401, body("User not found."), ErrAuth, "User not found."},
-		{"forbidden", 403, `{"error":"nope"}`, ErrAuth, "nope"},
+		{"forbidden", 403, `{"error":"nope"}`, ErrBadResponse, "nope"},
+		{"forbidden guard", 403, `{"error":{"message":"Request blocked: PII detected (redaction_context_lost)"}}`, ErrBlocked, "Request blocked: PII detected (redaction_context_lost)"},
 		{"rate", 429, body("slow down"), ErrRateLimited, "slow down"},
 		{"server", 503, `<html>down</html>`, ErrUnavailable, ""},
 		{"key echoed", 400, body("bad key " + secretKey), ErrBadResponse, "bad key [redacted]"},

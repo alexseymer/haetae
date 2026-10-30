@@ -257,3 +257,50 @@ func TestEvidenceTitleUsesNamesNotIDs(t *testing.T) {
 		t.Errorf("name not limited to 60 runes: %d", utf8.RuneCountInString(got))
 	}
 }
+
+// TestAskContainerPayloadSurvivesEgress builds the exact JSON a list_containers
+// result hands to a remote model (modelPayload after containerData and
+// containerUntrusted) and runs it through the real egress redaction. The
+// placeholders must stay one per value, with no identifier turned into a
+// card-number token that loses its context.
+func TestAskContainerPayloadSurvivesEgress(t *testing.T) {
+	for _, hostID := range []uuid.UUID{
+		uuid.MustParse("3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c"),
+		uuid.MustParse("12345678-1234-4123-8123-123456789012"),
+		uuid.Nil,
+	} {
+		now := time.Date(2026, 10, 30, 10, 0, 0, 0, time.UTC)
+		cs := []store.Container{
+			{HostID: hostID, ContainerID: "9f3c1a7b2e4d5c6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f", Name: "shop-web",
+				Stack: "shop", Service: "web", Image: "ghcr.io/acme/shop-web:1.4.2", State: "running", Status: "Up 3 hours (healthy)", Health: "healthy", UpdatedAt: now},
+			{HostID: hostID, ContainerID: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a", Name: "shop-worker",
+				Stack: "shop", Service: "worker", Image: "ghcr.io/acme/shop-worker:1.4.2", State: "exited", Status: "Exited (1) 2 minutes ago", ExitCode: 1, UpdatedAt: now},
+		}
+		data := make([]map[string]any, 0, len(cs))
+		unt := make([]map[string]any, 0, len(cs))
+		for _, c := range cs {
+			data = append(data, containerData(c))
+			unt = append(unt, containerUntrusted(c))
+		}
+		out := &toolOut{trusted: true, data: map[string]any{"containers": data, "total": len(cs)}, untrusted: map[string]any{"containers": unt}}
+		payload := modelPayload("ev_1", out)
+
+		red, err := Egress(context.Background(), &provider.Fake{}, defaultRedact(), []string{payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := red[0]
+		if strings.Contains(got, "][") {
+			t.Fatalf("adjacent placeholders (host %s): %s", hostID, got)
+		}
+		if strings.Contains(got, "credit-card") {
+			t.Fatalf("identifier redacted as a card number (host %s): %s", hostID, got)
+		}
+		if !strings.Contains(got, hostID.String()) {
+			t.Fatalf("host id altered (host %s): %s", hostID, got)
+		}
+		if !strings.Contains(got, "shop-web") || !strings.Contains(got, "Up 3 hours (healthy)") {
+			t.Fatalf("container fields lost: %s", got)
+		}
+	}
+}

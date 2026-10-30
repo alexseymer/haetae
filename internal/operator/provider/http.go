@@ -83,6 +83,18 @@ func errorMessage(body []byte) string {
 	return w.Message
 }
 
+// isSafetyBlock reports whether a provider error body says the request content
+// was refused by a safety filter (PII, guard or moderation).
+func isSafetyBlock(body []byte) bool {
+	b := strings.ToLower(string(body))
+	for _, w := range []string{"pii", "guard", "blocked", "moderation"} {
+		if strings.Contains(b, w) {
+			return true
+		}
+	}
+	return false
+}
+
 func isTimeout(err error) bool {
 	var ne net.Error
 	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
@@ -132,8 +144,13 @@ func doJSON(ctx context.Context, client *http.Client, endpoint string, headers m
 			e.Detail = cleanDetail(errorMessage(body), secret)
 		}
 		switch {
-		case code == http.StatusUnauthorized || code == http.StatusForbidden:
+		case code == http.StatusUnauthorized:
 			e.Kind = ErrAuth
+		case code == http.StatusForbidden && !tooBig && isSafetyBlock(body):
+			e.Kind = ErrBlocked
+		case code == http.StatusForbidden:
+			// A 403 is not a key problem: only 401 means the key was rejected.
+			e.Kind = ErrBadResponse
 		case code == http.StatusTooManyRequests:
 			e.Kind = ErrRateLimited
 		case code >= 500:
