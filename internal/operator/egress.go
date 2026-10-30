@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -71,13 +72,26 @@ func safeRedact(f func(string) (string, error), s string) (out string, err error
 	return f(s)
 }
 
+// compactArgs returns the tool-call arguments as compact JSON. Models return
+// pretty-printed arguments such as {"host_id": "<uuid>"}; echoing those back
+// makes OpenRouter's PII guard answer 403 "redaction_context_lost" (verified
+// live: only the space after the colon triggers it). Invalid JSON is returned
+// unchanged and handled by the caller.
+func compactArgs(raw json.RawMessage) string {
+	var b bytes.Buffer
+	if err := json.Compact(&b, raw); err != nil {
+		return string(raw)
+	}
+	return b.String()
+}
+
 // egressMessage passes the text and the tool-call arguments of a message
 // through Egress.
 func (s *Service) egressMessage(ctx context.Context, m provider.Message) (provider.Message, error) {
 	in := make([]string, 0, 1+len(m.ToolCalls))
 	in = append(in, m.Text)
 	for _, tc := range m.ToolCalls {
-		in = append(in, string(tc.Args))
+		in = append(in, compactArgs(tc.Args))
 	}
 	out, err := Egress(ctx, s.cfg.Provider, s.cfg.Redact, in)
 	if err != nil {

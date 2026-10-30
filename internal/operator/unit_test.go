@@ -304,3 +304,25 @@ func TestAskContainerPayloadSurvivesEgress(t *testing.T) {
 		}
 	}
 }
+
+// A model returns pretty-printed tool arguments. Echoing {"host_id": "<uuid>"}
+// back made OpenRouter's PII guard answer 403 redaction_context_lost, so the
+// echo must be compact JSON.
+func TestEgressMessageCompactsToolCallArgs(t *testing.T) {
+	s := New(Config{Provider: &provider.Fake{}})
+	pretty := "{\n  \"host_id\": \"98d33015-b294-4c09-bfae-ad9f4c35310a\"\n}"
+	m, err := s.egressMessage(context.Background(), provider.Message{Role: provider.RoleAssistant,
+		ToolCalls: []provider.ToolCall{{ID: "c1", Name: "list_containers", Args: json.RawMessage(pretty)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"host_id":"98d33015-b294-4c09-bfae-ad9f4c35310a"}`
+	if got := string(m.ToolCalls[0].Args); got != want {
+		t.Fatalf("args = %q, want %q", got, want)
+	}
+	bad, err := s.egressMessage(context.Background(), provider.Message{Role: provider.RoleAssistant,
+		ToolCalls: []provider.ToolCall{{ID: "c2", Name: "x", Args: json.RawMessage(`{not json`)}}})
+	if err != nil || string(bad.ToolCalls[0].Args) != `{}` {
+		t.Fatalf("invalid args: %v %q", err, bad.ToolCalls[0].Args)
+	}
+}
