@@ -7,6 +7,8 @@
 [![License: AGPL-3.0](https://img.shields.io/github/license/alexseymer/haetae)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/alexseymer/haetae)](go.mod)
 
+> **Vibe-coded.** This project was written with heavy AI assistance and is not yet fully tested. Try it on a test server first, review it before you rely on it, and do not use it as your only monitoring.
+>
 > Haetae is a working name, pending trademark clearance. Status: version 0.8.0 is built and verified in a single-VM environment; see [what you can and cannot trust](#what-you-can-and-cannot-trust).
 
 ## What is it
