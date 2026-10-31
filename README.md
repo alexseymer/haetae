@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/github/license/alexseymer/haetae)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/alexseymer/haetae)](go.mod)
 
-> Haetae is a working name, pending trademark clearance. Status: v1 is built and verified in a single-VM environment; see [what you can and cannot trust](#what-you-can-and-cannot-trust).
+> Haetae is a working name, pending trademark clearance. Status: version 0.8.0 is built and verified in a single-VM environment; see [what you can and cannot trust](#what-you-can-and-cannot-trust).
 
 ## What is it
 
@@ -107,7 +107,7 @@ The build includes the web UI and takes several minutes the first time. The inst
 | **Security per container** | Installed software, CVE with severity and fixed version, misconfigurations, outbound connections, image update policy. A failed scan says "scan failed", never "no vulnerabilities". | [watching vulnerabilities](docs/guides/watching-vulnerabilities.md) |
 | **Safe by design** | Secrets and personal data are redacted on the host before a non-local AI sees anything; if redaction fails, nothing is sent. The operator never deletes data. | [asking the operator](docs/guides/asking-the-operator.md) |
 
-Out of scope for v1: Kubernetes, Swarm, buildpacks, preview deployments, running backups, SAML/SCIM, mobile apps ([spec](docs/contributors/spec.md)).
+Out of scope for 0.8.0: Kubernetes, Swarm, buildpacks, preview deployments, running backups, SAML/SCIM, mobile apps ([spec](docs/contributors/spec.md)).
 
 ## What you can and cannot trust
 
@@ -150,7 +150,7 @@ All roadmap steps (M0 to M9) are built. Next:
 - A **published container image** (and release signing).
 - **Agent certificate renewal** (see known limits in [docs/contributors/acceptance.md](docs/contributors/acceptance.md)).
 - A **hosted service**.
-- After v1: a local decision model for log labeling and privacy filtering, then SAML/SCIM and optional backups ([spec](docs/contributors/spec.md)).
+- After 0.8.0: a local decision model for log labeling and privacy filtering, then SAML/SCIM and optional backups ([spec](docs/contributors/spec.md)).
 
 ## Security
 

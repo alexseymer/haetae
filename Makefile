@@ -73,8 +73,8 @@ dist:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dist/haetae-inventory-linux-arm64 ./cmd/haetae-inventory
 	cd bin/dist && sha256sum haetae-agent-linux-amd64 haetae-agent-linux-arm64 haetae-inventory-linux-amd64 haetae-inventory-linux-arm64 > SHA256SUMS
 
-# Release version: git tag (v*) if present, else 0.1.0-<shortsha>[-dirty]. Override with RELEASE_VERSION=.
-RELEASE_VERSION ?= $(shell v=$$(git describe --tags --match 'v*' --dirty 2>/dev/null); if [ -n "$$v" ]; then echo "$${v\#v}"; else echo "0.1.0-$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)$$(git diff --quiet HEAD 2>/dev/null || echo -dirty)"; fi)
+# Release version: git tag (v*) if present, else 0.8.0-<shortsha>[-dirty]. Override with RELEASE_VERSION=.
+RELEASE_VERSION ?= $(shell v=$$(git describe --tags --match 'v*' --dirty 2>/dev/null); if [ -n "$$v" ]; then echo "$${v\#v}"; else echo "0.8.0-$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)$$(git diff --quiet HEAD 2>/dev/null || echo -dirty)"; fi)
 
 # Release artifacts in bin/release: agent, inventory, server per arch, tar.gz per arch, SHA256SUMS.
 release:

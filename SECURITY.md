@@ -22,4 +22,4 @@ Haetae is maintained by a small team without a formal service-level agreement. W
 
 ## Supported versions
 
-v1 is pre-release and no version has been published yet; fixes go to the `main` branch.
+0.8.0 is pre-release and no version has been published yet; fixes go to the `main` branch.

@@ -1,4 +1,4 @@
-# Roadmap to v1
+# Roadmap to 0.8.0
 
 `docs/contributors/spec.md` defines the outcome; `docs/contributors/adr/0001-stack.md` defines the stack. This file splits the work into steps. Each step is one GitHub issue and one or more pull requests. A PR is merged only when:
 

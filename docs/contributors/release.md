@@ -3,7 +3,7 @@
 ## Cut a release
 
 ```bash
-git tag v0.1.0            # optional; without a v* tag the version is 0.1.0-<shortsha>[-dirty]
+git tag v0.1.0            # optional; without a v* tag the version is 0.8.0-<shortsha>[-dirty]
 make release              # npm ci + web build, then bin/dist and bin/release
 make release-image        # server image from the release binaries
 make test-release         # verifies the artifacts and the image (needs Docker)
