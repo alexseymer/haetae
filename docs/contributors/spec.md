@@ -47,9 +47,9 @@ Haetae: shop was slow 12:10 to 12:40. The database sat at 94% of its memory limi
 10. The agent on each server uses under 50 MB RAM and reconnects by itself after a reboot or lost connection.
 11. Self-hosted: a working login within 5 minutes of one command, every feature included, no data sent to us. Hosted: raw logs stay on the customer's server.
 
-## Out of scope for v1
+## Out of scope for 0.8.0
 
-Kubernetes, Swarm, Nixpacks and buildpacks, preview deployments, running backups (backup checks only), SAML and SCIM, mobile apps. Next after v1: a local decision model (Laya) as a cheap first stage for log labeling and privacy filtering, then SAML and SCIM and optional backups.
+Kubernetes, Swarm, Nixpacks and buildpacks, preview deployments, running backups (backup checks only), SAML and SCIM, mobile apps. Next after 0.8.0: a local decision model (Laya) as a cheap first stage for log labeling and privacy filtering, then SAML and SCIM and optional backups.
 
 ## Business model
 

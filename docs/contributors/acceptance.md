@@ -41,7 +41,7 @@ These narrowings apply to the numbers above. None of them is hidden in a test.
 
 ## Known limits and follow-ups
 
-Tracked for after v1 (issue #13 and below):
+Tracked for after 0.8.0 (issue #13 and below):
 
 - Agent client certificates last one year and the code has no renewal path: an agent that is not re-enrolled within a year stops connecting.
 - The Signal bridge expects a signal-cli REST endpoint that the stack does not ship.
