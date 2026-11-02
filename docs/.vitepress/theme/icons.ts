@@ -1,6 +1,6 @@
 // Brand marks come from simple-icons (CC0), imported one by one so they are inlined at build time.
 // Marks simple-icons does not have are drawn here as neutral stroke glyphs.
-import { siDocker, siPostgresql, siCaddy, siGithub, siTelegram, siSlack, siSignal } from 'simple-icons'
+import { siDocker, siPostgresql, siCaddy, siGithub, siTelegram, siSignal } from 'simple-icons'
 
 export type IconDef = {
   label: string
@@ -30,7 +30,11 @@ export const icons = {
   caddy: fromSi(siCaddy),
   github: fromSi(siGithub, 'GitHub'),
   telegram: fromSi(siTelegram),
-  slack: fromSi(siSlack),
+  slack: {
+    label: 'Slack',
+    hex: '4A154B',
+    glyph: '<path d="M9 3 7 21M17 3l-2 18M4 9h17M3 15h17"/>'
+  },
   signal: fromSi(siSignal),
   email: {
     label: 'Email',
