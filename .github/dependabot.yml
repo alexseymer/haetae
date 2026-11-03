@@ -16,3 +16,7 @@ updates:
     directory: /docs
     schedule:
       interval: weekly
+    ignore:
+      # vitepress-plugin-mermaid 2.x needs mermaid 11 (peer conflict with 12)
+      - dependency-name: mermaid
+        update-types: ["version-update:semver-major"]
