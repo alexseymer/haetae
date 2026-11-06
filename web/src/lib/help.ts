@@ -1,11 +1,11 @@
 /**
  * Every help text shown in the UI lives here so it can be reviewed in one place.
- * Wording follows docs/*.md; do not describe behaviour that the docs do not.
+ * Wording follows the user docs; do not describe behaviour that the docs do not.
  */
 
-export const DOCS_BASE = "https://github.com/alexseymer/haetae/blob/main/docs";
+export const DOCS_BASE = "https://alexseymer.github.io/haetae";
 
-export const DOCS_INDEX = "https://github.com/alexseymer/haetae/tree/main/docs";
+export const DOCS_INDEX = `${DOCS_BASE}/`;
 
 export type DocName =
   | "install"
@@ -16,8 +16,19 @@ export type DocName =
   | "security"
   | "troubleshooting";
 
+/** Page of the published docs site (docs/ in the repo) for each topic. */
+const DOC_PAGES: Record<DocName, string> = {
+  install: "getting-started/install-the-server",
+  enroll: "getting-started/enroll-a-host",
+  deploy: "getting-started/deploy-an-app",
+  chat: "getting-started/connect-chat",
+  "ai-operator": "getting-started/turn-on-the-operator",
+  security: "guides/watching-vulnerabilities",
+  troubleshooting: "problems/",
+};
+
 export function docUrl(doc: DocName): string {
-  return `${DOCS_BASE}/${doc}.md`;
+  return `${DOCS_BASE}/${DOC_PAGES[doc]}`;
 }
 
 export const DOC_LINKS: Array<{ doc: DocName; label: string; blurb: string }> = [
