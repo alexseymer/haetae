@@ -19,7 +19,7 @@ describe("EmptyState", () => {
     const link = screen.getByRole("link", { name: "How enrolling works" });
     expect(link).toHaveAttribute(
       "href",
-      "https://github.com/alexseymer/haetae/blob/main/docs/enroll.md",
+      "https://alexseymer.github.io/haetae/getting-started/enroll-a-host",
     );
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });

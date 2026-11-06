@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import { DOC_LINKS, GLOSSARY_ORDER, HELP } from "../lib/help";
+import { DOC_LINKS, GLOSSARY_ORDER, HELP, docUrl } from "../lib/help";
 import { HelpPage } from "./Help";
 
 describe("HelpPage", () => {
@@ -34,10 +34,8 @@ describe("HelpPage", () => {
 
     for (const d of DOC_LINKS) {
       const link = screen.getByRole("link", { name: d.label });
-      expect(link).toHaveAttribute(
-        "href",
-        `https://github.com/alexseymer/haetae/blob/main/docs/${d.doc}.md`,
-      );
+      expect(link).toHaveAttribute("href", docUrl(d.doc));
+      expect(docUrl(d.doc)).toMatch(/^https:\/\/alexseymer\.github\.io\/haetae\/(getting-started|guides|problems)\//);
       expect(link).toHaveAttribute("target", "_blank");
       expect(link).toHaveAttribute("rel", "noopener noreferrer");
     }
