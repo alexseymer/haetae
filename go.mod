@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	connectrpc.com/connect v1.21.1
-	github.com/anchore/clio v0.1.1
+	github.com/anchore/clio v0.1.2
 	github.com/anchore/grype v0.121.0
 	github.com/anchore/packageurl-go v0.2.0
 	github.com/anchore/stereoscope v0.3.4
@@ -165,7 +165,7 @@ require (
 	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.1 // indirect
-	github.com/gookit/color v1.6.2 // indirect
+	github.com/gookit/color v1.6.3 // indirect
 	github.com/gpustack/gguf-parser-go v0.26.4 // indirect
 	github.com/hako/durafmt v0.0.0-20210608085754-5c1018a4e16b // indirect
 	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.74 // indirect
