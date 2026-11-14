@@ -1,6 +1,6 @@
 module github.com/alexseymer/haetae
 
-go 1.27.3
+go 1.27.4
 
 require (
 	connectrpc.com/connect v1.21.1
@@ -338,3 +338,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/blakesmith/ar => ./third_party/ar
