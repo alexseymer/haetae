@@ -460,7 +460,7 @@ func (e *Evaluator) buildSnapshot(ctx context.Context, orgID uuid.UUID, now time
 		if h.RevokedAt != nil {
 			continue
 		}
-		hf := HostFact{ID: h.ID, Name: h.Name, Offline: offlineSet[h.ID]}
+		hf := HostFact{ID: h.ID, Name: h.Name, Offline: offlineSet[h.ID], CertExpiresAt: h.CertExpiresAt}
 		cpu, err := e.r.HostMetricSustained(ctx, orgID, h.ID, "cpu_pct", float64(settings.CPUPct), sustained, now)
 		if err != nil {
 			return Snapshot{}, err

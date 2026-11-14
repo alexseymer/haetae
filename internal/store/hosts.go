@@ -51,10 +51,19 @@ type Host struct {
 	Name       string
 	Info       HostInfo
 	CertSerial string
-	EnrolledAt time.Time
-	LastSeenAt *time.Time
-	Connected  bool
-	RevokedAt  *time.Time
+	// CertExpiresAt is when the current client certificate expires. Nil when
+	// unknown (never recorded).
+	CertExpiresAt *time.Time
+	// PrevCertSerial is the serial of the certificate the current one replaced.
+	// It stays acceptable until PrevCertValidUntil or until the current
+	// certificate is first used, so a renewal whose reply was lost or never
+	// saved cannot lock the host out. Empty when there is none.
+	PrevCertSerial     string
+	PrevCertValidUntil *time.Time
+	EnrolledAt         time.Time
+	LastSeenAt         *time.Time
+	Connected          bool
+	RevokedAt          *time.Time
 }
 
 // EnrollmentToken is the metadata for a one-time enrollment token (plaintext is not stored).
@@ -146,6 +155,15 @@ func (s *Store) CreateEnrollmentToken(ctx context.Context, orgID uuid.UUID, host
 // EnrollHost atomically consumes an enrollment token and creates a host.
 // issue is called with the new host ID to obtain a certificate serial; on error the transaction rolls back.
 func (s *Store) EnrollHost(ctx context.Context, token string, info HostInfo, issue func(hostID uuid.UUID) (serial string, err error)) (Host, error) {
+	return s.EnrollHostWithExpiry(ctx, token, info, func(id uuid.UUID) (string, time.Time, error) {
+		serial, err := issue(id)
+		return serial, time.Time{}, err
+	})
+}
+
+// EnrollHostWithExpiry is EnrollHost where issue also returns the expiry of
+// the certificate, which is stored on the host (a zero time stores NULL).
+func (s *Store) EnrollHostWithExpiry(ctx context.Context, token string, info HostInfo, issue func(hostID uuid.UUID) (serial string, expires time.Time, err error)) (Host, error) {
 	sum := sha256.Sum256([]byte(token))
 
 	tx, err := s.pool.Begin(ctx)
@@ -178,25 +196,30 @@ func (s *Store) EnrollHost(ctx context.Context, token string, info HostInfo, iss
 		return Host{}, fmt.Errorf("store: EnrollHost: %w", err)
 	}
 
-	serial, err := issue(hostID)
+	serial, expires, err := issue(hostID)
 	if err != nil {
 		return Host{}, fmt.Errorf("store: EnrollHost: %w", err)
+	}
+	var expiresAt *time.Time
+	if !expires.IsZero() {
+		expiresAt = &expires
 	}
 
 	var h Host
 	err = tx.QueryRow(ctx, `
 		INSERT INTO hosts (
-			id, org_id, name, hostname, os, kernel, arch, docker_version, agent_version, cert_serial
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			id, org_id, name, hostname, os, kernel, arch, docker_version, agent_version, cert_serial, cert_expires_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING id, org_id, name, hostname, os, kernel, arch, docker_version, agent_version,
-			cert_serial, enrolled_at, last_seen_at, connected, revoked_at`,
+			cert_serial, cert_expires_at, prev_cert_serial, prev_cert_valid_until,
+			enrolled_at, last_seen_at, connected, revoked_at`,
 		hostID, orgID, hostName,
 		info.Hostname, info.OS, info.Kernel, info.Arch, info.DockerVersion, info.AgentVersion,
-		serial,
+		serial, expiresAt,
 	).Scan(
 		&h.ID, &h.OrgID, &h.Name,
 		&h.Info.Hostname, &h.Info.OS, &h.Info.Kernel, &h.Info.Arch, &h.Info.DockerVersion, &h.Info.AgentVersion,
-		&h.CertSerial, &h.EnrolledAt, &h.LastSeenAt, &h.Connected, &h.RevokedAt,
+		&h.CertSerial, &h.CertExpiresAt, &h.PrevCertSerial, &h.PrevCertValidUntil, &h.EnrolledAt, &h.LastSeenAt, &h.Connected, &h.RevokedAt,
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -262,7 +285,8 @@ func (s *Store) RevokeHost(ctx context.Context, orgID, id uuid.UUID) (Host, erro
 		UPDATE hosts SET revoked_at = now(), connected = false
 		WHERE org_id = $1 AND id = $2 AND revoked_at IS NULL
 		RETURNING id, org_id, name, hostname, os, kernel, arch, docker_version, agent_version,
-			cert_serial, enrolled_at, last_seen_at, connected, revoked_at`, orgID, id))
+			cert_serial, cert_expires_at, prev_cert_serial, prev_cert_valid_until,
+			enrolled_at, last_seen_at, connected, revoked_at`, orgID, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Host{}, fmt.Errorf("store: RevokeHost: %w", ErrNotFound)
@@ -369,7 +393,8 @@ func (s *Store) ResetConnections(ctx context.Context) error {
 
 const hostSelect = `
 	SELECT id, org_id, name, hostname, os, kernel, arch, docker_version, agent_version,
-		cert_serial, enrolled_at, last_seen_at, connected, revoked_at
+		cert_serial, cert_expires_at, prev_cert_serial, prev_cert_valid_until,
+			enrolled_at, last_seen_at, connected, revoked_at
 	FROM hosts`
 
 type scannable interface {
@@ -381,7 +406,50 @@ func scanHost(row scannable) (Host, error) {
 	err := row.Scan(
 		&h.ID, &h.OrgID, &h.Name,
 		&h.Info.Hostname, &h.Info.OS, &h.Info.Kernel, &h.Info.Arch, &h.Info.DockerVersion, &h.Info.AgentVersion,
-		&h.CertSerial, &h.EnrolledAt, &h.LastSeenAt, &h.Connected, &h.RevokedAt,
+		&h.CertSerial, &h.CertExpiresAt, &h.PrevCertSerial, &h.PrevCertValidUntil, &h.EnrolledAt, &h.LastSeenAt, &h.Connected, &h.RevokedAt,
 	)
 	return h, err
+}
+
+// ErrCertNotCurrent means a renewal was refused because the certificate it
+// came from is neither the host's current certificate nor its still-valid
+// previous one (or the host is revoked).
+var ErrCertNotCurrent = errors.New("store: certificate is not the host's current one")
+
+// RenewHostCert records a renewed client certificate for the host. It
+// succeeds only if the host is not revoked and fromSerial (the serial of the
+// certificate the request came in on) is the host's current serial, or its
+// previous serial within its grace period. The old serial becomes the
+// previous serial, valid until now+grace, so a reply that never reaches the
+// agent does not lock it out. Serials are compared as given: callers
+// normalise them. Returns ErrCertNotCurrent otherwise.
+func (s *Store) RenewHostCert(ctx context.Context, id uuid.UUID, fromSerial, newSerial string, expires time.Time, grace time.Duration) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE hosts SET
+			prev_cert_serial = $2,
+			prev_cert_valid_until = now() + make_interval(secs => $5),
+			cert_serial = $3,
+			cert_expires_at = $4
+		WHERE id = $1 AND revoked_at IS NULL
+		  AND (cert_serial = $2
+		       OR (prev_cert_serial = $2 AND prev_cert_valid_until > now()))`,
+		id, fromSerial, newSerial, expires, grace.Seconds())
+	if err != nil {
+		return fmt.Errorf("store: RenewHostCert: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("store: RenewHostCert: %w", ErrCertNotCurrent)
+	}
+	return nil
+}
+
+// ForgetPrevCert clears the previous certificate serial of a host once its
+// current certificate has been used to connect. Idempotent.
+func (s *Store) ForgetPrevCert(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE hosts SET prev_cert_serial = '', prev_cert_valid_until = NULL
+		WHERE id = $1 AND prev_cert_serial <> ''`, id); err != nil {
+		return fmt.Errorf("store: ForgetPrevCert: %w", err)
+	}
+	return nil
 }
