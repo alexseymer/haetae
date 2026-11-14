@@ -123,9 +123,13 @@ func (a securityStoreAdapter) GetImageUpdate(ctx context.Context, o, h uuid.UUID
 
 type securityStoreAdapter struct{ securityStore }
 
-func (securityStoreAdapter) EnrollHost(context.Context, string, store.HostInfo, func(uuid.UUID) (string, error)) (store.Host, error) {
+func (securityStoreAdapter) EnrollHostWithExpiry(context.Context, string, store.HostInfo, func(uuid.UUID) (string, time.Time, error)) (store.Host, error) {
 	panic("unused")
 }
+func (securityStoreAdapter) RenewHostCert(context.Context, uuid.UUID, string, string, time.Time, time.Duration) error {
+	panic("unused")
+}
+func (securityStoreAdapter) ForgetPrevCert(context.Context, uuid.UUID) error { panic("unused") }
 func (securityStoreAdapter) HostForAgent(context.Context, uuid.UUID) (store.Host, error) {
 	panic("unused")
 }
