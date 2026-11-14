@@ -11,6 +11,7 @@ import {
   validateTokenCap,
 } from "../lib/operatorSettings";
 import { docUrl } from "../lib/help";
+import posthog from "../posthog";
 
 /** Settings section "AI operator": enable, autonomy, daily cap, provider, usage. */
 export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
@@ -71,6 +72,10 @@ export function OperatorSettingsSection({ isAdmin }: { isAdmin: boolean }) {
       });
       if (!mountedRef.current) return;
       apply(s);
+      posthog.capture("operator_settings_saved", {
+        ai_enabled: s.aiEnabled,
+        autonomy: s.autonomy,
+      });
       setError(null);
       setMsg("Saved.");
     } catch (err) {

@@ -8,6 +8,7 @@ import { CopyBlock } from "./CopyBlock";
 import { InfoTip } from "./InfoTip";
 import { Modal } from "./Modal";
 import { Stepper } from "./Stepper";
+import posthog from "../posthog";
 
 type Step = "name" | "install" | "connected";
 
@@ -77,6 +78,7 @@ function AddHostFlow({ onClose }: { onClose: () => void }) {
     try {
       const trimmed = name.trim();
       const res = await api.enroll({ name: trimmed, ttlHours });
+      posthog.capture("host_enrollment_started", { enrollment_validity_hours: ttlHours });
       setCreated(res);
       setEnrolledName(trimmed);
       setSeen(null);

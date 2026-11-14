@@ -32,6 +32,7 @@ import {
 import { OperatorSettingsSection } from "./OperatorSettings";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
+import posthog from "../posthog";
 
 type SettingsTab = "account" | "alerts" | "chat" | "operator";
 
@@ -223,6 +224,7 @@ export function SettingsPage() {
         timeZone: settings.timeZone.trim(),
       });
       setSettings(saved);
+      posthog.capture("alert_settings_saved");
       setSettingsMsg("Alert settings saved.");
     } catch (err) {
       setSettingsError(err instanceof ApiError ? err.message : "Failed to save settings");
@@ -274,6 +276,7 @@ export function SettingsPage() {
     setEmailBusy(true);
     try {
       await api.chatLinkConfirm({ channel: "email", code: emailCode.trim() });
+      posthog.capture("chat_channel_linked", { channel: "email" });
       setEmailDone(true);
       setEmailSent(null);
       setEmailCode("");

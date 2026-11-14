@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import { useAuth } from "../auth";
 import { LogoMark } from "../components/Logo";
+import posthog from "../posthog";
 
 export function SetupPage() {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export function SetupPage() {
     try {
       const res = await api.setup({ setupCode, orgName, email, password });
       setSession(res.user, res.orgName);
+      posthog.capture("organization_created");
       navigate("/", { replace: true });
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Setup failed";

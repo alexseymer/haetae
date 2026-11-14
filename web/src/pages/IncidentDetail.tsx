@@ -11,6 +11,7 @@ import { Loading } from "../components/Skeleton";
 import { evidenceToText } from "../lib/evidenceText";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
+import posthog from "../posthog";
 
 export function IncidentDetailPage() {
   const { id = "" } = useParams();
@@ -61,6 +62,7 @@ export function IncidentDetailPage() {
     setMuteSubmitting(true);
     try {
       await api.createMute({ hostId: incident.hostId, days: muteDays });
+      posthog.capture("incident_muted", { duration_days: muteDays });
       setMuteMsg(`Muted this host for ${muteDays} days.`);
     } catch (err) {
       setMuteError(err instanceof ApiError ? err.message : "Failed to create mute");

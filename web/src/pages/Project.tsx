@@ -20,6 +20,7 @@ import {
 } from "../lib/deploy";
 import { usePolling } from "../hooks/usePolling";
 import { INTROS } from "../lib/help";
+import posthog from "../posthog";
 
 export function ProjectPage() {
   const { id = "" } = useParams();
@@ -122,6 +123,7 @@ export function ProjectPage() {
     setActionError(null);
     try {
       const res = await api.startDeploy(id);
+      posthog.capture("deployment_started");
       setSelectedId(res.deploy.id);
       await loadDeploys();
     } catch (err) {
@@ -136,6 +138,7 @@ export function ProjectPage() {
     setActionError(null);
     try {
       const res = await api.patchProject(id, { autoDeploy: !project.autoDeploy });
+      posthog.capture("project_auto_deploy_toggled", { auto_deploy: res.project.autoDeploy });
       setProject(res.project);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Update failed");
@@ -148,6 +151,7 @@ export function ProjectPage() {
     setEditError(null);
     try {
       const res = await api.patchProject(id, payload.patch);
+      posthog.capture("project_updated", { source_kind: res.project.source.kind });
       setProject(res.project);
       setEditOpen(false);
     } catch (err) {
@@ -163,6 +167,7 @@ export function ProjectPage() {
     setRemoveError(null);
     try {
       await api.deleteProject(id, removeForce);
+      posthog.capture("project_deleted", { forced: removeForce });
       navigate(`/hosts/${project.hostId}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && !removeForce) {
@@ -178,6 +183,7 @@ export function ProjectPage() {
 
   const onRollback = async (d: Deploy) => {
     const res = await api.rollbackDeploy(d.id);
+    posthog.capture("deployment_rollback_started");
     setSelectedId(res.deploy.id);
     await loadDeploys();
   };

@@ -5,6 +5,7 @@ import { App } from "./App";
 import { AuthProvider } from "./auth";
 import { ToastProvider } from "./components/Toast";
 import { ThemeProvider, applyStoredTheme } from "./theme";
+import "./posthog";
 import "./styles/global.css";
 
 applyStoredTheme();

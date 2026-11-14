@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { isApiError, api } from "../api/client";
 import { useAuth } from "../auth";
 import { LogoMark } from "../components/Logo";
+import posthog from "../posthog";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export function LoginPage() {
       } catch {
         setSession(res.user, orgName);
       }
+      posthog.capture("user_signed_in");
       navigate("/", { replace: true });
     } catch (err) {
       if (isApiError(err)) {

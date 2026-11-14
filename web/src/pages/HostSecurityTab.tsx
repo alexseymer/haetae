@@ -25,6 +25,7 @@ import {
   misconfigKindLabel,
   vulnIdHref,
 } from "../lib/security";
+import posthog from "../posthog";
 
 interface HostSecurityTabProps {
   hostId: string;
@@ -85,6 +86,7 @@ export function HostSecurityTab({ hostId, active }: HostSecurityTabProps) {
     setScanMsg((m) => ({ ...m, [cid]: "" }));
     try {
       await api.forceContainerScan(hostId, cid);
+      posthog.capture("security_scan_started");
       setScanMsg((m) => ({ ...m, [cid]: "Scan requested" }));
       void load();
     } catch (err) {

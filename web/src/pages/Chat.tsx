@@ -19,6 +19,7 @@ import { severityVariant } from "../lib/severity";
 import { isSafeEvidencePath } from "../lib/evidenceLink";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
+import posthog from "../posthog";
 
 export function ChatPage() {
   const { user } = useAuth();
@@ -145,6 +146,7 @@ export function ChatPage() {
     answersAtSend.current = answerCount;
     try {
       const res = await api.postChatMessage({ body: text });
+      posthog.capture("chat_message_sent");
       setBody("");
       if (res.reply) {
         setActionReplies((prev) => ({ ...prev, __composer: res.reply! }));
@@ -169,6 +171,7 @@ export function ChatPage() {
     setActionBusy(key);
     try {
       const res = await api.chatAction({ messageId, action });
+      posthog.capture("operator_action_completed", { action });
       setUsedActions((prev) => {
         const next = { ...prev, [key]: true as const };
         // Approve and decline are one decision: pressing one retires both.

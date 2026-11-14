@@ -17,6 +17,7 @@ import {
 } from "../lib/deploy";
 import { formatRelativeTime } from "../lib/format";
 import { INTROS } from "../lib/help";
+import posthog from "../posthog";
 
 interface HostDeployTabProps {
   hostId: string;
@@ -78,6 +79,10 @@ export function HostDeployTab({ hostId, active }: HostDeployTabProps) {
     setFormError(null);
     try {
       await api.createProject(hostId, payload.create);
+      posthog.capture("project_created", {
+        source_kind: payload.create.source.kind,
+        auto_deploy: payload.create.autoDeploy,
+      });
       setFormOpen(false);
       await load();
     } catch (err) {
