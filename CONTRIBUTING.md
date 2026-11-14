@@ -1,6 +1,6 @@
 # Contributing to Haetae
 
-Thanks for helping. Haetae is a small project with strict hard constraints, so please read this page and [docs/contributors/spec.md](docs/contributors/spec.md) (the source of truth for scope) before a larger change. By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go to [SECURITY.md](SECURITY.md), not to public issues.
+Thanks for helping. Haetae is a small project with strict hard constraints, so please read this page and [docs/contributors/spec.md](docs/contributors/spec.md) (the source of truth for scope) and the [core principle](docs/contributors/principles.md) (the Linux principle: small cooperating parts, text interfaces, open iterative development) before a larger change. By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go to [SECURITY.md](SECURITY.md), not to public issues.
 
 ## Set up
 
