@@ -61,6 +61,7 @@ message ConnectRequest {
     SecurityReport security_report = 11;
     OutboundBatch outbound_batch = 12;
     ImageCandidates image_candidates = 13;
+    RenewCertificateRequest renew_certificate = 14;
   }
 }
 
@@ -71,6 +72,7 @@ message ConnectResponse {
     GreenSet green = 3;
     WatchSet watch = 4;
     Policy policy = 5;
+    RenewCertificateResponse renew_certificate = 6;
   }
 }
 
@@ -79,6 +81,26 @@ message ConnectResponse {
 // itself, independently of the server's own checks.
 message Policy {
   string autonomy = 1; // report | suggest | act
+}
+
+// RenewCertificateRequest asks for a new client certificate over the live
+// mTLS session, so a host never goes offline when its certificate expires.
+// The server issues it for the host id in the session's own certificate and
+// never for any other identity; nothing in this message names a host.
+message RenewCertificateRequest {
+  // PKCS#10 certificate signing request, DER encoded, made with a fresh key.
+  // The subject is ignored, as in EnrollRequest.
+  bytes csr_der = 1;
+}
+
+// RenewCertificateResponse answers a RenewCertificateRequest. Exactly one of
+// certificate_der and error is set. The session stays up either way; the
+// agent starts using the new certificate at its next connection.
+message RenewCertificateResponse {
+  // New client certificate, DER encoded.
+  bytes certificate_der = 1;
+  // Why the request was refused. Empty on success.
+  string error = 2;
 }
 
 message Hello {
