@@ -239,6 +239,7 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		Handler:       handler.Handle,
 		Deploys:       deploys,
 		Watcher:       watcher,
+		StateDir:      *stateDir,
 
 		Policy:           agent.NewPolicy(autonomyCap, log.With("component", "policy")),
 		RestartContainer: guard.restart,
