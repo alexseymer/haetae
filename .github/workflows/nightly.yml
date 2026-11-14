@@ -56,8 +56,8 @@ jobs:
       - name: Playwright and Chromium
         if: matrix.target == 'test-e2e'
         run: |
-          sudo npm install -g playwright
-          sudo "$(npm root -g)/playwright/cli.js" install --with-deps chromium
+          npm install -g playwright
+          sudo env "PATH=$PATH" playwright install --with-deps chromium
           chrome="$(NODE_PATH="$(npm root -g)" node -e "console.log(require('playwright').chromium.executablePath())")"
           sudo ln -sf "$chrome" /usr/bin/chromium
           /usr/bin/chromium --version
