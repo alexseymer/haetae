@@ -17,11 +17,15 @@ import './motion.css'
 
 import Layout from './Layout.vue'
 import { vReveal } from './composables/motion'
+import { initPostHog } from './posthog'
 
 export default {
   extends: DefaultTheme,
   Layout,
   enhanceApp({ app }) {
     app.directive('reveal', vReveal)
+    if (typeof window !== 'undefined') {
+      initPostHog()
+    }
   }
 } satisfies Theme
