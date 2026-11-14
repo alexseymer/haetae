@@ -1,4 +1,4 @@
-/* 
+/*
 Copyright (c) 2013 Blake Smith <blakesmith0@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	ErrWriteTooLong    = errors.New("ar: write too long")
+	ErrWriteTooLong = errors.New("ar: write too long")
 )
 
 // Writer provides sequential writing of an ar archive.
@@ -40,12 +40,14 @@ var (
 // archive.WriteGlobalHeader()
 // header := new(ar.Header)
 // header.Size = 15 // bytes
-// if err := archive.WriteHeader(header); err != nil {
-// 	return err
-// }
+//
+//	if err := archive.WriteHeader(header); err != nil {
+//		return err
+//	}
+//
 // io.Copy(archive, data)
 type Writer struct {
-	w io.Writer
+	w  io.Writer
 	nb int64 // number of unwritten bytes for the current file entry
 }
 
@@ -92,7 +94,7 @@ func (aw *Writer) Write(b []byte) (n int, err error) {
 
 	if len(b)%2 == 1 { // data size must be aligned to an even byte
 		n2, _ := aw.w.Write([]byte{'\n'})
-		return n+n2, err
+		return n + n2, err
 	}
 
 	return

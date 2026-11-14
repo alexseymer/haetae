@@ -14,6 +14,7 @@ ARG TARGETARCH=amd64
 WORKDIR /src
 RUN apk add --no-cache ca-certificates
 COPY go.mod go.sum ./
+COPY third_party/ third_party/
 RUN go mod download
 COPY . .
 COPY --from=web /web/dist/. internal/webui/app/
