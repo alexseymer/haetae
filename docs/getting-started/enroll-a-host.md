@@ -49,7 +49,7 @@ As an administrator, open the host and press **Remove host**. The agent is disco
 
 To only pause a host without removing it, run `sudo systemctl disable --now haetae-agent` on it. It then shows as offline and keeps its history.
 
-One thing to plan for: an agent's certificate is valid for one year, and there is no automatic renewal yet. Before a year has passed, remove the host and enroll it again.
+An agent's certificate is valid for one year. The agent renews it by itself over its open connection when fewer than 30 days remain, so you do nothing. If a host stays offline so long that renewal cannot happen, Haetae raises a "client certificate expires" alert; bring the host back online or, if the certificate has already expired, remove it and enroll it again.
 
 If the host does not come online, see [A host shows offline](../problems/#a-host-shows-offline).
 
