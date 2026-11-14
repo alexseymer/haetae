@@ -4,10 +4,11 @@ This folder is for people who work on Haetae itself. It is not part of the publi
 
 ## Reading order
 
-Start with [../../CONTRIBUTING.md](../../CONTRIBUTING.md), then the [spec](spec.md), the [architecture](architecture.md), the [stack decision](adr/0001-stack.md), the [roadmap](roadmap.md), and the [design notes](design/) for the area you touch. Check the [acceptance report](acceptance.md) for what is verified and how.
+Start with [../../CONTRIBUTING.md](../../CONTRIBUTING.md) and the [core principle](principles.md), then the [spec](spec.md), the [architecture](architecture.md), the [stack decision](adr/0001-stack.md), the [roadmap](roadmap.md), and the [design notes](design/) for the area you touch. Check the [acceptance report](acceptance.md) for what is verified and how.
 
 | Document | What is in it |
 |---|---|
+| [principles.md](principles.md) | The Linux principle: Unix design rules and the bazaar development model |
 | [spec.md](spec.md) | One-page spec: scope, "Done correctly" criteria S1 to S11, out of scope |
 | [roadmap.md](roadmap.md) | Steps M0 to M9 and their acceptance criteria |
 | [architecture.md](architecture.md) | Components, packages, data flows, trust model |
