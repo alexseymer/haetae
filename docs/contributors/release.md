@@ -18,6 +18,33 @@ for agent and inventory (the files the server serves at `/download/`, names unch
 their own `bin/dist/SHA256SUMS`) and builds the server with the web UI embedded.
 A `-dirty` suffix means the tracked files differ from HEAD; do not publish such a build.
 
+## Publishing (GitHub Actions)
+
+```bash
+git tag v0.1.0 && git push --tags
+```
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which:
+
+1. runs `make release` (version = tag without the `v`) and checks `SHA256SUMS`;
+2. builds the root `Dockerfile` for linux/amd64 and linux/arm64 and pushes
+   `ghcr.io/alexseymer/haetae-server:<version>` and `:latest` (a tag with a `-` suffix, such as
+   `v1.0.0-rc1`, is a pre-release: no `:latest`, and the GitHub Release is marked pre-release);
+3. signs the image digest with cosign keyless (GitHub OIDC, recorded in the Sigstore log);
+4. creates the GitHub Release with generated notes, the binaries, the tarballs and `SHA256SUMS`.
+
+Verify a published image:
+
+```bash
+cosign verify ghcr.io/alexseymer/haetae-server:<version> \
+  --certificate-identity-regexp '^https://github.com/alexseymer/haetae/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+and the downloaded files with `sha256sum -c SHA256SUMS`. The workflow needs no secrets beyond
+`GITHUB_TOKEN`. The first push creates the package as private: set it to public once in the
+repository's package settings so installers can pull without logging in.
+
 ## Artifacts (bin/release)
 
 | File | Notes |
@@ -51,7 +78,7 @@ web UI and the installer download directory.
 copies the release binary; keep it in sync with the root `Dockerfile`). Tags:
 `haetae-server:<version>` and `haetae-server:latest` (amd64, loaded into the local daemon). With
 `docker buildx` it also writes the linux/amd64 + linux/arm64 OCI tarball. The old
-`make docker-image` (source build, tag `:dev`) is unchanged. Nothing is ever pushed.
+`make docker-image` (source build, tag `:dev`) is unchanged. Nothing is ever pushed by the make targets; only the release workflow publishes.
 
 ## Agent RSS on the release build
 
@@ -71,8 +98,8 @@ Earlier builds: M7 20.21 MiB (non-root), 17.41 MiB (root).
 
 ## Not done
 
-- No registry push of images or upload of artifacts (no GitHub release is created).
-- No signing: no cosign, no GPG; SHA256SUMS protects against corruption only.
+- The release workflow has not run yet (no tag has been pushed); the published image is built from the root `Dockerfile` (source build, QEMU for arm64), not from the `make release-image` context.
+- Only the image is signed; the tarballs and `SHA256SUMS` are not, so SHA256SUMS protects against corruption only.
 - arm64 binaries are never executed here (no qemu-user, no arm64 host); only ELF headers are checked.
 - The arm64 image is built only when `docker buildx` exists; this host has none, so only the
   amd64 image was built and tested and no OCI tarball was produced.

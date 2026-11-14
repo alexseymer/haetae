@@ -95,7 +95,7 @@ The build includes the web UI and takes several minutes the first time. The inst
 
 **4. Deploy the example.** Open the host, **Deploy** tab, **New project**. Name `hello`, source **Pasted compose file**, paste [examples/hello/compose.yaml](examples/hello/compose.yaml), leave the domain empty, **Create project**, then **Deploy now**. When it is **Healthy**, open `http://<host address>:8088/`. Steps, Git source and HTTPS: [examples/hello/README.md](examples/hello/README.md), [Deploy an app](docs/getting-started/deploy-an-app.md).
 
-**5. Optional:** connect a chat channel ([Connect a chat channel](docs/getting-started/connect-chat.md)) and the AI operator ([Turn on the AI operator](docs/getting-started/turn-on-the-operator.md)). A published image (`ghcr.io/alexseymer/haetae-server`, the installer's default) is planned; until then keep the `HAETAE_IMAGE` and `HAETAE_NO_PULL` settings above.
+**5. Optional:** connect a chat channel ([Connect a chat channel](docs/getting-started/connect-chat.md)) and the AI operator ([Turn on the AI operator](docs/getting-started/turn-on-the-operator.md)). Once a release exists, the installer's default image (`ghcr.io/alexseymer/haetae-server`, signed with cosign) is pulled automatically and you can skip the `docker build` and the two settings; until then keep them as above.
 
 ## What you get
 

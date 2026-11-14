@@ -37,7 +37,7 @@ These narrowings apply to the numbers above. None of them is hidden in a test.
 - **S10**: arm64 binaries are verified by ELF header only (no qemu here); only amd64 was executed. "Reconnects after a reboot" is covered by restart and network-cut tests, not by rebooting a machine.
 - **S11**: the install-to-login time excludes building or pulling the server image (5 min 45 s to build locally in the test; a published image was not available to pull). The **hosted** service is not built; "raw logs stay on the customer's server" holds by design (logs live in the agent's ring buffer, are sent only after on-host redaction and only on request) and is tested at the agent and redaction level.
 - **Containers on one machine**: all hosts share one kernel and one Docker daemon.
-- **Release**: no multi-arch image (no `buildx` here), no registry push, no signing (`docs/contributors/release.md`).
+- **Release**: not built or pushed on this VM (no `buildx`); the multi-arch image build, registry push and cosign signing live in `.github/workflows/release.yml` and have not run yet (`docs/contributors/release.md`). The real-stack suites run in CI only nightly (`.github/workflows/nightly.yml`), not per pull request.
 
 ## Known limits and follow-ups
 
