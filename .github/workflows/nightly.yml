@@ -1,0 +1,85 @@
+name: Nightly
+
+# Real-stack acceptance suites (real server + agent + Docker). Too slow and heavy for every PR,
+# so they run nightly and on demand. Each leg is one make target; run it locally the same way.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  suite:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: test-e2e
+            timeout: 40
+          - target: test-deploy
+            timeout: 40
+          - target: test-alerts
+            timeout: 40
+          - target: test-security
+            timeout: 60
+          - target: test-operator   # scripted OpenAI-compatible provider, no secrets
+            timeout: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod   # caches modules and the build cache
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Anonymous Docker Hub pulls are rate limited; log in only when the secrets exist.
+      - name: Docker Hub login (optional)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      # The e2e test expects Chromium at /usr/bin/chromium and a global Playwright install.
+      - name: Playwright and Chromium
+        if: matrix.target == 'test-e2e'
+        run: |
+          sudo npm install -g playwright
+          sudo "$(npm root -g)/playwright/cli.js" install --with-deps chromium
+          chrome="$(NODE_PATH="$(npm root -g)" node -e "console.log(require('playwright').chromium.executablePath())")"
+          sudo ln -sf "$chrome" /usr/bin/chromium
+          /usr/bin/chromium --version
+
+      - name: Pre-pull the sample image
+        if: matrix.target != 'test-e2e'
+        run: docker pull busybox:1.37
+
+      - name: Run make ${{ matrix.target }}
+        run: make ${{ matrix.target }}
+
+      - name: Show measurements
+        if: always()
+        run: grep -h MEASURE ./*-e2e.log 2>/dev/null || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: logs-${{ matrix.target }}
+          path: |
+            *.log
+            test/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14

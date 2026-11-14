@@ -10,7 +10,7 @@ You need a Linux machine with Docker and Compose version 2 (check with `docker c
 
 ## Build the image and run the installer
 
-There is no published image yet, so you build it from the repository. Clone it anywhere except `/opt/haetae`:
+Once a release exists, the installer pulls the signed image `ghcr.io/alexseymer/haetae-server` by default, so a plain `sudo sh deploy/install-server.sh` is enough and you can skip this build. Until then (or to run your own changes) build the image from the repository. Clone it anywhere except `/opt/haetae`:
 
 ```sh
 git clone https://github.com/alexseymer/haetae.git haetae-src

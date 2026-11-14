@@ -38,7 +38,7 @@ make test     # go test -race ./...
 | `make bench-m7` | Scanner benchmarks, see `bench/m7/README.md` | Docker, about 4 GB free disk |
 | `make release release-image test-release bench-release-rss` | Release artifacts, image, verification, agent RSS | Docker; see [docs/contributors/release.md](docs/contributors/release.md) |
 
-CI (`.github/workflows/ci.yml`) runs formatting, `go vet`, `make test`, `make lint`, `make vuln`, `make build`, the integration, load and self-host suites, and the web typecheck, unit tests, build and `npm audit`. The Docker-heavy acceptance suites (`test-e2e`, `test-deploy`, `test-alerts`, `test-security`, `test-operator`) are run through the acceptance script below, not in CI.
+CI (`.github/workflows/ci.yml`) runs formatting, `go vet`, `make test`, `make lint`, `make vuln`, `make build`, the integration, load and self-host suites, and the web typecheck, unit tests, build and `npm audit`. The Docker-heavy acceptance suites (`test-e2e`, `test-deploy`, `test-alerts`, `test-security`, `test-operator`) are run nightly and on demand by `.github/workflows/nightly.yml` (one matrix leg per target, logs uploaded on failure) and through the acceptance script below. Pushing a `v*` tag runs `.github/workflows/release.yml` (see [release.md](docs/contributors/release.md)).
 
 ## Regenerate the README screenshots
 

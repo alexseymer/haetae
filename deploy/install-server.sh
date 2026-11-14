@@ -2,6 +2,8 @@
 # Install or upgrade a self-hosted Haetae control plane with Docker Compose.
 # Usage: curl -fsSL <url> | sh
 #    or: sh deploy/install-server.sh
+# The default image is pulled from ghcr.io once a release has been published. Until then, or for a
+# local build: docker build -t haetae-server:local . && HAETAE_IMAGE=haetae-server:local HAETAE_NO_PULL=1 sh deploy/install-server.sh
 set -eu
 
 HAETAE_DIR=${HAETAE_DIR:-/opt/haetae}
