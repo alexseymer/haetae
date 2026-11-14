@@ -15,6 +15,10 @@ Hard constraints from the spec that every change must respect:
 - A failed scan reports "scan failed", never "no vulnerabilities".
 - Rule-based alerts keep working when the AI is unreachable.
 
+## Core principle: the Linux principle
+
+Full text in `docs/contributors/principles.md`; it binds every change. Design: one job per component, components cooperate through small explicit interfaces, text is the universal interface (JSON/plain text, env and plain-file config), small is beautiful, prototype early and test for real, portability before cleverness, no captive UI (anything the UI does the API does too), CLI tools behave as filters. Process: release early and often, independent review of every change, open decisions and recorded gaps, evidence over opinion. PR descriptions state the single job of the change and that it works without the UI.
+
 ## Stack
 
 Decided in `docs/contributors/adr/0001-stack.md` (accepted). Read it before changing anything structural.
