@@ -192,6 +192,7 @@ func (b errBatch) Exec() (pgconn.CommandTag, error) { return pgconn.CommandTag{}
 func (b errBatch) Query() (pgx.Rows, error)         { return nil, b.err }
 func (b errBatch) QueryRow() pgx.Row                { return errRow(b) }
 func (b errBatch) Close() error                     { return b.err }
+func (b errBatch) Tx() pgx.Tx                       { return nil }
 
 // QueryRowForTest and ExecForTest run raw SQL through the store's pool (so, for
 // a ForOrg view, as the restricted role). They exist for tests that prove the
