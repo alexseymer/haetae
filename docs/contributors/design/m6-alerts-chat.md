@@ -38,6 +38,7 @@ Evaluated every 15 s per org by a single background loop on the server role (not
 | `cpu_high` / `mem_high` / `disk_high` | above org threshold for `sustained_s` (disk: critical at >= 97%) | medium (disk high) |
 | `deploy_failed` | deploy ended `failed`, `rolled_back` or `rollback_failed` | high |
 | `new_cve` | reserved; M7 | |
+| `cert_expiring` | host client certificate expires in under 29 days (renewal did not happen) | medium, high under 7 days or expired |
 
 Thresholds and time zone come from `org_settings` (defaults in the migration). Mutes (`mutes`, org + optional host + optional rule) suppress notification, never evaluation: a muted alert is still stored and shown. No rule calls an AI or any network service.
 

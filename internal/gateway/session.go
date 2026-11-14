@@ -28,7 +28,10 @@ type session struct {
 	green    chan []string          // latest green set; a newer one replaces an unsent one
 	watch    chan *agentv1.WatchSet // latest watch set; replace-latest
 	policy   chan string            // latest autonomy level; replace-latest
-	lastSeen atomic.Int64           // unix nanoseconds
+	renew    chan *agentv1.RenewCertificateResponse
+	cert     sessionCert // the certificate this session authenticated with
+	renewLim *tokenBucket
+	lastSeen atomic.Int64 // unix nanoseconds
 
 	eventLim     *tokenBucket
 	logLim       *tokenBucket
@@ -59,6 +62,8 @@ func newSession(hostID uuid.UUID, cancel context.CancelCauseFunc) *session {
 		green:        make(chan []string, 1),
 		watch:        make(chan *agentv1.WatchSet, 1),
 		policy:       make(chan string, 1),
+		renew:        make(chan *agentv1.RenewCertificateResponse, 1),
+		renewLim:     newTokenBucketRate(1.0/60, 3), // burst of 3, then one a minute
 		eventLim:     newTokenBucket(deployEventRate, deployEventRate),
 		logLim:       newTokenBucket(deployLogRate, deployLogRate),
 		branchLim:    newTokenBucketRate(float64(deployBranchPerMin)/60.0, float64(deployBranchPerMin)),

@@ -378,6 +378,7 @@ func hostJSON(h store.Host, running, total int) map[string]any {
 		"connected":     h.Connected,
 		"lastSeen":      rfc3339Ptr(h.LastSeenAt),
 		"enrolledAt":    rfc3339(h.EnrolledAt),
+		"certExpiresAt": rfc3339Ptr(h.CertExpiresAt),
 		"containers":    map[string]int{"running": running, "total": total},
 	}
 }

@@ -22,4 +22,4 @@ The vulnerability checks that raise alerts were tested with a made-up database. 
 
 ## Release and operations
 
-There is no published container image yet. You build the server from source, as described in [Install the server](./getting-started/install-the-server). There are no signed releases and no image for several processor types. The hosted service is planned but not built. An agent's certificate lasts a year and cannot yet be renewed, so you have to enroll a host again before the year ends.
+There is no published container image yet. You build the server from source, as described in [Install the server](./getting-started/install-the-server). There are no signed releases and no image for several processor types. The hosted service is planned but not built.

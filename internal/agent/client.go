@@ -136,6 +136,16 @@ type RunOptions struct {
 	// RestartContainer runs restart_container commands (class operator).
 	// Without it the command is refused as unsupported.
 	RestartContainer func(ctx context.Context, containerID string) error
+	// StateDir is where the identity lives. When set, the agent renews its
+	// client certificate before it expires and saves the new one there.
+	// Empty disables renewal.
+	StateDir string
+	// RenewBefore and RenewCheckEvery tune renewal; zero means the defaults
+	// (30 days and 24 hours). Tests use short values.
+	RenewBefore     time.Duration
+	RenewCheckEvery time.Duration
+
+	renewer *renewer
 }
 
 // Run keeps a session to the control plane until ctx is cancelled,
@@ -145,12 +155,26 @@ func Run(ctx context.Context, id *Identity, log *slog.Logger, opts RunOptions) e
 	if err != nil {
 		return err
 	}
-	client := agentv1connect.NewAgentGatewayServiceClient(httpClient(tlsCfg), id.ServerURL)
+	if opts.StateDir != "" {
+		rn, err := newRenewer(id, opts.StateDir, opts.RenewBefore, opts.RenewCheckEvery, log.With("component", "renew"))
+		if err != nil {
+			return err
+		}
+		opts.renewer = rn
+		// Each new connection presents the latest certificate.
+		tlsCfg.Certificates = nil
+		tlsCfg.GetClientCertificate = rn.clientCertificate
+	}
+	hc := httpClient(tlsCfg)
+	client := agentv1connect.NewAgentGatewayServiceClient(hc, id.ServerURL)
 
 	backoff := backoffMin
 	for {
 		started := time.Now()
 		err := session(ctx, client, log, opts)
+		// Drop pooled connections so the next session handshakes afresh and
+		// presents the newest certificate, not the one an old connection holds.
+		hc.CloseIdleConnections()
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -223,6 +247,10 @@ func session(ctx context.Context, client agentv1connect.AgentGatewayServiceClien
 	if opts.OnConnected != nil {
 		opts.OnConnected()
 	}
+	if opts.renewer != nil {
+		// Renewal problems only log; they never end the session.
+		go opts.renewer.run(ctx, send)
+	}
 
 	select {
 	case err := <-hbErr:
@@ -288,6 +316,12 @@ func receiveCommands(ctx context.Context, cancel context.CancelFunc, stream *con
 		if p := msg.GetPolicy(); p != nil {
 			if opts.Policy != nil {
 				opts.Policy.SetServerLevel(p.GetAutonomy())
+			}
+			continue
+		}
+		if rc := msg.GetRenewCertificate(); rc != nil {
+			if opts.renewer != nil {
+				opts.renewer.deliver(rc)
 			}
 			continue
 		}
