@@ -14,6 +14,11 @@ const (
 	unhealthyMin      = 60 * time.Second
 	diskCriticalPct   = 97.0
 	deployLookback    = 15 * time.Minute
+	// certExpiryWarn is how far before expiry an unrenewed client certificate
+	// raises an alert. The agent starts renewing 30 days before expiry and
+	// checks daily, so a healthy host renews within a day; a day less here
+	// keeps a normal renewal from raising a spurious alert.
+	certExpiryWarn = 29 * 24 * time.Hour
 )
 
 // EvaluateRules runs every rule over snap and returns firing candidates.
@@ -28,6 +33,7 @@ func EvaluateRules(snap Snapshot) []Candidate {
 	out = append(out, ruleDiskHigh(snap)...)
 	out = append(out, ruleDeployFailed(snap)...)
 	out = append(out, ruleNewCVE(snap)...)
+	out = append(out, ruleCertExpiring(snap)...)
 	return out
 }
 
@@ -177,6 +183,36 @@ func ruleDeployFailed(snap Snapshot) []Candidate {
 			Severity:  store.SeverityHigh,
 			DedupeKey: fmt.Sprintf("%s|%s", store.RuleDeployFailed, d.ID),
 			Summary:   fmt.Sprintf("deploy %s on %s", d.Status, d.HostName),
+		})
+	}
+	return out
+}
+
+// ruleCertExpiring fires for a host whose client certificate expires within
+// certExpiryWarn: renewal has not happened (agent offline, too old, or the
+// server refused it), and the host will drop off at expiry. An unknown expiry
+// never fires.
+func ruleCertExpiring(snap Snapshot) []Candidate {
+	var out []Candidate
+	for _, h := range snap.Hosts {
+		if h.CertExpiresAt == nil || h.CertExpiresAt.Sub(snap.Now) >= certExpiryWarn {
+			continue
+		}
+		sev := store.SeverityMedium
+		summary := fmt.Sprintf("%s client certificate expires %s", h.Name, h.CertExpiresAt.UTC().Format("2006-01-02"))
+		if !h.CertExpiresAt.After(snap.Now) {
+			sev = store.SeverityHigh
+			summary = fmt.Sprintf("%s client certificate expired", h.Name)
+		} else if h.CertExpiresAt.Sub(snap.Now) < 7*24*time.Hour {
+			sev = store.SeverityHigh
+		}
+		out = append(out, Candidate{
+			HostID:    h.ID,
+			HostName:  h.Name,
+			Rule:      store.RuleCertExpiring,
+			Severity:  sev,
+			DedupeKey: fmt.Sprintf("%s|%s", store.RuleCertExpiring, h.ID),
+			Summary:   summary,
 		})
 	}
 	return out

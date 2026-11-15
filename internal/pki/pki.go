@@ -21,14 +21,16 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 const (
-	caCertFile    = "ca.crt"
-	caKeyFile     = "ca.key"
-	hostURIScheme = "haetae"
-	hostURIPrefix = "haetae://host/"
+	caCertFile         = "ca.crt"
+	caKeyFile          = "ca.key"
+	agentCSRCommonName = "haetae-agent"
+	hostURIScheme      = "haetae"
+	hostURIPrefix      = "haetae://host/"
 )
 
 // CA signs the gateway's server certificate and the agents' client certificates.
@@ -331,6 +333,28 @@ func HostIDFromCert(cert *x509.Certificate) (string, error) {
 	return id, nil
 }
 
+// CheckCSRIdentity rejects a CSR that claims to be a different host than
+// hostID: a host URI SAN for another id, or a CommonName that is neither empty,
+// the agent's placeholder nor hostID. SignClientCSR ignores the subject and
+// always issues for the host it is told, so this is defence in depth that
+// turns an attempt to name another host into a refusal instead of a silently
+// re-bound certificate.
+func CheckCSRIdentity(csr *x509.CertificateRequest, hostID string) error {
+	for _, u := range csr.URIs {
+		if u == nil || u.Scheme != hostURIScheme {
+			continue
+		}
+		id := strings.TrimPrefix(u.Path, "/")
+		if u.Host != "host" || id != hostID {
+			return fmt.Errorf("pki: csr names another identity")
+		}
+	}
+	if cn := csr.Subject.CommonName; cn != "" && cn != hostID && cn != agentCSRCommonName {
+		return fmt.Errorf("pki: csr names another identity")
+	}
+	return nil
+}
+
 // Fingerprint returns "sha256:" + lowercase hex SHA-256 of der.
 func Fingerprint(der []byte) string {
 	sum := sha256.Sum256(der)
@@ -344,7 +368,7 @@ func NewKeyAndCSR() (*ecdsa.PrivateKey, []byte, error) {
 		return nil, nil, fmt.Errorf("pki: generate agent key: %w", err)
 	}
 	tmpl := &x509.CertificateRequest{
-		Subject: pkix.Name{CommonName: "haetae-agent"},
+		Subject: pkix.Name{CommonName: agentCSRCommonName},
 	}
 	csrDER, err := x509.CreateCertificateRequest(rand.Reader, tmpl, key)
 	if err != nil {

@@ -31,6 +31,7 @@ const (
 	RuleDiskHigh     = "disk_high"
 	RuleDeployFailed = "deploy_failed"
 	RuleNewCVE       = "new_cve"
+	RuleCertExpiring = "cert_expiring"
 )
 
 // DefaultOrgSettings returns the migration defaults for a missing org_settings row.

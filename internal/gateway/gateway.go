@@ -34,7 +34,11 @@ var ErrNotConnected = errors.New("gateway: host not connected")
 
 // Store is the persistence the gateway needs. *store.Store implements it.
 type Store interface {
-	EnrollHost(ctx context.Context, token string, info store.HostInfo, issue func(hostID uuid.UUID) (string, error)) (store.Host, error)
+	EnrollHostWithExpiry(ctx context.Context, token string, info store.HostInfo, issue func(hostID uuid.UUID) (string, time.Time, error)) (store.Host, error)
+	// RenewHostCert swaps in a renewed certificate; see store.RenewHostCert.
+	RenewHostCert(ctx context.Context, id uuid.UUID, fromSerial, newSerial string, expires time.Time, grace time.Duration) error
+	// ForgetPrevCert drops the previous certificate serial of a host.
+	ForgetPrevCert(ctx context.Context, id uuid.UUID) error
 	HostForAgent(ctx context.Context, id uuid.UUID) (store.Host, error)
 	MarkConnected(ctx context.Context, id uuid.UUID, info store.HostInfo, at time.Time) error
 	MarkSeen(ctx context.Context, id uuid.UUID, at time.Time) error
@@ -53,7 +57,8 @@ type Config struct {
 	// Heartbeat is the interval agents are told to use. A session with no
 	// message for three intervals is closed. Default 10 s.
 	Heartbeat time.Duration
-	// ClientCertTTL is the lifetime of issued client certificates. Default one year.
+	// ClientCertTTL is the lifetime of issued client certificates, at
+	// enrollment and at renewal. Default one year; tests set it short.
 	ClientCertTTL time.Duration
 	// HelloTimeout bounds the wait for the agent's first message. Default 10 s.
 	HelloTimeout time.Duration
@@ -183,13 +188,17 @@ func (g *Gateway) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 	}
 
 	var certDER []byte
-	host, err := g.store.EnrollHost(ctx, msg.GetToken(), hostInfo(msg.GetHost()), func(hostID uuid.UUID) (string, error) {
+	host, err := g.store.EnrollHostWithExpiry(ctx, msg.GetToken(), hostInfo(msg.GetHost()), func(hostID uuid.UUID) (string, time.Time, error) {
 		der, serial, err := g.ca.SignClientCSR(msg.GetCsrDer(), hostID.String(), g.cfg.ClientCertTTL)
 		if err != nil {
-			return "", err
+			return "", time.Time{}, err
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return "", time.Time{}, err
 		}
 		certDER = der
-		return serial, nil
+		return serial, cert.NotAfter, nil
 	})
 	switch {
 	case errors.Is(err, store.ErrTokenInvalid):
@@ -212,7 +221,7 @@ func (g *Gateway) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 // Connect runs one agent session until the agent leaves, goes quiet, or a
 // newer session for the same host replaces it.
 func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv1.ConnectRequest, agentv1.ConnectResponse]) error {
-	host, err := g.authenticate(ctx)
+	host, cert, err := g.authenticate(ctx)
 	if err != nil {
 		return err
 	}
@@ -231,6 +240,7 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 
 	s := newSession(hostID, cancel)
 	s.orgID = host.OrgID
+	s.cert = cert
 	g.register(s)
 	defer g.unregister(s)
 
@@ -264,36 +274,57 @@ func (g *Gateway) Connect(ctx context.Context, stream *connect.BidiStream[agentv
 	return nil
 }
 
-func (g *Gateway) authenticate(ctx context.Context) (store.Host, error) {
+// authenticate maps the verified client certificate to its host. It returns
+// the host and the session certificate identity used later to authorise
+// renewal.
+func (g *Gateway) authenticate(ctx context.Context) (store.Host, sessionCert, error) {
+	var none sessionCert
 	cert, ok := ctx.Value(peerCertKey{}).(*x509.Certificate)
 	if !ok {
-		return store.Host{}, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate required"))
+		return store.Host{}, none, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate required"))
 	}
 	raw, err := pki.HostIDFromCert(cert)
 	if err != nil {
-		return store.Host{}, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has no host identity"))
+		return store.Host{}, none, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has no host identity"))
 	}
 	hostID, err := uuid.Parse(raw)
 	if err != nil {
-		return store.Host{}, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has an invalid host id"))
+		return store.Host{}, none, connect.NewError(connect.CodeUnauthenticated, errors.New("client certificate has an invalid host id"))
 	}
 
 	host, err := g.store.HostForAgent(ctx, hostID)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Host{}, connect.NewError(connect.CodePermissionDenied, errors.New("unknown host"))
+		return store.Host{}, none, connect.NewError(connect.CodePermissionDenied, errors.New("unknown host"))
 	}
 	if err != nil {
 		g.log.Error("get host", "host_id", hostID, "err", err)
-		return store.Host{}, connect.NewError(connect.CodeUnavailable, errors.New("server busy, retry"))
+		return store.Host{}, none, connect.NewError(connect.CodeUnavailable, errors.New("server busy, retry"))
 	}
 	if host.RevokedAt != nil {
-		return store.Host{}, connect.NewError(connect.CodePermissionDenied, errors.New("host revoked"))
+		return store.Host{}, none, connect.NewError(connect.CodePermissionDenied, errors.New("host revoked"))
 	}
-	// Only the most recently issued certificate is valid for a host.
-	if normalizeSerial(host.CertSerial) != normalizeSerial(cert.SerialNumber.Text(16)) {
-		return store.Host{}, connect.NewError(connect.CodePermissionDenied, errors.New("certificate superseded"))
+	// Only the most recently issued certificate is valid for a host, plus
+	// the one it replaced for a short grace period after a renewal (the
+	// agent may not have received or saved the new one). The stored form of
+	// the matching serial is what a renewal compares against.
+	got := normalizeSerial(cert.SerialNumber.Text(16))
+	sc := sessionCert{notAfter: cert.NotAfter, spki: cert.RawSubjectPublicKeyInfo}
+	switch {
+	case got == normalizeSerial(host.CertSerial):
+		sc.serial = host.CertSerial
+		if host.PrevCertSerial != "" {
+			// The agent runs on the new certificate: the old one is dead.
+			if err := g.store.ForgetPrevCert(ctx, hostID); err != nil {
+				g.log.Warn("forget previous certificate", "host_id", hostID, "err", err)
+			}
+		}
+	case host.PrevCertSerial != "" && got == normalizeSerial(host.PrevCertSerial) &&
+		host.PrevCertValidUntil != nil && time.Now().Before(*host.PrevCertValidUntil):
+		sc.serial = host.PrevCertSerial
+	default:
+		return store.Host{}, none, connect.NewError(connect.CodePermissionDenied, errors.New("certificate superseded"))
 	}
-	return host, nil
+	return host, sc, nil
 }
 
 func normalizeSerial(s string) string {
@@ -369,6 +400,8 @@ func (g *Gateway) receiveLoop(ctx context.Context, stream *connect.BidiStream[ag
 			g.handleOutboundBatch(ctx, s, m.OutboundBatch)
 		case *agentv1.ConnectRequest_ImageCandidates:
 			g.handleImageCandidates(ctx, s, m.ImageCandidates)
+		case *agentv1.ConnectRequest_RenewCertificate:
+			g.handleRenewCertificate(ctx, s, m.RenewCertificate)
 		case *agentv1.ConnectRequest_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate hello"))
 		default:
@@ -399,6 +432,11 @@ func (g *Gateway) sendLoop(ctx context.Context, stream *connect.BidiStream[agent
 			}
 		case level := <-s.policy:
 			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_Policy{Policy: &agentv1.Policy{Autonomy: level}}}
+			if err := stream.Send(msg); err != nil {
+				return err
+			}
+		case resp := <-s.renew:
+			msg := &agentv1.ConnectResponse{Msg: &agentv1.ConnectResponse_RenewCertificate{RenewCertificate: resp}}
 			if err := stream.Send(msg); err != nil {
 				return err
 			}

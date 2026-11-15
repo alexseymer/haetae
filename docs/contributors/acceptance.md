@@ -43,7 +43,6 @@ These narrowings apply to the numbers above. None of them is hidden in a test.
 
 Tracked for after 0.8.0 (issue #13 and below):
 
-- Agent client certificates last one year and the code has no renewal path: an agent that is not re-enrolled within a year stops connecting.
 - The Signal bridge expects a signal-cli REST endpoint that the stack does not ship.
 - The vulnerability matcher reports a distro it cannot recognise without an explicit "unsupported" state; the `scanned` map of the image-update loop is never pruned.
 - `ai_actions` has no `approved_by` (the pressing account is only linked through the inbound chat message).

@@ -31,6 +31,8 @@ type HostFact struct {
 	MemHigh  bool
 	DiskHigh bool
 	DiskPct  float64 // latest sample; used for disk critical (>= 97)
+	// CertExpiresAt is when the host's client certificate expires; nil when unknown.
+	CertExpiresAt *time.Time
 }
 
 // ContainerFact is one container's state for container-level rules.

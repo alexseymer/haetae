@@ -284,7 +284,7 @@ func validateOrgSettings(tz string, briefingHour, cpu, mem, disk, sustained, off
 func validMuteRule(rule string) bool {
 	switch rule {
 	case store.RuleCrashLoop, store.RuleOOMKill, store.RuleUnhealthy, store.RuleHostOffline,
-		store.RuleCPUHigh, store.RuleMemHigh, store.RuleDiskHigh, store.RuleDeployFailed, store.RuleNewCVE:
+		store.RuleCPUHigh, store.RuleMemHigh, store.RuleDiskHigh, store.RuleDeployFailed, store.RuleNewCVE, store.RuleCertExpiring:
 		return true
 	}
 	return false
