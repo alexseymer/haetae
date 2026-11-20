@@ -163,7 +163,7 @@ func TestRenewerRenewsWhenDueAndPersists(t *testing.T) {
 	}
 	// The next handshake presents the new certificate.
 	c, _ := rn.clientCertificate(nil)
-	if c.Leaf.NotAfter.Sub(time.Now()) < 40*time.Hour {
+	if time.Until(c.Leaf.NotAfter) < 40*time.Hour {
 		t.Fatalf("presented cert expires in %s, want ~48h", time.Until(c.Leaf.NotAfter))
 	}
 	// And it is on disk for the next restart.
@@ -172,7 +172,7 @@ func TestRenewerRenewsWhenDueAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	cert, _ := x509.ParseCertificate(got.CertDER)
-	if cert.NotAfter.Sub(time.Now()) < 40*time.Hour {
+	if time.Until(cert.NotAfter) < 40*time.Hour {
 		t.Fatal("renewed certificate not persisted")
 	}
 }
