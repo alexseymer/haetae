@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-// react-router 6.x has an open-redirect advisory for Link/navigate with
-// attacker-controlled targets. This app must never build a navigation target
-// from data other than constants and server-generated host ids.
+// react-router has had open-redirect advisories for Link/navigate with
+// attacker-controlled targets (CVE-2025-68470 and a backslash bypass, fixed in
+// 7.18). This app must never build a navigation target from data other than
+// constants and server-generated host ids.
 const modules = import.meta.glob(["./**/*.tsx", "!./**/*.test.tsx"], {
   query: "?raw",
   import: "default",
