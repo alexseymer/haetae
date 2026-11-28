@@ -12,11 +12,14 @@ permissions:
 
 concurrency:
   group: codeql-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})
+    # Fork and Dependabot PRs get a read-only token, so the SARIF upload would
+    # fail with 403. They are scanned after the merge, on push to main.
+    if: github.event_name != 'pull_request' || (!github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -34,10 +37,13 @@ jobs:
             build-mode: none
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: matrix.language == 'go'
         with:
           go-version-file: go.mod
+          cache: false
       - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           languages: ${{ matrix.language }}
@@ -47,4 +53,4 @@ jobs:
         run: go build ./...
       - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
-          category: /language:${{ matrix.language }}
+          category: '/language:${{ matrix.language }}'
